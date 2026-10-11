@@ -1,5 +1,7 @@
 // release builds the release archives: for each platform, the programs with the voice data, and the voice data on
-// its own, with a file of their SHA-256 sums. The archives are the same for the same commit and voice data.
+// its own, with a file of their SHA-256 sums. The archives are the same for the same commit and voice data, and the
+// voice data's archive for the same voice data, so programs that download it can keep its sum from one release to
+// the next.
 //
 //	go run ./scripts/release -version v0.1.0 -voices <voices folder> [-output dist]
 package main
@@ -50,6 +52,9 @@ var platforms = []platform{
 }
 
 var programs = []string{"opensapi4", "sapi4out", "sapi4limits"}
+
+// voicesTime is the time of the files in the voice data's archive.
+var voicesTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
 var versionPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
 
@@ -140,7 +145,7 @@ func release(version, voices, output string, allowChanges bool) error {
 		archives = append(archives, archive)
 	}
 	voicesArchive := "opensapi4-voices-" + version + ".zip"
-	if err := writeZip(filepath.Join(output, voicesArchive), voiceFiles, modified); err != nil {
+	if err := writeZip(filepath.Join(output, voicesArchive), voiceFiles, voicesTime); err != nil {
 		return err
 	}
 	archives = append(archives, voicesArchive)
