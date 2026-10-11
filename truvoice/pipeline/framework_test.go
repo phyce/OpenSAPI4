@@ -77,23 +77,35 @@ type goldenRecord struct {
 	Levels         string          `json:"levels"`
 	Cursors        [][]int64       `json:"cursors"`
 	Ring           *goldenCursors  `json:"ring"`
+	EngineRate     int             `json:"engineRate"`
+	EngineGain     uint32          `json:"engineGain"`
+
+	Attribute string `json:"attribute"`
+	Mute      byte   `json:"mute"`
+	Voice     int16  `json:"voice"`
 }
 
+// A goldenCase is a recorded run. In a racy one the host changed the engine's attributes while the speaking
+// thread ran.
 type goldenCase struct {
 	Name    string         `json:"name"`
+	Racy    bool           `json:"racy"`
 	Format  [2]int         `json:"format"`
 	Digest  string         `json:"digest"`
+	Events  [][]any        `json:"events"`
 	Records []goldenRecord `json:"records"`
 }
 
 // replay runs the framework calls of one recorded run on a Go pipeline. It mirrors the list by replaying
 // every NewNode and FreeNode; the stages' own writes (node contents, cursor fields, the attributes) are taken
-// from the records before each call.
+// from the records before each call. In a racy run the engine's attributes are taken from every record that
+// has them.
 type replay struct {
 	pipeline *Pipeline
 	texts    map[int]*Text
 	records  []goldenRecord
 	counts   map[string]int
+	racy     bool
 }
 
 func (replay *replay) node(reference int64) *Node {
@@ -243,6 +255,9 @@ func (replay *replay) compareControlState(raw json.RawMessage, node *Node) error
 	var expected goldenControlState
 	if err := json.Unmarshal(raw, &expected); err != nil {
 		return err
+	}
+	if replay.racy && expected.Engine != nil {
+		replay.setEngine(expected.Engine)
 	}
 	actual := replay.controlState()
 	if expected.Level != nil {
@@ -630,7 +645,7 @@ func TestFramework(t *testing.T) {
 	failures := 0
 	for _, golden := range cases {
 		replay := &replay{pipeline: New(tables, new(synthesizer.Synthesizer), nil, &Engine{}), texts: map[int]*Text{},
-			records: golden.Records, counts: counts}
+			records: golden.Records, counts: counts, racy: golden.Racy}
 		if err := replay.run(); err != nil {
 			failures++
 			if failures <= 10 {

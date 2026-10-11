@@ -300,13 +300,13 @@ Each time the engine's scheduler runs the synthesizer ([pipeline.md](pipeline.md
    6. If `done` is set, stop.
 3. Run the output stage once more.
 
-The **buffer** collects the rendered samples, 2 bytes each. When the loop has noted a hand-over, the engine hands the whole buffer to the audio queue and empties it. Otherwise the buffer keeps its samples for the next loop. Without markers a chunk is therefore 55 frames (12,100 bytes) at 11025 Hz and 76 frames (12,160 bytes) at 8000 Hz. The buffer the engine allocates holds 13,500 bytes.
+The **buffer** collects the rendered samples, 2 bytes each. When the loop has noted a hand-over, the engine's speaking thread hands the whole buffer to the audio queue and empties it ([pipeline.md](pipeline.md) §8.4). Otherwise the buffer keeps its samples for the next loop. Without markers a chunk is therefore 55 frames (12,100 bytes) at 11025 Hz and 76 frames (12,160 bytes) at 8000 Hz. The buffer the engine allocates holds 13,500 bytes.
 
 The parameter generator marks one frame for each phoneme and pause. The **output stage** ([pipeline.md](pipeline.md) §5) frees the pipeline's nodes in step with the audio, a phoneme or pause node for each passed marker. The events are queued before that: the parameter generator's stage queues a word or bookmark event as soon as it reaches the command ([pipeline.md](pipeline.md) §4.1), while the buffer still holds samples rendered before it. So an event's position in the audio is where the last hand-over before it ended: every event falls on a hand-over boundary, never inside a chunk.
 
 ### 5.4 Volume, gain and the output format
 
-**Volume.** Whenever the volume has changed, the engine applies it before it runs its scheduler again:
+**Volume.** Whenever the volume has changed, the engine applies it before it runs its scheduler again ([pipeline.md](pipeline.md) §8.3):
 
 - A volume below 80 sets the mute flag, which mutes every frame converted from then on (section 4.3, step 5). The attenuation stays as it was.
 - Any other volume clears the mute flag and sets the attenuation to `min(15, trunc(−10 · log10(volume / 65535)))` dB. The parameter generator subtracts the attenuation from its amplitudes (its spec will say how).
@@ -333,6 +333,6 @@ The original computes the logarithm with x87 floating point. For every volume, a
 | 15 | 80–2072 |
 | mute | 0–79 |
 
-**Gain.** The engine copies its gain (1 to 3, set with Inject `\gain=n\`) to the synthesizer when its speaking thread starts; a later Inject waits for the next session. The renderer multiplies by it (section 3.6).
+**Gain.** The engine copies its gain (1 to 3, set with Inject `\gain=n\`) to the synthesizer when its speaking thread starts ([pipeline.md](pipeline.md) §8.1); a later Inject waits for the next session. The renderer multiplies by it (section 3.6).
 
 **Output format.** The samples are 16-bit little-endian. In an 8-bit format each sample becomes one unsigned byte, `(sample >> 8) + 128`.

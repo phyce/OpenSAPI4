@@ -44,6 +44,147 @@ type goldenScheduleState struct {
 	Rate       int16  `json:"rate"`
 	Voice      int16  `json:"voice"`
 	Rendering  uint16 `json:"rendering"`
+
+	Pitch     uint32        `json:"pitch"`
+	Speed     uint32        `json:"speed"`
+	Volume    uint32        `json:"volume"`
+	Character uint32        `json:"character"`
+	Engine    *goldenEngine `json:"engine"`
+}
+
+// threadState is what the speaking thread keeps in the pipeline besides the scheduler: its copies of the
+// attributes, the synthesizer's output-filter voice, mute flag, gain, rate and rendering flag, and the engine's
+// attributes.
+type threadState struct {
+	Pitch, Speed, Volume, Character uint32
+	Voice                           int16
+	Mute                            byte
+	Gain                            uint16
+	Rate                            int16
+	Rendering                       uint16
+	Engine                          goldenEngine
+}
+
+func (state goldenScheduleState) thread() threadState {
+	return threadState{Pitch: state.Pitch, Speed: state.Speed, Volume: state.Volume, Character: state.Character,
+		Voice: state.Voice, Mute: state.Mute, Gain: state.Gain, Rate: state.Rate, Rendering: state.Rendering, Engine: *state.Engine}
+}
+
+func (replay *replay) threadState() threadState {
+	pipeline := replay.pipeline
+	synthesizer := pipeline.Synthesizer
+	engine := pipeline.Engine
+	return threadState{Pitch: pipeline.Pitch, Speed: pipeline.Speed, Volume: pipeline.Volume, Character: pipeline.Character,
+		Voice: int16(synthesizer.OutputVoice), Mute: boolByte(synthesizer.Mute), Gain: synthesizer.Gain,
+		Rate: int16(pipeline.SampleRate), Rendering: uint16(boolByte(synthesizer.Rendering)),
+		Engine: goldenEngine{engine.Pitch, engine.Speed, engine.Volume, engine.Character, engine.Voice}}
+}
+
+func (replay *replay) compareThread(state goldenScheduleState) error {
+	if state.Engine == nil {
+		return fmt.Errorf("no engine recorded")
+	}
+	if replay.racy {
+		replay.setEngine(state.Engine)
+	}
+	if actual, expected := replay.threadState(), state.thread(); actual != expected {
+		return fmt.Errorf("thread %+v, expected %+v", actual, expected)
+	}
+	return nil
+}
+
+func (replay *replay) setEngine(attributes *goldenEngine) {
+	engine := replay.pipeline.Engine
+	engine.Pitch, engine.Speed, engine.Volume = attributes.Pitch, attributes.Speed, attributes.Volume
+	engine.Character, engine.Voice = attributes.Character, attributes.Voice
+}
+
+// settingFields are the escape parser's settings as the records list them.
+func (replay *replay) settingFields() []int32 {
+	pipeline := replay.pipeline
+	settings := pipeline.Settings
+	return []int32{settings.PhoneticInput, settings.Flush, settings.Rate, pipeline.SettingsSpeed, settings.Pitch,
+		settings.Attenuation, settings.Filter, int32(settings.Flags), int32(settings.InputFlags), settings.Voice}
+}
+
+func (replay *replay) allCursorFields() [][]int64 {
+	var cursors [][]int64
+	for stage := range replay.pipeline.Cursors {
+		cursors = append(cursors, cursorFields(&replay.pipeline.Cursors[stage]))
+	}
+	return cursors
+}
+
+// attributeFields are, for each attribute, the places in the settings and in each cursor its setter writes.
+var attributeFields = map[string]struct{ settings, cursor []int }{
+	"pitch":  {[]int{4}, []int{10}},
+	"speed":  {[]int{2, 3}, []int{9}},
+	"volume": {[]int{5}, []int{11}},
+	"voice":  {[]int{9}, []int{16}},
+}
+
+// applyAttributes runs the Go thread's ApplyAttributes and compares what it wrote with the setters the
+// original called: each setter's settings and cursor fields, mute flag and voice as its record has them, and
+// the fields of the attributes it didn't apply as they were.
+func (replay *replay) applyAttributes(applied []goldenRecord) error {
+	pipeline := replay.pipeline
+	settingsBefore, cursorsBefore := replay.settingFields(), replay.allCursorFields()
+	pipeline.ApplyAttributes()
+	settings, cursors := replay.settingFields(), replay.allCursorFields()
+	written := map[string]bool{}
+	for _, record := range applied {
+		fields, known := attributeFields[record.Attribute]
+		if !known {
+			return fmt.Errorf("attribute %q", record.Attribute)
+		}
+		var expectedSettings []int32
+		if err := json.Unmarshal(record.Settings, &expectedSettings); err != nil {
+			return err
+		}
+		muting := record.Attribute == "volume" && record.Mute != 0
+		written[record.Attribute] = !muting
+		if muting {
+			continue
+		}
+		for _, field := range fields.settings {
+			if settings[field] != expectedSettings[field] {
+				return fmt.Errorf("after the %s %d: settings %v, expected %v", record.Attribute, record.Value, settings, expectedSettings)
+			}
+		}
+		for stage := range cursors {
+			for _, field := range fields.cursor {
+				if cursors[stage][field] != record.Cursors[stage][field] {
+					return fmt.Errorf("after the %s %d: cursor %d is %v, expected %v", record.Attribute, record.Value, stage, cursors[stage], record.Cursors[stage])
+				}
+			}
+		}
+	}
+	for _, record := range applied {
+		if record.Attribute == "volume" && boolByte(pipeline.Synthesizer.Mute) != record.Mute {
+			return fmt.Errorf("after the volume %d: mute %v, expected %d", record.Value, pipeline.Synthesizer.Mute, record.Mute)
+		}
+		if record.Attribute == "voice" && int16(pipeline.Synthesizer.OutputVoice) != record.Voice {
+			return fmt.Errorf("after the voice %d: output-filter voice %d, expected %d", record.Value, pipeline.Synthesizer.OutputVoice, record.Voice)
+		}
+	}
+	for attribute, fields := range attributeFields {
+		if written[attribute] {
+			continue
+		}
+		for _, field := range fields.settings {
+			if settings[field] != settingsBefore[field] {
+				return fmt.Errorf("the Go thread applied the %s, the original didn't: settings %v, before %v", attribute, settings, settingsBefore)
+			}
+		}
+		for stage := range cursors {
+			for _, field := range fields.cursor {
+				if cursors[stage][field] != cursorsBefore[stage][field] {
+					return fmt.Errorf("the Go thread applied the %s, the original didn't: cursor %d is %v, before %v", attribute, stage, cursors[stage], cursorsBefore[stage])
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // scheduleFlags are the original's flags from 2110: the input's, the scheduler's, the output stage's result
@@ -269,9 +410,10 @@ func (stages *replayStages) prepareRetires(index int) {
 	}
 }
 
-// replaySchedule runs the Go scheduler for the original's call at index and compares what it ran, reported
-// and left.
-func (replay *replay) replaySchedule(index int, stages *replayStages) (int, int, error) {
+// replaySchedule runs the Go thread's attributes and scheduler for the original's call at index, with the
+// engine's attributes as the original's thread found them and the setter calls it made before, and compares
+// what they ran, reported and left.
+func (replay *replay) replaySchedule(index int, stages *replayStages, applied []goldenRecord) (int, int, error) {
 	pipeline := replay.pipeline
 	synthesizer := pipeline.Synthesizer
 	end, err := replay.exit(index, "scheduled")
@@ -284,8 +426,16 @@ func (replay *replay) replaySchedule(index int, stages *replayStages) (int, int,
 	}
 	pipeline.OutOfInput = expected.OutOfInput
 	synthesizer.Hold = expected.Hold
-	synthesizer.Mute, synthesizer.OutputVoice, synthesizer.Gain = state.Mute != 0, int(state.Voice), state.Gain
-	synthesizer.Rendering = state.Rendering != 0
+	if state.Engine == nil {
+		return end, 0, fmt.Errorf("no engine recorded")
+	}
+	replay.setEngine(state.Engine)
+	if err := replay.applyAttributes(applied); err != nil {
+		return end, 0, err
+	}
+	if err := replay.compareThread(state); err != nil {
+		return end, 0, fmt.Errorf("after the attributes: %v", err)
+	}
 	if actual := replay.scheduleFlags(); actual != expected {
 		return end, 0, fmt.Errorf("before: %+v, expected %+v", actual, expected)
 	}
@@ -319,8 +469,8 @@ func (replay *replay) replaySchedule(index int, stages *replayStages) (int, int,
 	if actual := replay.scheduleFlags(); actual != expectedAfter {
 		return end, 0, fmt.Errorf("after %v: %+v, expected %+v", stages.calls, actual, expectedAfter)
 	}
-	if exitState.Mute != boolByte(synthesizer.Mute) || int(exitState.Voice) != synthesizer.OutputVoice {
-		return end, 0, fmt.Errorf("after %v: mute %v and voice %d, expected %d and %d", stages.calls, synthesizer.Mute, synthesizer.OutputVoice, exitState.Mute, exitState.Voice)
+	if err := replay.compareThread(exitState); err != nil {
+		return end, 0, fmt.Errorf("after %v: %v", stages.calls, err)
 	}
 	if lastRetired != nil {
 		if actual := cursorFields(&pipeline.Cursors[Output]); !slices.Equal(actual, lastRetired.Fields) {
@@ -334,9 +484,7 @@ func (replay *replay) replaySchedule(index int, stages *replayStages) (int, int,
 // settings and track levels, the track levels, the cursors, the scheduler's flags and the ring's cursors.
 func (replay *replay) compareInitialized(record goldenRecord) error {
 	pipeline := replay.pipeline
-	settings := pipeline.Settings
-	actualSettings := []int32{settings.PhoneticInput, settings.Flush, settings.Rate, pipeline.SettingsSpeed, settings.Pitch,
-		settings.Attenuation, settings.Filter, int32(settings.Flags), int32(settings.InputFlags), settings.Voice}
+	actualSettings := replay.settingFields()
 	var expectedSettings []int32
 	if err := json.Unmarshal(record.Settings, &expectedSettings); err != nil {
 		return err
@@ -355,12 +503,15 @@ func (replay *replay) compareInitialized(record goldenRecord) error {
 			return fmt.Errorf("cursor %d is %v, expected %v", stage, actual, record.Cursors[stage])
 		}
 	}
-	_, expected, err := decodeScheduleState(record.State)
+	state, expected, err := decodeScheduleState(record.State)
 	if err != nil {
 		return err
 	}
 	if actual := replay.scheduleFlags(); actual != expected {
 		return fmt.Errorf("%+v, expected %+v", actual, expected)
+	}
+	if err := replay.compareThread(state); err != nil {
+		return err
 	}
 	ring := pipeline.Synthesizer
 	actualRing := goldenCursors{Position: ring.Position, End: ring.End, Written: ring.Written, Lookahead: ring.Lookahead,
@@ -379,10 +530,11 @@ func boolByte(value bool) byte {
 	return 0
 }
 
-// TestScheduler runs the Go scheduler, output stage and synthesizer for every call of the original's
-// scheduler in the recorded runs, with the other stages replayed from the records: it checks the stages it
-// runs, what it reports and the flags, free nodes, ring cursors and output cursor it leaves, and that the
-// audio it hands over is the original's PCM.
+// TestScheduler runs the Go speaking thread's start, attributes and hand-overs, and the Go scheduler, output
+// stage and synthesizer, for every call of the original's scheduler in the recorded runs, with the other
+// stages replayed from the records: it checks the attributes the thread applies, the stages the scheduler
+// runs, what it reports and the flags, free nodes, ring cursors and output cursor it leaves, that the audio
+// handed over is the original's PCM, and that the bookmarks and words come where the original's did.
 func TestScheduler(t *testing.T) {
 	pack := conformance.Pack(t)
 	tables, err := pack.LoadPipeline()
@@ -414,32 +566,39 @@ func TestScheduler(t *testing.T) {
 func replayScheduler(tables *datapack.Pipeline, synthesizerTables *datapack.Synthesizer, golden goldenCase, counts map[string]int, steps, handOvers *int) error {
 	rate, bits := golden.Format[0], golden.Format[1]
 	stages := &replayStages{}
-	replay := &replay{texts: map[int]*Text{}, records: golden.Records, counts: counts}
-	replay.pipeline = New(tables, synthesizer.New(synthesizerTables, rate), stages, &Engine{})
-	replay.pipeline.SampleRate = rate
+	replay := &replay{texts: map[int]*Text{}, records: golden.Records, counts: counts, racy: golden.Racy}
+	engine := &Engine{}
+	replay.pipeline = New(tables, synthesizer.New(synthesizerTables, rate), stages, engine)
 	stages.replay = replay
-	var pcm []byte
-	handOver := func() {
-		samples := replay.pipeline.Synthesizer.Samples
-		pcm = synthesizer.AppendPCM(pcm, samples, bits)
-		replay.pipeline.Synthesizer.Samples = samples[:0]
-		*handOvers++
-	}
+	var applied []goldenRecord
 	for index := 0; index < len(golden.Records); index++ {
 		record := golden.Records[index]
 		switch record.Kind {
 		case "initialized":
-			replay.pipeline.Initialize()
-			if err := replay.compareInitialized(record); err != nil {
-				return fmt.Errorf("record %d: after Initialize: %v", index, err)
-			}
-		case "schedule":
-			end, result, err := replay.replaySchedule(index, stages)
+			state, _, err := decodeScheduleState(record.State)
 			if err != nil {
 				return fmt.Errorf("record %d: %v", index, err)
 			}
+			if state.Engine == nil {
+				return fmt.Errorf("record %d: no engine recorded", index)
+			}
+			engine.SampleRate, engine.Gain = record.EngineRate, record.EngineGain
+			replay.setEngine(state.Engine)
+			replay.pipeline.Start()
+			if err := replay.compareInitialized(record); err != nil {
+				return fmt.Errorf("record %d: after Start: %v", index, err)
+			}
+		case "attribute":
+			applied = append(applied, record)
+		case "schedule":
+			end, result, err := replay.replaySchedule(index, stages, applied)
+			if err != nil {
+				return fmt.Errorf("record %d: %v", index, err)
+			}
+			applied = nil
 			if result&StepHandOver != 0 {
-				handOver()
+				replay.pipeline.HandOver()
+				*handOvers++
 			}
 			*steps++
 			index = end
@@ -448,8 +607,40 @@ func replayScheduler(tables *datapack.Pipeline, synthesizerTables *datapack.Synt
 			return fmt.Errorf("record %d: a %s record outside the scheduler", index, record.Kind)
 		}
 	}
+	return compareQueue(engine.Queue, golden, bits)
+}
+
+// compareQueue compares the audio the Go thread queued with the original's PCM, and the bookmarks and words
+// queued with it with the ones the original reported, at the sample where each was queued. A bookmark of 0,
+// a text's end, is reported as the text done, whose position the recordings don't keep.
+func compareQueue(queue []Item, golden goldenCase, bits int) error {
+	var pcm []byte
+	var actual, expected []string
+	position := 0
+	for _, item := range queue {
+		if item.Event == nil {
+			pcm = synthesizer.AppendPCM(pcm, item.Samples, bits)
+			position += len(item.Samples)
+			continue
+		}
+		event := item.Event
+		switch {
+		case event.Kind == WordPosition:
+			actual = append(actual, fmt.Sprint(position, " word ", event.Text.Number, " ", event.Value))
+		case event.Kind == Mark && event.Value != 0:
+			actual = append(actual, fmt.Sprint(position, " mark ", event.Text.Number, " ", event.Value))
+		}
+	}
+	for _, event := range golden.Events {
+		if event[0] != nil && (event[1] == "word" || event[1] == "mark") {
+			expected = append(expected, fmt.Sprint(int(event[0].(float64)), " ", event[1], " ", int(event[2].(float64)), " ", uint32(event[3].(float64))))
+		}
+	}
 	if digest := sha256.Sum256(pcm); hex.EncodeToString(digest[:]) != golden.Digest {
 		return fmt.Errorf("the PCM differs (%d bytes)", len(pcm))
+	}
+	if !slices.Equal(actual, expected) {
+		return fmt.Errorf("events %v, expected %v", actual, expected)
 	}
 	return nil
 }

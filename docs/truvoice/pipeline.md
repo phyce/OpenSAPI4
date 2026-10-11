@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) passes a text through its stages. The speaking thread keeps everything in one state: a pool of nodes, linked into one list that every stage works on, and a cursor for each stage, its window on the list. Each stage rewrites the nodes in its window and hands the finished ones to the next stage's cursor. The text's commands (pitch, speed, voice, bookmarks, words…) travel as nodes too, and each stage runs them when it reaches them.
 
-This spec covers the nodes (section 2), the cursors (section 3), the control commands (section 4), the output stage (section 5), the scheduler (section 6) and the reset (section 7). The speaking thread around them, and the attributes it applies, are still to come.
+This spec covers the nodes (section 2), the cursors (section 3), the control commands (section 4), the output stage (section 5), the scheduler (section 6), the reset (section 7) and the speaking thread that runs them (section 8).
 
 **In short.**
 - There are 618 nodes. A free node is taken from the front of the free list and goes back to its end, so nodes are reused in a fixed order. Taking a node clears only a few of its bytes: the rest is what its last use left.
@@ -11,10 +11,14 @@ This spec covers the nodes (section 2), the cursors (section 3), the control com
 - Most commands only change the settings. A few act at one stage only: the parameter generator queues the bookmark and word events and changes the volume and the voice, prosody changes the pitch, the speed and the character, and the normalizer adds nodes.
 - The output stage frees the nodes in step with the audio: one phoneme or pause for each marker frame the synthesizer has passed.
 - The scheduler runs one stage a step: the parameter generator, with the synthesizer, whenever it has work; otherwise the last of the other stages that has work, if enough nodes are free; otherwise the input stage, which reads the next word.
+- Before each step the speaking thread applies the engine's attributes that its interface changed. The commands keep the thread's copies up to date, so they aren't applied twice. After a step the thread hands the audio buffer to the engine's queue, behind the events queued meanwhile.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its node, cursor and control functions in 100 recorded runs on the Go pipeline (the ten voices, both rates, tags for every attribute, voice changes, bookmarks, tones, pauses, raw commands, texts spoken one after another in one session). Each call returned and left the same as the original's: 17,468 nodes taken and 17,369 freed, 56,976 beginnings (section 3.2) and 55,659 finishes (section 3.3), 10,050 commands of 20 letters with their 1,277 events, 27,771 runs of the output stage, and the free nodes after each of 125,346 stage steps.
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its node, cursor and control functions in 109 recorded runs on the Go pipeline (the ten voices, both rates, tags for every attribute, voice changes, bookmarks, tones, pauses, raw commands, texts spoken one after another in one session, attributes set before speaking and while speaking). Each call returned and left the same as the original's: 25,760 nodes taken and 25,654 freed, 84,635 beginnings (section 3.2) and 82,774 finishes (section 3.3), 14,169 commands of 20 letters with their 1,833 events, 41,457 runs of the output stage, and the free nodes after each of 186,852 stage steps.
 
-The scheduler, the output stage and the reset were also checked as a whole: the Go scheduler ran all 31,891 of the original's steps in these runs, with the stages before the synthesizer replayed from the recordings and the Go synthesizer converting and rendering the recorded frames. Each step ran the same stages (2,566 input steps, 5,381 normalizer, 6,028 lexical, 7,540 prosody and 10,256 parameter generator steps, 65,804 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor. The state after each thread's reset was the original's, and the audio handed over, 5,614,190 samples in 4,910 hand-overs, was the original's PCM in every run.
+The speaking thread, the scheduler, the output stage and the reset were also checked as a whole. The Go thread started each run and ran all 47,134 of the original's steps in these runs, with the stages before the synthesizer replayed from the recordings and the Go synthesizer converting and rendering the recorded frames:
+- each thread started as the original's (section 8.1), and before each step applied the same attributes, with the same result: 104 pitches, 21 speeds, 12 volumes (4 of them muting) and 102 voices, at the start and in two runs where the application changed the pitch, speed, volume, voice and character while the text was spoken;
+- each step ran the same stages (3,787 input steps, 7,899 normalizer, 8,848 lexical, 11,138 prosody and 15,293 parameter generator steps, 98,430 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor;
+- the audio handed over, 8,300,290 samples in 7,451 hand-overs, was the original's PCM in every run, and each of the 1,711 words and 4 bookmarks came at the sample where the original reported it.
 
 ## 1. The state
 
@@ -27,7 +31,7 @@ What the stages share:
 - the **attributes** the speaking thread last applied: pitch in Hz, speed in words a minute, volume, character, and the voice, which is also the synthesizer's output-filter voice. Some commands change them too (section 4);
 - the **saved rate**, which the filter command keeps, the **track levels**, 22 bytes, and the synthesizer's **sample rate**;
 - a **reset request** and its value;
-- the **engine**: its attributes (pitch, speed, volume, character, voice), which its interface sets and reads, a **queue** that carries the audio and the events to the destination, in order, and the **messages** the pipeline posts to the engine's window. The engine is absent when it only converts text to phonemes.
+- the **engine**: its attributes (pitch, speed, volume, character, voice), which its interface sets and reads, its sample rate and output gain, a **queue** that carries the audio and the events to the destination, in order, and the **messages** the pipeline posts to the engine's window. The engine is absent when it only converts text to phonemes.
 
 ## 2. Nodes
 
@@ -268,12 +272,70 @@ A new speaking thread **initializes** the pipeline:
 
 The synthesizer's mute flag, gain and output-filter voice, and the attributes, keep their values.
 
-## 8. What the recorded runs don't reach
+## 8. The speaking thread
+
+The engine starts a **speaking thread** when it is given a text and none runs. The thread has its own pipeline: it constructs and starts it (section 8.1), then goes round a loop (section 8.2) until the texts run out (section 8.5).
+
+### 8.1 Construction and start
+
+A new pipeline's attributes are pitch 85 Hz, speed 150 words a minute, volume 65535, the normal character (0) and voice 0. The voice is also the synthesizer's output-filter voice. The synthesizer's gain is 1 and its sample rate 8000 Hz. The engine's conversion of text to phonemes constructs its pipeline the same way.
+
+The speaking thread then starts its pipeline:
+1. The sample rate becomes the engine's.
+2. If the engine's output gain is 1 to 4, it becomes the synthesizer's gain ([synthesizer.md](synthesizer.md) §5.4).
+3. The synthesizer renders ([synthesizer.md](synthesizer.md) §5.2), and the visual events are on: the parameter generator queues them (its spec will say how).
+4. The input side takes the engine's settings for the pre-formatter and the TextIn tokenizer, and the tokenizer is created if it is on (the input stage's spec will say how).
+5. Initialize the pipeline (section 7).
+
+The attributes keep their constructed values: the loop applies the engine's before the first step (section 8.3). So Peter (voice 0, 85 Hz, 150 words a minute) at full volume has no attribute applied at the start.
+
+### 8.2 The loop
+
+Each time round, the thread:
+1. waits while the engine is paused, and ends if the engine is reset (the engine's spec will say how);
+2. feeds the input (the input stage's spec will say what feeding and pumping do):
+   - if the current text isn't all fed and the input ring has more than 2048 bytes free, it feeds more of the text;
+   - otherwise, if the current text is all fed, the scheduler is out of input (section 6) and the input ring is drained, it takes the next queued text, tells the engine's window the text has started, feeds it and pumps the input ring into the escape parser's; the thread is **busy**. Without a queued text, a thread that isn't busy ends (section 8.5);
+   - otherwise, if the scheduler is out of input, it pumps the input ring into the escape parser's; the thread is busy;
+3. applies the attributes (section 8.3);
+4. runs a step (section 6);
+5. hands the buffer over if the step reports a hand-over (section 8.4);
+6. if the step reports idle, is no longer busy.
+
+### 8.3 Applying the attributes
+
+The thread compares each of the engine's attributes with its copy, in this order, and applies each that differs, after copying it:
+
+| Attribute | The thread applies it |
+|---|---|
+| Pitch (16-bit) | The escape parser's and every cursor's pitch become it |
+| Speed | The escape parser's speed becomes it, and the rate index `(speed − 46) >> 3`, in unsigned 32-bit arithmetic, the escape parser's and every cursor's rate. The engine's speeds are 50 to 250, indexes 0 to 25 |
+| Volume | A volume below 80 mutes the synthesizer, and nothing else. Any other volume unmutes it and its attenuation ([synthesizer.md](synthesizer.md) §5.4) becomes the escape parser's and every cursor's. The engine's volumes are below 65536 |
+| Character | Copied only. A later stage reads it (its spec will say how) |
+
+The voice is compared with the synthesizer's output-filter voice, sign-extended from 16 bits. If they differ, the output-filter voice becomes the engine's voice, cut to 16 bits, and if that is 0 to 9, it becomes the escape parser's and every cursor's voice.
+
+The commands that change an attribute (section 4) set both the engine's attribute and the thread's copy, so the thread doesn't apply them again. An attribute differs only after the engine's interface changes it: at the start, where the copies are the constructed values and the engine's are the voice's or the application's, and when the application changes one while the text is spoken. Such a change reaches the stages at the next step: each stage applies it to the nodes it hasn't passed yet.
+
+### 8.4 The hand-over
+
+When a step reports a hand-over, the thread appends the buffer's samples to the engine's queue, behind the events the commands queued during the step, and empties the buffer. The destination therefore gets each event at the position where the last hand-over before it ended ([synthesizer.md](synthesizer.md) §5.3).
+
+The thread waits while the queue holds 10 buffers or more, and tells the engine's window when to start playing; the engine's spec will say how. Neither changes what is queued.
+
+### 8.5 The end
+
+The thread ends when it isn't busy, the current text is all fed, the scheduler is out of input, the input ring is drained and no text is queued: after a step reported idle, no input came. It queues an end mark for the engine's window, tells the window, and drops its pipeline. The next text starts a new thread with a new pipeline, so the synthesizer's noise and filters start afresh.
+
+## 9. What the recorded runs don't reach
 
 - Freeing a cursor's start going back (section 2.3 step 1).
 - The reset requests: `x` at the output stage, bookmarks and words with flag bit 5. The escape parser's own reset command, and `x`, make the original drop the rest of the text without reporting it done, so a recorded run never ends. A reset during a text therefore isn't checked; the reset at a thread's start is.
 - The command `n` (section 4).
 - The free-node limits (section 6 steps 5 and 7): at least 477 nodes were free in every step. Texts of 500 words without punctuation, 200-letter words, long numbers and long stretches with the synthesizer held leave at least 354 free, because the output stage keeps up with the synthesizer.
-- The ring without room after a wait (section 6 step 3): the parameter generator waited 22 times, and the next step always found room.
+- The ring without room after a wait (section 6 step 3): the parameter generator waited 38 times, and the next step always found room.
 - An idle step with samples in the buffer (section 6 step 6): the buffer was always empty when the scheduler was out of input.
 - The output stage's run at the start of a step (section 6 step 2) never changes anything: its window only grows in a parameter generator's step, which ends with a run of the output stage, and the markers only grow in the synthesizer's loop of that step.
+- The constructed gain and sample rate (section 8.1): the start always replaces them, because the engine's gain is 1 to 3 and its sample rate 11025 or 8000 Hz.
+- A voice of 10 or more at the thread (section 8.3): the engine's voice is always 0 to 9.
+- The queue's limit, the pause and the reset (sections 8.2 and 8.4) are the engine's: its spec will check them.

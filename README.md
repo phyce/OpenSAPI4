@@ -122,7 +122,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `whistler/effects` | Whisper, the post-filter, the reverb, `\Chr=` and `\Rst\` switching |
 | `truvoice/datapack` | Reads and checks the TruVoice data pack |
 | `truvoice/synthesizer` | TruVoice's formant synthesizer: parameter frames to coefficient blocks to samples, its frame ring, steps and audio buffer |
-| `truvoice/pipeline` | TruVoice's pipeline: the nodes its stages pass on, the stages' cursors, the text's control commands, the output stage and the scheduler |
+| `truvoice/pipeline` | TruVoice's pipeline: the nodes its stages pass on, the stages' cursors, the text's control commands, the output stage, the scheduler and the speaking thread's start, attributes and hand-overs |
 
 ## Building releases
 

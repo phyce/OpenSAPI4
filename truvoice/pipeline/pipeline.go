@@ -50,16 +50,18 @@ type Pipeline struct {
 }
 
 // Engine is the engine the pipeline speaks for (nil when it converts text to phonemes): the attributes its
-// API sets and reads, the queue that carries the audio and the events to the destination in order, and the
-// messages the pipeline posts to the engine's window.
+// API sets and reads, its sample rate and output gain, the queue that carries the audio and the events to the
+// destination in order, and the messages the pipeline posts to the engine's window.
 type Engine struct {
-	Pitch     uint16
-	Speed     uint32
-	Volume    uint32
-	Character uint32
-	Voice     int32
-	Queue     []Item
-	Messages  []Message
+	Pitch      uint16
+	Speed      uint32
+	Volume     uint32
+	Character  uint32
+	Voice      int32
+	SampleRate int
+	Gain       uint32
+	Queue      []Item
+	Messages   []Message
 }
 
 // An Item is an event, or a buffer of audio, queued for the destination.
@@ -103,9 +105,22 @@ type Message struct {
 	Text      *Text
 }
 
-// New returns a pipeline whose nodes are all zero, as on a new speaking thread's stack.
+// The attributes, gain and sample rate a new pipeline starts with (pipeline.md §8.1).
+const (
+	initialPitch      = 85
+	initialSpeed      = 150
+	initialVolume     = 0xffff
+	initialGain       = 1
+	initialSampleRate = 8000
+)
+
+// New returns a pipeline as the speaking thread constructs it on its stack: its nodes all zero, its attributes
+// pitch 85, speed 150, full volume, normal character and voice 0, gain 1, rendering at 8000 Hz.
 func New(tables *datapack.Pipeline, synthesizer *synthesizer.Synthesizer, stages Stages, engine *Engine) *Pipeline {
-	pipeline := &Pipeline{Synthesizer: synthesizer, Stages: stages, Engine: engine, tables: tables}
+	pipeline := &Pipeline{Synthesizer: synthesizer, Stages: stages, Engine: engine, tables: tables,
+		Pitch: initialPitch, Speed: initialSpeed, Volume: initialVolume, SampleRate: initialSampleRate}
+	synthesizer.OutputVoice = 0
+	synthesizer.Gain = initialGain
 	for index := range pipeline.nodes {
 		pipeline.nodes[index].index = index
 	}
