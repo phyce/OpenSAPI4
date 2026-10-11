@@ -15,7 +15,7 @@ The block is the boundary between them (section 2). Section 5 is how the engine 
 - The two branches are mixed, smoothed and passed through a one-tap output filter that depends on the voice, then multiplied by the gain (1 to 3) and saturated.
 - The renderer's state (filter memories, the noise generator, the pitch period clock) runs on from frame to frame and from text to text; only a reset clears it (section 3.1).
 - The converter scales the frame's formants and bandwidths by the voice, computes each resonator's coefficients from tables, the two pitch periods and pulse amplitudes from the pitch with random jitter and shimmer, and the parallel branch's gains from the formant levels. Its state (the jitter generator, a count of silent frames) also runs on until a reset.
-- Each step renders the block converted last, then converts the next frame, once the parameter generator has written enough frames past it. The samples collect in a buffer that is handed over every 55 frames or so, or sooner when a word or bookmark event comes up (section 5).
+- Each step renders the block converted last, then converts the next frame, once the parameter generator has written enough frames past it. The samples collect in a buffer that is handed over each time the frame the parameter generator marks for a phoneme or a pause comes up, and at the latest every 55 frames or so (section 5).
 
 **Exactness.** With the arithmetic of section 1, the synthesizer is bit-identical to the original. This was checked against the original engine on 83 recorded runs, covering the ten voices at both rates, 16- and 8-bit output, texts spoken one after another in one session, pitch and speed extremes, whisper and monotone, voice changes, tones and generated segments, gains 2 and 3 and muted output:
 - the converter and the renderer on every frame: 39,317 frames, blocks and 3.8 million samples;
@@ -302,7 +302,7 @@ Each time the engine's scheduler runs the synthesizer, the synthesizer runs a lo
 
 The **buffer** collects the rendered samples, 2 bytes each. When the loop has noted a hand-over, the engine hands the whole buffer to the audio queue and empties it. Otherwise the buffer keeps its samples for the next loop. Without markers a chunk is therefore 55 frames (12,100 bytes) at 11025 Hz and 76 frames (12,160 bytes) at 8000 Hz. The buffer the engine allocates holds 13,500 bytes.
 
-The **output stage** (specified with the pipeline) frees the pipeline's records up to the audio, uses up one passed marker per phoneme record, and runs the commands it reaches, which queue events such as words and bookmarks. It queues an event straight away, while the buffer still holds the samples rendered before it. So an event's position in the audio is where the last hand-over before it ended: every event falls on a hand-over boundary, never inside a chunk.
+The parameter generator marks one frame for each phoneme and pause. The **output stage** ([pipeline.md](pipeline.md)) frees the pipeline's nodes in step with the audio, a phoneme or pause node for each passed marker. The events are queued before that: the parameter generator's stage queues a word or bookmark event as soon as it reaches the command ([pipeline.md](pipeline.md) §4.1), while the buffer still holds samples rendered before it. So an event's position in the audio is where the last hand-over before it ended: every event falls on a hand-over boundary, never inside a chunk.
 
 ### 5.4 Volume, gain and the output format
 

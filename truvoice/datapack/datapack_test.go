@@ -34,14 +34,14 @@ func TestSynthesizer(t *testing.T) {
 	}
 }
 
-func writePack(t *testing.T, content []byte) *datapack.Pack {
+func writePack(t *testing.T, name string, content []byte) *datapack.Pack {
 	t.Helper()
 	folder := t.TempDir()
-	manifest := `{"format":"opensapi4-truvoice","formatVersion":1,"files":{"synthesizer.json":""}}`
+	manifest := `{"format":"opensapi4-truvoice","formatVersion":1,"files":{"` + name + `":""}}`
 	if err := os.WriteFile(filepath.Join(folder, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(folder, "synthesizer.json"), content, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(folder, name), content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pack, err := datapack.Open(folder)
@@ -58,7 +58,7 @@ func TestDamagedSynthesizer(t *testing.T) {
 		{`{` + halfCosine + `,"sourceShapes":[` + strings.Repeat("0,", 31) + `40000]}`, "sourceShapes[31] is 40000"},
 	}
 	for _, test := range tests {
-		if _, err := writePack(t, []byte(test.content)).LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), test.message) {
+		if _, err := writePack(t, "synthesizer.json", []byte(test.content)).LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), test.message) {
 			t.Errorf("%s: %v, expected %q", test.content, err, test.message)
 		}
 	}
@@ -97,7 +97,59 @@ func TestChangedSynthesizer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := writePack(t, changed).LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), test.message) {
+		if _, err := writePack(t, "synthesizer.json", changed).LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
+		}
+	}
+}
+
+func TestPipeline(t *testing.T) {
+	pipeline, err := conformance.Pack(t).LoadPipeline()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pitches [datapack.VoiceCount]int32
+	for index, voice := range pipeline.Voices {
+		pitches[index] = voice.Pitch
+	}
+	if expected := [datapack.VoiceCount]int32{85, 50, 125, 73, 129, 89, 117, 203, 208, 152}; pitches != expected {
+		t.Errorf("pitches %v", pitches)
+	}
+	if pipeline.Voices[5] != (datapack.VoiceDefaults{Pitch: 89, Rate: 9, Speed: 120}) {
+		t.Errorf("voice 5 %+v", pipeline.Voices[5])
+	}
+	if pipeline.InitialFrame[3] != 60 || pipeline.InitialFrame[9] != 100 || pipeline.GeneratedFrame[0] != 60 || pipeline.GeneratedFrame[10] != 113 {
+		t.Errorf("frames %v %v", pipeline.InitialFrame, pipeline.GeneratedFrame)
+	}
+}
+
+func TestChangedPipeline(t *testing.T) {
+	original, err := os.ReadFile(conformance.Path(t, "datapack", "truvoice", "pipeline.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		change  func(map[string]any)
+		message string
+	}{
+		{func(content map[string]any) { content["voices"] = content["voices"].([]any)[:9] }, "voices has 9 entries"},
+		{func(content map[string]any) { delete(content["voices"].([]any)[4].(map[string]any), "rate") }, "voices[4].rate is missing"},
+		{func(content map[string]any) { content["voices"].([]any)[1].(map[string]any)["pitch"] = 401 }, "voices[1].pitch is 401"},
+		{func(content map[string]any) { content["voices"].([]any)[7].(map[string]any)["speed"] = 49 }, "voices[7].speed is 49"},
+		{func(content map[string]any) { content["initialFrame"] = []any{1} }, "initialFrame has 1 values"},
+		{func(content map[string]any) { content["generatedFrame"].([]any)[21] = 256 }, "generatedFrame[21] is 256"},
+	}
+	for _, test := range tests {
+		var content map[string]any
+		if err := json.Unmarshal(original, &content); err != nil {
+			t.Fatal(err)
+		}
+		test.change(content)
+		changed, err := json.Marshal(content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writePack(t, "pipeline.json", changed).LoadPipeline(); err == nil || !strings.Contains(err.Error(), test.message) {
 			t.Errorf("%v, expected %q", err, test.message)
 		}
 	}

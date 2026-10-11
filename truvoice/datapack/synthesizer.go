@@ -263,7 +263,7 @@ func copyValue(target *int32, value *int64, name string, minimum, maximum int64)
 	return nil
 }
 
-func copyValues[T int16 | int32](target []T, values []int64, name string, minimum, maximum int64) error {
+func copyValues[T byte | int16 | int32](target []T, values []int64, name string, minimum, maximum int64) error {
 	if len(values) != len(target) {
 		return fmt.Errorf("%s has %d values, expected %d", name, len(values), len(target))
 	}
