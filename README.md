@@ -29,6 +29,20 @@ The engine is checked against the original on more than 40,000 cases, and it's i
 
 The telephone voices speak at 8000 Hz; the rest at 22050 Hz. `\Chr="Whisper"\` in a text makes any of them whisper, Sam included.
 
+## Download
+
+Get the archive for your system from the [releases](https://github.com/phyce/OpenSAPI4/releases), unpack it, and run the programs from its folder. They need nothing installed; keep the `voices` folder next to them.
+
+| System | Archive |
+|---|---|
+| Windows | `windows-x64`, `windows-x86` (32-bit), `windows-arm64` |
+| Linux | `linux-x64`, `linux-arm64`, `linux-armv7` (such as a Raspberry Pi with a 32-bit system) |
+| macOS | `macos-arm64` (Apple silicon), `macos-x64` (Intel) |
+
+The programs aren't signed. On macOS, allow them once with `xattr -dr com.apple.quarantine <the unpacked folder>`. On Windows, SmartScreen may ask the first time.
+
+`opensapi4-voices` has only the voice data, for programs that use the Go package.
+
 ## Command line
 
 ```sh
@@ -89,6 +103,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `docs/command-line.md` | The command-line tools, the stream and the HTTP server |
 | `docs/whistler/` | How the Microsoft engine behaves, and the data pack format |
 | `cmd/opensapi4`, `cmd/sapi4out`, `cmd/sapi4limits` | The command-line tools |
+| `scripts/release` | Builds the release archives |
 | `opensapi4.go` | Package `opensapi4`: the voices of a voices folder, and requests |
 | `whistler` | The engine: speaks texts with one voice, joining the stages below |
 | `whistler/datapack` | Reads and checks the data pack |
@@ -102,6 +117,14 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `whistler/units` | Turns unit records into frames, controls and settings |
 | `whistler/synthesis` | Turns frames into samples: 16- or 8-bit, at the voice's rate or resampled |
 | `whistler/effects` | Whisper, the post-filter, the reverb, `\Chr=` and `\Rst\` switching |
+
+## Building releases
+
+```sh
+go run ./scripts/release -version v0.1.0 -voices <voices folder>
+```
+
+Builds the programs for every system in the table above, packs each with the voice data, and writes the archives and their `SHA256SUMS` to `dist/`. The voice data isn't in this repository, so releases are built where it is. The script checks the data against its manifest, speaks with every voice, and runs the programs of the archive for the computer it runs on. The same commit and data always give the same archives.
 
 ## Tests
 
