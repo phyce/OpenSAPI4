@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -64,10 +65,24 @@ type goldenRecord struct {
 	Value       uint32          `json:"value"`
 	Stage       string          `json:"stage"`
 	Nodes       []goldenNode    `json:"nodes"`
+	Markers     int32           `json:"markers"`
+	Position    int32           `json:"position"`
+	Tracks      string          `json:"tracks"`
+	Marker      bool            `json:"marker"`
+	Tone        bool            `json:"tone"`
+	Before      *goldenCursors  `json:"before"`
+
+	Settings       json.RawMessage `json:"settings"`
+	SettingsLevels string          `json:"settingsLevels"`
+	Levels         string          `json:"levels"`
+	Cursors        [][]int64       `json:"cursors"`
+	Ring           *goldenCursors  `json:"ring"`
 }
 
 type goldenCase struct {
 	Name    string         `json:"name"`
+	Format  [2]int         `json:"format"`
+	Digest  string         `json:"digest"`
 	Records []goldenRecord `json:"records"`
 }
 
@@ -326,6 +341,14 @@ func (replay *replay) check(index, end, queued int) error {
 			if err != nil {
 				return err
 			}
+			if freed := replay.freedAfter(nested, end, node.Index); freed != nil {
+				data, err := hex.DecodeString(node.Data)
+				if err != nil || len(data) != 24 {
+					return fmt.Errorf("node data %q", node.Data)
+				}
+				binary.LittleEndian.PutUint32(data, freed.Flags)
+				node.Data = hex.EncodeToString(data)
+			}
 			if err := replay.compareNode(node); err != nil {
 				return fmt.Errorf("record %d: %v", nested, err)
 			}
@@ -353,6 +376,17 @@ func (replay *replay) check(index, end, queued int) error {
 	return nil
 }
 
+// freedAfter returns the record of the node's freeing after index and before end, if any: the output stage
+// frees the nodes of the commands it runs.
+func (replay *replay) freedAfter(index, end, node int) *goldenRecord {
+	for nested := index + 1; nested < end; nested++ {
+		if record := &replay.records[nested]; record.Kind == "free" && nodeIndex(*record) == node {
+			return record
+		}
+	}
+	return nil
+}
+
 func (replay *replay) checkList(nodes []goldenNode, stage string) error {
 	if len(nodes) == 0 {
 		return nil
@@ -368,45 +402,54 @@ func (replay *replay) checkList(nodes []goldenNode, stage string) error {
 }
 
 func (replay *replay) run() error {
-	pipeline := replay.pipeline
 	for index := 0; index < len(replay.records); index++ {
-		record := replay.records[index]
-		replay.counts[record.Kind]++
-		var err error
-		switch record.Kind {
-		case "reset-nodes":
-			pipeline.ResetNodes()
-			if pipeline.First().Next != pipeline.Last() || pipeline.Free != NodeCount {
-				err = fmt.Errorf("the list isn't empty after a reset")
-			}
-		case "new":
-			err = replay.replayNew(record)
-		case "free":
-			err = replay.replayFree(record)
-		case "begin":
-			index, err = replay.replayBegin(index)
-		case "finish":
-			index, err = replay.replayFinish(index)
-		case "control":
-			index, err = replay.replayControl(index)
-		case "input":
-			last := pipeline.Last()
-			for position := len(record.Nodes) - 1; position >= 0 && err == nil; position-- {
-				last = last.Previous
-				if last.Index() != record.Nodes[position].Index {
-					err = fmt.Errorf("input node %d is %d, expected %d", position, last.Index(), record.Nodes[position].Index)
-				}
-			}
-		case "step":
-			if pipeline.Free != record.Free {
-				err = fmt.Errorf("%d free nodes after the %s step, expected %d", pipeline.Free, record.Stage, record.Free)
-			}
-		}
+		end, err := replay.replayRecord(index)
 		if err != nil {
-			return fmt.Errorf("record %d (%s): %v", index, record.Kind, err)
+			return fmt.Errorf("record %d (%s): %v", index, replay.records[index].Kind, err)
 		}
+		index = end
 	}
 	return nil
+}
+
+// replayRecord replays the call whose entry record is at index and returns the index of its exit record.
+func (replay *replay) replayRecord(index int) (int, error) {
+	pipeline := replay.pipeline
+	record := replay.records[index]
+	replay.counts[record.Kind]++
+	var err error
+	switch record.Kind {
+	case "reset-nodes":
+		pipeline.ResetNodes()
+		if pipeline.First().Next != pipeline.Last() || pipeline.Free != NodeCount {
+			err = fmt.Errorf("the list isn't empty after a reset")
+		}
+	case "new":
+		err = replay.replayNew(record)
+	case "free":
+		err = replay.replayFree(record)
+	case "begin":
+		index, err = replay.replayBegin(index)
+	case "finish":
+		index, err = replay.replayFinish(index)
+	case "control":
+		index, err = replay.replayControl(index)
+	case "retire":
+		index, err = replay.replayRetire(index)
+	case "input":
+		last := pipeline.Last()
+		for position := len(record.Nodes) - 1; position >= 0 && err == nil; position-- {
+			last = last.Previous
+			if last.Index() != record.Nodes[position].Index {
+				err = fmt.Errorf("input node %d is %d, expected %d", position, last.Index(), record.Nodes[position].Index)
+			}
+		}
+	case "step":
+		if pipeline.Free != record.Free {
+			err = fmt.Errorf("%d free nodes after the %s step, expected %d", pipeline.Free, record.Stage, record.Free)
+		}
+	}
+	return index, err
 }
 
 func (replay *replay) replayNew(record goldenRecord) error {
@@ -520,6 +563,34 @@ func (replay *replay) replayFinish(index int) (int, error) {
 	return end, replay.check(index, end, queued)
 }
 
+func (replay *replay) replayRetire(index int) (int, error) {
+	pipeline := replay.pipeline
+	record := replay.records[index]
+	end, err := replay.exit(index, "retired")
+	if err != nil {
+		return index, err
+	}
+	cursor := &pipeline.Cursors[Output]
+	replay.setCursor(cursor, record.Fields)
+	if err := replay.setTypes(cursor, record.Types); err != nil {
+		return end, err
+	}
+	pipeline.Synthesizer.MarkersPassed = record.Markers
+	if err := replay.prepare(index, end); err != nil {
+		return end, err
+	}
+	queued := len(pipeline.Engine.Queue)
+	result := pipeline.Retire()
+	exit := replay.records[end]
+	if int64(result) != *exit.Result || pipeline.Synthesizer.MarkersPassed != exit.Markers || pipeline.Current != nil {
+		return end, fmt.Errorf("Retire returned %d with %d markers left, expected %d and %d", result, pipeline.Synthesizer.MarkersPassed, *exit.Result, exit.Markers)
+	}
+	if actual := cursorFields(cursor); !slices.Equal(actual, exit.Fields) {
+		return end, fmt.Errorf("cursor %v, expected %v", actual, exit.Fields)
+	}
+	return end, replay.check(index, end, queued)
+}
+
 func (replay *replay) replayControl(index int) (int, error) {
 	pipeline := replay.pipeline
 	record := replay.records[index]
@@ -558,7 +629,7 @@ func TestFramework(t *testing.T) {
 	counts := map[string]int{}
 	failures := 0
 	for _, golden := range cases {
-		replay := &replay{pipeline: New(tables, new(synthesizer.Synthesizer), &Engine{}), texts: map[int]*Text{},
+		replay := &replay{pipeline: New(tables, new(synthesizer.Synthesizer), nil, &Engine{}), texts: map[int]*Text{},
 			records: golden.Records, counts: counts}
 		if err := replay.run(); err != nil {
 			failures++
@@ -570,6 +641,7 @@ func TestFramework(t *testing.T) {
 	if failures > 0 {
 		t.Errorf("%d of %d cases differ", failures, len(cases))
 	}
-	t.Logf("%d cases: %d new, %d free, %d begin, %d finish, %d control (outside Begin), %d steps", len(cases),
-		counts["new"], counts["free"], counts["begin"], counts["finish"], counts["control"], counts["step"])
+	t.Logf("%d cases: %d new, %d free, %d begin, %d finish, %d control, %d retire (outside other calls), %d steps",
+		len(cases), counts["new"], counts["free"], counts["begin"], counts["finish"], counts["control"], counts["retire"],
+		counts["step"])
 }

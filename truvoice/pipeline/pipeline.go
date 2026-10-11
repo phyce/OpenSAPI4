@@ -1,5 +1,5 @@
 // Package pipeline is the TruVoice engine's speaking pipeline (docs/truvoice/pipeline.md): the nodes the
-// stages pass on, the stages' cursors, the control commands and the scheduler.
+// stages pass on, the stages' cursors, the control commands, the output stage and the scheduler.
 package pipeline
 
 import (
@@ -14,17 +14,31 @@ type Pipeline struct {
 	Current *Cursor
 	Cursors [StageCount]Cursor
 
-	// Settings are the escape parser's: a reset gives them to every cursor.
-	Settings Settings
+	// Settings are the escape parser's current settings, SettingsSpeed its speed in words a minute and
+	// SettingsLevels its track levels. A reset gives the settings to every cursor and the track levels to the
+	// parameter generator.
+	Settings       Settings
+	SettingsSpeed  int32
+	SettingsLevels [datapack.TrackCount]byte
+
+	// The scheduler's state: the stages that have work, whether the escape parser's ring has run out, whether
+	// the parameter generator waits for room in the frame ring, and what the output stage reported last.
+	Stages         Stages
+	HasWork        [Output]bool
+	OutOfInput     bool
+	WaitingForRoom bool
+	Retired        int
 
 	// Pitch, Speed, Volume and Character are the attributes the speaking thread last applied, which the
 	// control commands also set. SavedRate is the rate index a filter command keeps, Levels the track levels.
-	Pitch     uint32
-	Speed     uint32
-	Volume    uint32
-	Character uint32
-	SavedRate int32
-	Levels    [datapack.TrackCount]byte
+	// SampleRate is the rate the synthesizer renders at.
+	Pitch      uint32
+	Speed      uint32
+	Volume     uint32
+	Character  uint32
+	SavedRate  int32
+	Levels     [datapack.TrackCount]byte
+	SampleRate int
 
 	// ResetRequested makes the next step reset the stages; ResetValue is what the request carries.
 	ResetRequested bool
@@ -90,8 +104,8 @@ type Message struct {
 }
 
 // New returns a pipeline whose nodes are all zero, as on a new speaking thread's stack.
-func New(tables *datapack.Pipeline, synthesizer *synthesizer.Synthesizer, engine *Engine) *Pipeline {
-	pipeline := &Pipeline{Synthesizer: synthesizer, Engine: engine, tables: tables}
+func New(tables *datapack.Pipeline, synthesizer *synthesizer.Synthesizer, stages Stages, engine *Engine) *Pipeline {
+	pipeline := &Pipeline{Synthesizer: synthesizer, Stages: stages, Engine: engine, tables: tables}
 	for index := range pipeline.nodes {
 		pipeline.nodes[index].index = index
 	}

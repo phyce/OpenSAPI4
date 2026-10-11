@@ -288,7 +288,7 @@ The first step after a reset only converts, so the block of section 4.2's reset 
 
 ### 5.3 The loop and the buffer
 
-Each time the engine's scheduler runs the synthesizer, the synthesizer runs a loop of steps:
+Each time the engine's scheduler runs the synthesizer ([pipeline.md](pipeline.md) §6), the synthesizer runs a loop of steps:
 
 1. If `done` is set, go to 3.
 2. Repeat:
@@ -302,7 +302,7 @@ Each time the engine's scheduler runs the synthesizer, the synthesizer runs a lo
 
 The **buffer** collects the rendered samples, 2 bytes each. When the loop has noted a hand-over, the engine hands the whole buffer to the audio queue and empties it. Otherwise the buffer keeps its samples for the next loop. Without markers a chunk is therefore 55 frames (12,100 bytes) at 11025 Hz and 76 frames (12,160 bytes) at 8000 Hz. The buffer the engine allocates holds 13,500 bytes.
 
-The parameter generator marks one frame for each phoneme and pause. The **output stage** ([pipeline.md](pipeline.md)) frees the pipeline's nodes in step with the audio, a phoneme or pause node for each passed marker. The events are queued before that: the parameter generator's stage queues a word or bookmark event as soon as it reaches the command ([pipeline.md](pipeline.md) §4.1), while the buffer still holds samples rendered before it. So an event's position in the audio is where the last hand-over before it ended: every event falls on a hand-over boundary, never inside a chunk.
+The parameter generator marks one frame for each phoneme and pause. The **output stage** ([pipeline.md](pipeline.md) §5) frees the pipeline's nodes in step with the audio, a phoneme or pause node for each passed marker. The events are queued before that: the parameter generator's stage queues a word or bookmark event as soon as it reaches the command ([pipeline.md](pipeline.md) §4.1), while the buffer still holds samples rendered before it. So an event's position in the audio is where the last hand-over before it ended: every event falls on a hand-over boundary, never inside a chunk.
 
 ### 5.4 Volume, gain and the output format
 
