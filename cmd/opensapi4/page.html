@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenSAPI4</title>
+<style>
+	body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #222; background: #fafafa; }
+	h1 { font-size: 1.4rem; }
+	label { display: block; margin-top: 0.8rem; font-weight: 600; }
+	select, input, textarea, button { font: inherit; }
+	textarea { width: 100%; box-sizing: border-box; min-height: 6rem; }
+	.row { display: flex; gap: 1rem; }
+	.row > div { flex: 1; }
+	.row input, .row select { width: 100%; box-sizing: border-box; }
+	button { margin-top: 1rem; padding: 0.4rem 1.2rem; }
+	audio { display: block; width: 100%; margin-top: 1rem; }
+	#error { color: #b00020; }
+	small { color: #666; }
+</style>
+</head>
+<body>
+<h1>OpenSAPI4</h1>
+<form id="form">
+	<label for="voice">Voice</label>
+	<select id="voice"></select>
+	<label for="text">Text</label>
+	<textarea id="text">Hello, I am Microsoft Sam.</textarea>
+	<small>Tags work too, such as \Pau=500\ for a pause or \Pit=200\ for the pitch.</small>
+	<div class="row">
+		<div><label for="pitch">Pitch (Hz)</label><input id="pitch" type="number" min="0"></div>
+		<div><label for="speed">Speed (words/minute)</label><input id="speed" type="number" min="0"></div>
+	</div>
+	<button type="submit">Speak</button>
+	<p id="error"></p>
+	<audio id="audio" controls></audio>
+	<p><a id="download" download="speech.wav" hidden>Download the WAV file</a></p>
+</form>
+<script>
+const voiceSelect = document.getElementById("voice");
+const pitchInput = document.getElementById("pitch");
+const speedInput = document.getElementById("speed");
+const errorText = document.getElementById("error");
+let voices = [];
+
+function showRanges() {
+	const voice = voices.find(item => item.name === voiceSelect.value);
+	if (!voice) return;
+	pitchInput.placeholder = `${voice.pitch.default} (${voice.pitch.minimum} to ${voice.pitch.maximum})`;
+	speedInput.placeholder = `${voice.speed.default} (${voice.speed.minimum} to ${voice.speed.maximum})`;
+}
+
+fetch("voices").then(response => response.json()).then(list => {
+	voices = list;
+	for (const voice of list) voiceSelect.add(new Option(voice.name, voice.name, voice.name === "Sam", voice.name === "Sam"));
+	showRanges();
+});
+voiceSelect.addEventListener("change", showRanges);
+
+document.getElementById("form").addEventListener("submit", async event => {
+	event.preventDefault();
+	errorText.textContent = "";
+	const request = {voice: voiceSelect.value, text: document.getElementById("text").value};
+	if (pitchInput.value !== "") request.pitch = Number(pitchInput.value);
+	if (speedInput.value !== "") request.speed = Number(speedInput.value);
+	const response = await fetch("speak", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(request)});
+	if (!response.ok) {
+		errorText.textContent = (await response.json()).error;
+		return;
+	}
+	const address = URL.createObjectURL(await response.blob());
+	const audio = document.getElementById("audio");
+	audio.src = address;
+	audio.play();
+	const download = document.getElementById("download");
+	download.href = address;
+	download.hidden = false;
+});
+</script>
+</body>
+</html>

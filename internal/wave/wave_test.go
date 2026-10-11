@@ -52,3 +52,26 @@ func TestWriterWithoutAudio(t *testing.T) {
 		t.Errorf("wrote %x, %v; expected nothing", written, err)
 	}
 }
+
+func TestWriterStarted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.wav")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := NewWriter(file, whistler.Format{SampleRate: 8000, Bits: 8})
+	if err := writer.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expected := Header(whistler.Format{SampleRate: 8000, Bits: 8}, 0); !bytes.Equal(written, expected) {
+		t.Errorf("wrote %x, expected %x", written, expected)
+	}
+}

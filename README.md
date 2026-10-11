@@ -13,7 +13,7 @@ Running them today is hard. You need 25-year-old 32-bit installers on Windows, o
 | | |
 |---|---|
 | Microsoft voices | Done: all 19 voices, every tag, event and setting |
-| Command-line tools, HTTP and stream modes | In progress |
+| Command-line tools, HTTP and stream modes | Done |
 | Releases for Windows, Linux and macOS | In progress |
 | L&H TruVoice voices | Planned |
 
@@ -29,11 +29,41 @@ The engine is checked against the original on more than 40,000 cases, and it's i
 
 The telephone voices speak at 8000 Hz; the rest at 22050 Hz. `\Chr="Whisper"\` in a text makes any of them whisper, Sam included.
 
+## Command line
+
+```sh
+opensapi4 speak -voice Sam -output hello.wav "Hello, I am Microsoft Sam."
+opensapi4 voices
+opensapi4 serve
+```
+
+- `opensapi4 speak` speaks a text into a WAV file, with flags or a JSON request.
+- `opensapi4 stream` speaks JSON requests from standard input, one a line, and sends the audio and events (words, bookmarks, mouth shapes) as JSON messages on standard output.
+- `opensapi4 serve` speaks over HTTP: `GET /voices`, `GET` or `POST /speak`, and a page to try the voices at `http://127.0.0.1:5040`.
+- `sapi4out` and `sapi4limits` are drop-in replacements for the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4): the same arguments, the same output, the same WAV files.
+
+Everything is in [docs/command-line.md](docs/command-line.md).
+
 ## The voice data
 
-The engine needs the voices' data: the recorded speech, the pronunciation rules and the dictionaries. It reads them from a data pack converted from the original voice files ([docs/whistler/datapack.md](docs/whistler/datapack.md)). The data pack isn't in this repository and is never compiled into the program; it will come with the release downloads as a folder of its own.
+The engine needs the voices' data: the recorded speech, the pronunciation rules and the dictionaries. It reads them from a data pack converted from the original voice files ([docs/whistler/datapack.md](docs/whistler/datapack.md)). The data pack isn't in this repository and is never compiled into the program; it comes with the release downloads as the `voices` folder.
 
 ## Using it from Go
+
+```go
+voices, err := opensapi4.Open("voices")
+if err != nil {
+	return err
+}
+speech, err := voices.NewSpeech(opensapi4.Request{Voice: "Sam", Text: `Hello, \Pit=150\ world.`})
+if err != nil {
+	return err
+}
+// sink implements whistler.Sink: it gets the PCM (speech.Format()) and the events in order.
+err = speech.Speak(sink)
+```
+
+Package `github.com/phyce/OpenSAPI4` lists the voices and speaks requests as the command line takes them. For everything else (the user lexicon, pausing, attribute events, the format negotiation), use the engine directly:
 
 ```go
 pack, err := datapack.Open("voices/microsoft")
@@ -49,17 +79,17 @@ engine, err := data.NewEngine(mode)
 if err != nil {
 	return err
 }
-// sink implements whistler.Sink: it gets the PCM (engine.Format()) and the events in order.
 err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 ```
-
-Packages: `github.com/phyce/OpenSAPI4/whistler` and `github.com/phyce/OpenSAPI4/whistler/datapack`.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
+| `docs/command-line.md` | The command-line tools, the stream and the HTTP server |
 | `docs/whistler/` | How the Microsoft engine behaves, and the data pack format |
+| `cmd/opensapi4`, `cmd/sapi4out`, `cmd/sapi4limits` | The command-line tools |
+| `opensapi4.go` | Package `opensapi4`: the voices of a voices folder, and requests |
 | `whistler` | The engine: speaks texts with one voice, joining the stages below |
 | `whistler/datapack` | Reads and checks the data pack |
 | `whistler/text` | The preprocessing: character sets, tags and the control table, line breaks, special tokens, sentences and segments |

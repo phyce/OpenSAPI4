@@ -44,15 +44,24 @@ func NewWriter(output io.WriteSeeker, format whistler.Format) *Writer {
 	return &Writer{output: output, format: format}
 }
 
+// Start writes the header now, so that a text with no audio still leaves a WAV file.
+func (writer *Writer) Start() error {
+	if writer.started {
+		return nil
+	}
+	if _, err := writer.output.Write(Header(writer.format, 0)); err != nil {
+		return err
+	}
+	writer.started = true
+	return nil
+}
+
 func (writer *Writer) Audio(data []byte) (int, error) {
 	if len(data) == 0 {
 		return 0, nil
 	}
-	if !writer.started {
-		if _, err := writer.output.Write(Header(writer.format, 0)); err != nil {
-			return 0, err
-		}
-		writer.started = true
+	if err := writer.Start(); err != nil {
+		return 0, err
 	}
 	written, err := writer.output.Write(data)
 	writer.size += uint32(written)
