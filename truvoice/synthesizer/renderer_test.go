@@ -15,6 +15,9 @@ type goldenRecord struct {
 	Gain    uint16 `json:"gain"`
 	Block   string `json:"block"`
 	Samples string `json:"samples"`
+	Tracks  string `json:"tracks"`
+	Tone    bool   `json:"tone"`
+	Mute    byte   `json:"mute"`
 }
 
 type goldenCase struct {

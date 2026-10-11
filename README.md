@@ -121,7 +121,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `whistler/synthesis` | Turns frames into samples: 16- or 8-bit, at the voice's rate or resampled |
 | `whistler/effects` | Whisper, the post-filter, the reverb, `\Chr=` and `\Rst\` switching |
 | `truvoice/datapack` | Reads and checks the TruVoice data pack |
-| `truvoice/synthesizer` | TruVoice's formant synthesizer: coefficient blocks to samples |
+| `truvoice/synthesizer` | TruVoice's formant synthesizer: parameter frames to coefficient blocks to samples |
 
 ## Building releases
 

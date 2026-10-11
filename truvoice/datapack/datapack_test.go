@@ -1,6 +1,7 @@
 package datapack_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,33 +19,86 @@ func TestSynthesizer(t *testing.T) {
 	if synthesizer.HalfCosine[0] != 32760 || synthesizer.HalfCosine[128] != 0 || synthesizer.HalfCosine[255] != -32760 {
 		t.Errorf("half-cosine %d %d %d", synthesizer.HalfCosine[0], synthesizer.HalfCosine[128], synthesizer.HalfCosine[255])
 	}
-	if expected := [datapack.VoiceCount]int32{0, 2, -80, -22, 11, -42, 26, -85, -85, -36}; synthesizer.OutputFilters != expected {
-		t.Errorf("output filters %v", synthesizer.OutputFilters)
+	var filters [datapack.VoiceCount]int32
+	for index, voice := range synthesizer.Voices {
+		filters[index] = voice.OutputFilter
 	}
+	if expected := [datapack.VoiceCount]int32{0, 2, -80, -22, 11, -42, 26, -85, -85, -36}; filters != expected {
+		t.Errorf("output filters %v", filters)
+	}
+	if synthesizer.Decibels[200] != 8192 || synthesizer.Voices[0].Formant5 != 3970 || synthesizer.Voices[9].SourceGain != 20000 {
+		t.Errorf("decibels[200] %d, formant5 %d, source gain %d", synthesizer.Decibels[200], synthesizer.Voices[0].Formant5, synthesizer.Voices[9].SourceGain)
+	}
+	if synthesizer.ForSampleRate(11025).SourceStage != [3]int16{11354, 0, 0} || synthesizer.ForSampleRate(8000).SourceStage != [3]int16{5000, 0, 0} {
+		t.Errorf("source stages %v %v", synthesizer.Standard.SourceStage, synthesizer.Telephone.SourceStage)
+	}
+}
+
+func writePack(t *testing.T, content []byte) *datapack.Pack {
+	t.Helper()
+	folder := t.TempDir()
+	manifest := `{"format":"opensapi4-truvoice","formatVersion":1,"files":{"synthesizer.json":""}}`
+	if err := os.WriteFile(filepath.Join(folder, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, "synthesizer.json"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pack, err := datapack.Open(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pack
 }
 
 func TestDamagedSynthesizer(t *testing.T) {
 	halfCosine := `"halfCosine":[` + strings.Repeat("0,", 255) + `0]`
 	tests := []struct{ content, message string }{
-		{`{"halfCosine":[1],"sourceShapes":[],"outputFilters":[]}`, "halfCosine has 1 values"},
-		{`{` + halfCosine + `,"sourceShapes":[` + strings.Repeat("0,", 31) + `40000],"outputFilters":[]}`, "sourceShapes[31] is 40000"},
+		{`{"halfCosine":[1],"sourceShapes":[]}`, "halfCosine has 1 values"},
+		{`{` + halfCosine + `,"sourceShapes":[` + strings.Repeat("0,", 31) + `40000]}`, "sourceShapes[31] is 40000"},
 	}
 	for _, test := range tests {
-		content, message := test.content, test.message
-		folder := t.TempDir()
-		manifest := `{"format":"opensapi4-truvoice","formatVersion":1,"files":{"synthesizer.json":""}}`
-		if err := os.WriteFile(filepath.Join(folder, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		if _, err := writePack(t, []byte(test.content)).LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%s: %v, expected %q", test.content, err, test.message)
+		}
+	}
+}
+
+func TestChangedSynthesizer(t *testing.T) {
+	original, err := os.ReadFile(conformance.Path(t, "datapack", "truvoice", "synthesizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		change  func(map[string]any)
+		message string
+	}{
+		{func(content map[string]any) { content["jitterDepths"].([]any)[3] = 32767 }, "allow a pitch period of 0"},
+		{func(content map[string]any) { content["voices"].([]any)[3].(map[string]any)["jitter"] = 16 }, "voices[3].jitter is 16"},
+		{func(content map[string]any) { delete(content["voices"].([]any)[2].(map[string]any), "sourceGain") }, "voices[2].sourceGain is missing"},
+		{func(content map[string]any) { content["voices"] = content["voices"].([]any)[:9] }, "voices has 9 entries"},
+		{func(content map[string]any) { delete(content["rates"].(map[string]any), "8000") }, "rates has 1 entries"},
+		{func(content map[string]any) {
+			rates := content["rates"].(map[string]any)
+			rates["8001"] = rates["8000"]
+			delete(rates, "8000")
+		}, "rates has no 8000"},
+		{func(content map[string]any) {
+			content["rates"].(map[string]any)["11025"].(map[string]any)["cosines"] = []any{1}
+		}, "rates.11025.cosines has 1 values"},
+	}
+	for _, test := range tests {
+		var content map[string]any
+		if err := json.Unmarshal(original, &content); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(folder, "synthesizer.json"), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		pack, err := datapack.Open(folder)
+		test.change(content)
+		changed, err := json.Marshal(content)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := pack.LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), message) {
-			t.Errorf("%s: %v, expected %q", content, err, message)
+		if _, err := writePack(t, changed).LoadSynthesizer(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
 		}
 	}
 }

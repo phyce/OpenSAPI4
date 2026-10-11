@@ -151,7 +151,7 @@ func (renderer *Renderer) Render(block *Block, outputVoice int, gain uint16, sam
 	f4B, f4C := int32(block[blockF4B]), int32(-block[blockF4C])
 	nasalPoleB, nasalPoleC := int32(block[blockNasalPoleB]), int32(-block[blockNasalPoleC])
 	sourceStageC := int32(-block[blockSourceStageC])
-	filter := renderer.tables.OutputFilters[outputVoice]
+	filter := renderer.tables.Voices[outputVoice].OutputFilter
 	for count := renderer.samplesPerFrame; ; {
 		if periods[0] == 0 && renderer.countdown < 0 {
 			renderer.periodState, renderer.halfCountdown, renderer.countdown = 0, 0, 0

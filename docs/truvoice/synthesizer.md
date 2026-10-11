@@ -2,10 +2,10 @@
 
 How L&H TruVoice (`tv_enua.dll`) turns its stream of parameter frames into samples. The synthesizer is a cascade/parallel formant synthesizer in the Klatt tradition, written entirely in 16- and 32-bit integer arithmetic. It works in two halves:
 
-- the **converter** turns each 10 ms frame of 22 parameter bytes into a **coefficient block** of 40 words (section 4, to come);
+- the **converter** turns each 10 ms frame of 22 parameter bytes into a **coefficient block** of 40 words (section 4);
 - the **renderer** turns a block into one frame of samples (section 3).
 
-The block is the boundary between them (section 2). This version of the spec covers the renderer.
+The block is the boundary between them (section 2). This version of the spec covers both; how the engine drives them, and what it does with the samples, is section 5 (to come).
 
 **In short.**
 - A frame is `rate / 100` samples: 110 at 11025 Hz, 80 at 8000 Hz. Both rates are synthesized directly; nothing is resampled.
@@ -14,8 +14,9 @@ The block is the boundary between them (section 2). This version of the spec cov
 - F1, F2, F3, the nasal zero and the cascade's output gain change only at the start of a pitch period. Everything else changes at the frame.
 - The two branches are mixed, smoothed and passed through a one-tap output filter that depends on the voice, then multiplied by the gain (1 to 3) and saturated.
 - The renderer's state (filter memories, the noise generator, the pitch period clock) runs on from frame to frame and from text to text; only a reset clears it (section 3.1).
+- The converter scales the frame's formants and bandwidths by the voice, computes each resonator's coefficients from tables, the two pitch periods and pulse amplitudes from the pitch with random jitter and shimmer, and the parallel branch's gains from the formant levels. Its state (the jitter generator, a count of silent frames) also runs on until a reset.
 
-**Exactness.** With the arithmetic of section 1, the renderer is bit-identical to the original. This was checked against the original engine on every block of 74 recorded runs: 35,754 blocks and 3,460,050 samples, covering the ten voices at both rates, texts spoken one after another in one session, pitch and speed extremes, whisper and monotone, voice changes, gains 2 and 3 and muted output.
+**Exactness.** With the arithmetic of section 1, the converter and the renderer are bit-identical to the original. This was checked against the original engine on every frame of 80 recorded runs: 37,666 frames, blocks and 3.6 million samples, covering the ten voices at both rates, texts spoken one after another in one session, pitch and speed extremes, whisper and monotone, voice changes, tones and generated segments, gains 2 and 3 and muted output.
 
 ## 1. Arithmetic
 
@@ -67,6 +68,8 @@ Forty words. Words named B and C are a resonator's feedback coefficients: B mult
 Each resonator's normalising gain A is written with the formant it belongs to but applied at the input of the next resonator in the cascade: the F5 gain feeds cascade F4, the F4 gain cascade F3, and so on, and the nasal zero's gain feeds F1. The renderer only sees which word feeds which stage, as listed.
 
 **Latched** words are taken into the renderer's state at the start of each pitch period (section 3.2) and keep their value until the next one, even across frames. All other words act from the first sample of the frame.
+
+The converter writes every word except 2, 3, 12, 13, 18, 19 and 33, which keep the reset block's values (section 4.2), and it writes word 1 only for voiced frames.
 
 ## 3. The renderer
 
@@ -156,3 +159,87 @@ A **parallel resonator** with input x computes the 32-bit `v = (A · x + 2 · B 
 4. The sample is the next sample of the frame.
 
 The output-filter voice and the gain are not in the block: the engine passes them with it (section 5, to come). The output-filter voice follows the selected voice, but on a voice change it switches when the change reaches the parameter generator: in the recorded runs, 12 frames (the converter's lookahead) before the new voice's frames reach the renderer.
+
+## 4. The converter
+
+### 4.1 Frames
+
+A frame is 22 bytes, one per **track**, written by the parameter generator for every 10 ms. The converter reads them as unsigned numbers `t0` to `t21`:
+
+| Track | Name | Read as |
+|---|---|---|
+| 0 | AV | voicing amplitude; 0 means unvoiced |
+| 1 | AF | frication amplitude; 0 switches the parallel branch off |
+| 2 | AH | aspiration amplitude |
+| 3, 4, 5, 6 | | offsets of the parallel F2, F3, F4 and F5 gains |
+| 8 | AB | the bypass's amplitude |
+| 9 | F1 | 4 Hz units |
+| 10 | F2 | 504 Hz + 8 Hz units |
+| 11, 12 | F3, F4 | 16 Hz units |
+| 13, 14, 15 | B1, B2, B3 | 2 Hz units |
+| 16 | FNZ | the nasal zero, 192 Hz + 4 Hz units |
+| 17 | F0 | 2 Hz units |
+| 21 | voice | bits 4–7: the voice (0–9) whose entry in the data pack applies |
+
+Tracks 7, 18, 19 and 20 and the low bits of track 21 are not read. In a **tone frame**, F1, F2 and F3 are in 10 Hz units instead; the engine says which frames are tone frames (section 5).
+
+### 4.2 State and reset
+
+The converter keeps:
+- the **block** it writes (section 2): a frame overwrites the words listed in section 4.3, the others keep their values;
+- `random`, a 32-bit register for jitter and shimmer;
+- `silent`, a count of silent frames.
+
+**Reset** sets the block to the data pack's reset block for the rate, `random = 0x55` and `silent = 0`. The engine resets the converter together with the renderer, and converts a frame before it renders one, so the reset block itself is never rendered.
+
+The rate selects the data pack's tables: those for 8000 Hz at 8000 Hz, those for 11025 Hz at any other rate. `R` below is the rate's tables and `rate` the sample rate.
+
+### 4.3 A frame
+
+`q(a, b)` is `(a · b) / 32767`: the 32-bit product (it wraps), divided with truncation. `scale(x, p)` is `x + (p · x) / 100`. `V` is the voice's entry in the data pack's `voices`. Indexes computed from the frame follow section 4.4.
+
+1. **Bandwidth floor.** Each of t13, t14 and t15 below 22 becomes 22, also in the frame itself.
+2. **Voice.** `V = voices[t21 >> 4]`, and:
+   - F1 = scale(t9, V.scales[0]), B1 = scale(t13, V.scales[1]), F2 = min(scale(t10, V.scales[2]), 255), B2 = scale(t14, V.scales[3]), F3 = scale(t11, V.scales[4]), B3 = scale(t15, V.scales[5]), F4 = max(scale(t12, V.scales[6]), F3 + 20), all in the tracks' units;
+   - F5 = max(V.formant5, 16 · (F4 + 25)), in Hz;
+   - AH = min(t2 + V.aspiration, 107).
+3. **Silence.** If t0, t1 and AH are all 0, `silent += 1`; otherwise `silent = 0`.
+4. **Source.** `f = 2 · t17`, the pitch in Hz, or 0 when t0 is 0.
+   - If f is 0, words 0, 30, 31, 34 and 35 become 0.
+   - Otherwise:
+     1. If f is 74, 84 or 90, `f += 1`. (The original also tests 69 and 79, which an even f never is.)
+     2. **Jitter.** `depth = q(f, jitterDepths[V.jitter])`. Draw two deviations, d1 and d2 (below). Word 30 is `s16((2 · rate / p) / 2)` with `p = s16(f + 8 · q(depth, d1))`, word 31 the same with d2.
+     3. Word 0 = V.sourceType.
+     4. Word 1 = `phaseSteps[min(q(q(word30, V.amplitude << 11), openPhases[V.sourceType]), 139)]`.
+     5. **Amplitude.** `a = levels[140 + t0]`; `a = s16(q(a, sourceAmplitudes[V.sourceType]))`; `a = s16(q(a, amplitudeScales[V.amplitude]) >> 3)`; `a = s16((word30 >> 2) · a)`.
+     6. **Shimmer.** With `s = shimmerDepths[V.shimmer]`: word 34 = `s16(a + (q(q(a, s), d2) << 3))`, reusing the second jitter deviation; draw d3; word 35 = `s16(a + (q(q(a, s), d3) << 3))`.
+
+   A **deviation** is drawn by stepping the register, `random = (random >> 1) + ((((random & 1) << 1) ^ (random & 2)) << 6)`, and is `deviations[random & 63]`. A voiced frame draws three. The data pack's limits make sure p is never 0.
+5. **Mute.** If the engine's mute flag is set (section 5), `word0 |= 0x80`. If `silent > 2`: `word0 |= 0x80` and `silent = 2`. Silence is muted from its third frame on, but only in voices whose aspiration offset is 0 (Peter and Melvin): in the others AH is never 0.
+6. Word 16 = `levels[105 + AH]`; word 17 = V.sourceGain; words 37, 38 and 39 = R.sourceStage.
+7. **Resonators.** The resonator for a frequency index i (8 Hz steps) and a bandwidth index j (4 Hz steps) has `P = R.radii[j] · R.cosines[i]`, `B = s16(P >> 12)`, `−C = s16(4 · R.squaredRadii[j])` and the 32-bit gain `G = R.squaredRadii[j] − (P >> 13) + 0x2000`.
+   - F5: if `F5 > rate / 2`, there is none: word 21 = 0x2000 and words 4 and 5 become 0. Otherwise `i = F5 >> 3`, `j = V.bandwidth5 >> 2`; words 4 and 5 are B and −C, word 21 is `s16(G)`.
+   - If `16 · F4 ≥ rate / 2`, `F4 = (rate / 2 − 10) >> 4`. (F5 was computed with F4 before this.)
+   - F4: `i = 2 · F4`, `j = V.bandwidth4 >> 2`: words 6, 7 and 23 are B, −C and `s16(G4)`.
+   - F3: `i = 2 · F3`, or `(10 · F3) >> 3` in a tone frame; `j = B3 >> 1`: words 8, 9 and 25.
+   - F2: `i = F2 + 63`, or `(10 · F2) >> 3` in a tone frame; `j = B2 >> 1`: words 10, 11 and 27.
+   - F1: `i = F1 >> 1`, or `(10 · F1) >> 3` in a tone frame; `j = B1 >> 1`: words 14 and 15 are B and −C, word 36 is `s16(min(G1, 0x7FF) << 4)`.
+8. **Nasal zero.** Word 32 = `s16((R.nasalZeroB · R.cosines[(4 · t16 + 192) >> 3]) >> 12)`; word 29 = `s16(R.nasalZeroGains[t16 >> 2] << 1)`.
+9. **Parallel branch.** If t1 is 0, words 20, 22, 24, 26 and 28 become 0. Otherwise:
+   - Formant level indexes, in 32 Hz steps: `k1 = F1 >> 3`, `k2 = (F2 >> 2) + 16`, `k3 = F3 >> 1`; in a tone frame `k1 = (10 · F1) >> 5`, `k2 = (10 · F2) >> 5`, `k3 = (10 · F3) >> 5`.
+   - `L1 = formantLevels[k1]`, `L2 = formantLevels[k2]`, `L = 2 · L1 + 2 · L2 − 235`.
+   - Proximity corrections: `x12 = proximity[d(k2 − k1)]`, `x23 = proximity[d(k3 − k2 − 2)]`, `x34 = proximity[d((F4 >> 1) − k3 − 5)]`, where `d(n)` is n, or 0 when n ≤ 2, and F4 is the value after step 7's limit.
+   - Word 26 (F2): `n = max(2 · L1 − L2 − 14 + 2 · x12 + x23 + t3 + t1, 0)`; word 26 = `s16((min(levels[n], 160) · G2) >> 11)`. Here the level is limited, not the index.
+   - Word 24 (F3): `n = L + 2 · x23 + x34 + t4 + t1 + 22`, limited to 0–160; word 24 = `s16(−((levels[n] · G3) >> 11))`.
+   - Word 22 (F4): `n = L + 2 · x34 + t5 + t1 + 17`, limited to 0–160; word 22 = `s16((levels[n] · G4) >> 11)`, then at 8000 Hz `word22 >> 1`.
+   - Word 20 (F5): `n = L + t6 + t1 + 16`, limited to 0–154; word 20 = `s16(−((levels[n] · word21) >> 11))`, with word 21 as written in step 7.
+   - Word 28 (bypass): `s16(levels[37 + t8 + t1] << 2)`.
+
+**Not reached by the recorded runs:** a tone frame with frication, so the tone indexes of step 9 come from the code alone, and an index past the decibel table's end.
+
+### 4.4 Tables and indexes
+
+The tables are the data pack's (datapack.md). An index computed from a voice's entry always lies within its table: the data pack's limits make sure of it. Indexes computed from a frame:
+
+- **`levels`** is the data pack's `decibels` (213 values, about `8192 · 10^((i − 200) / 20)`), followed by the value 0, the `formantLevels` and the `proximity` table: 453 values. The original reads its decibel table without a limit, and this is what follows it in its memory: an AV of 73 or more reads 0 and then the formant levels.
+- In the recorded runs, every other index stays within its table. The original would read unrelated memory past a table; the port takes the nearest entry instead (the first for an index below 0, the last past the end), and does the same past the end of `levels`.
