@@ -8,20 +8,39 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/internal/conformance"
 )
 
+type goldenCursors struct {
+	Position  int32 `json:"position"`
+	End       int32 `json:"end"`
+	Written   int32 `json:"written"`
+	Lookahead int32 `json:"lookahead"`
+	Done      byte  `json:"done"`
+	Hold      byte  `json:"hold"`
+	Ready     byte  `json:"ready"`
+	Markers   int32 `json:"markers"`
+	Bytes     int   `json:"bytes"`
+}
+
 type goldenRecord struct {
-	Kind    string `json:"kind"`
-	Rate    int    `json:"rate"`
-	Filter  int    `json:"filter"`
-	Gain    uint16 `json:"gain"`
-	Block   string `json:"block"`
-	Samples string `json:"samples"`
-	Tracks  string `json:"tracks"`
-	Tone    bool   `json:"tone"`
-	Mute    byte   `json:"mute"`
+	Kind     string        `json:"kind"`
+	Rate     int           `json:"rate"`
+	Filter   int           `json:"filter"`
+	Gain     uint16        `json:"gain"`
+	Block    string        `json:"block"`
+	Samples  string        `json:"samples"`
+	Position int32         `json:"position"`
+	Tracks   string        `json:"tracks"`
+	Marker   bool          `json:"marker"`
+	Tone     bool          `json:"tone"`
+	Mute     byte          `json:"mute"`
+	Before   goldenCursors `json:"before"`
+	After    goldenCursors `json:"after"`
 }
 
 type goldenCase struct {
 	Name    string         `json:"name"`
+	Format  [2]int         `json:"format"`
+	Digest  string         `json:"digest"`
+	Events  [][]any        `json:"events"`
 	Records []goldenRecord `json:"records"`
 }
 

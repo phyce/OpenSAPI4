@@ -5,7 +5,7 @@ How L&H TruVoice (`tv_enua.dll`) turns its stream of parameter frames into sampl
 - the **converter** turns each 10 ms frame of 22 parameter bytes into a **coefficient block** of 40 words (section 4);
 - the **renderer** turns a block into one frame of samples (section 3).
 
-The block is the boundary between them (section 2). This version of the spec covers both; how the engine drives them, and what it does with the samples, is section 5 (to come).
+The block is the boundary between them (section 2). Section 5 is how the engine drives them, one frame per step, and what it does with the samples.
 
 **In short.**
 - A frame is `rate / 100` samples: 110 at 11025 Hz, 80 at 8000 Hz. Both rates are synthesized directly; nothing is resampled.
@@ -15,8 +15,12 @@ The block is the boundary between them (section 2). This version of the spec cov
 - The two branches are mixed, smoothed and passed through a one-tap output filter that depends on the voice, then multiplied by the gain (1 to 3) and saturated.
 - The renderer's state (filter memories, the noise generator, the pitch period clock) runs on from frame to frame and from text to text; only a reset clears it (section 3.1).
 - The converter scales the frame's formants and bandwidths by the voice, computes each resonator's coefficients from tables, the two pitch periods and pulse amplitudes from the pitch with random jitter and shimmer, and the parallel branch's gains from the formant levels. Its state (the jitter generator, a count of silent frames) also runs on until a reset.
+- Each step renders the block converted last, then converts the next frame, once the parameter generator has written enough frames past it. The samples collect in a buffer that is handed over every 55 frames or so, or sooner when a word or bookmark event comes up (section 5).
 
-**Exactness.** With the arithmetic of section 1, the converter and the renderer are bit-identical to the original. This was checked against the original engine on every frame of 80 recorded runs: 37,666 frames, blocks and 3.6 million samples, covering the ten voices at both rates, texts spoken one after another in one session, pitch and speed extremes, whisper and monotone, voice changes, tones and generated segments, gains 2 and 3 and muted output.
+**Exactness.** With the arithmetic of section 1, the synthesizer is bit-identical to the original. This was checked against the original engine on 83 recorded runs, covering the ten voices at both rates, 16- and 8-bit output, texts spoken one after another in one session, pitch and speed extremes, whisper and monotone, voice changes, tones and generated segments, gains 2 and 3 and muted output:
+- the converter and the renderer on every frame: 39,317 frames, blocks and 3.8 million samples;
+- the step and the loop on each of the original's 44,827 steps (5,540 loops, 3,343 hand-overs), the whole output of each run, and the positions of its 4,278 events;
+- the volume conversion on every volume.
 
 ## 1. Arithmetic
 
@@ -158,7 +162,7 @@ A **parallel resonator** with input x computes the 32-bit `v = (A · x + 2 · B 
 3. `sample = sat((m − (filter · previousOutput) / 100) · gain · 8)`, where `filter` is the data pack's output filter of the output-filter voice (a percentage, −85 to 26) and `gain` is the engine's gain, 1 to 3, read as an unsigned word. `previousOutput = m`.
 4. The sample is the next sample of the frame.
 
-The output-filter voice and the gain are not in the block: the engine passes them with it (section 5, to come). The output-filter voice follows the selected voice, but on a voice change it switches when the change reaches the parameter generator: in the recorded runs, 12 frames (the converter's lookahead) before the new voice's frames reach the renderer.
+The output-filter voice and the gain are not in the block: the engine passes them with it (section 5.2). The output-filter voice follows the selected voice, but on a voice change it switches when the change reaches the parameter generator: in the recorded runs, 12 frames (the converter's lookahead) before the new voice's frames reach the renderer.
 
 ## 4. The converter
 
@@ -181,7 +185,7 @@ A frame is 22 bytes, one per **track**, written by the parameter generator for e
 | 17 | F0 | 2 Hz units |
 | 21 | voice | bits 4–7: the voice (0–9) whose entry in the data pack applies |
 
-Tracks 7, 18, 19 and 20 and the low bits of track 21 are not read. In a **tone frame**, F1, F2 and F3 are in 10 Hz units instead; the engine says which frames are tone frames (section 5).
+Tracks 7, 18, 19 and 20 and the low bits of track 21 are not read. In a **tone frame**, F1, F2 and F3 are in 10 Hz units instead; the frame's tone bit in the ring says which frames are tone frames (section 5.1).
 
 ### 4.2 State and reset
 
@@ -215,7 +219,7 @@ The rate selects the data pack's tables: those for 8000 Hz at 8000 Hz, those for
      6. **Shimmer.** With `s = shimmerDepths[V.shimmer]`: word 34 = `s16(a + (q(q(a, s), d2) << 3))`, reusing the second jitter deviation; draw d3; word 35 = `s16(a + (q(q(a, s), d3) << 3))`.
 
    A **deviation** is drawn by stepping the register, `random = (random >> 1) + ((((random & 1) << 1) ^ (random & 2)) << 6)`, and is `deviations[random & 63]`. A voiced frame draws three. The data pack's limits make sure p is never 0.
-5. **Mute.** If the engine's mute flag is set (section 5), `word0 |= 0x80`. If `silent > 2`: `word0 |= 0x80` and `silent = 2`. Silence is muted from its third frame on, but only in voices whose aspiration offset is 0 (Peter and Melvin): in the others AH is never 0.
+5. **Mute.** If the engine's mute flag is set (section 5.4), `word0 |= 0x80`. If `silent > 2`: `word0 |= 0x80` and `silent = 2`. Silence is muted from its third frame on, but only in voices whose aspiration offset is 0 (Peter and Melvin): in the others AH is never 0.
 6. Word 16 = `levels[105 + AH]`; word 17 = V.sourceGain; words 37, 38 and 39 = R.sourceStage.
 7. **Resonators.** The resonator for a frequency index i (8 Hz steps) and a bandwidth index j (4 Hz steps) has `P = R.radii[j] · R.cosines[i]`, `B = s16(P >> 12)`, `−C = s16(4 · R.squaredRadii[j])` and the 32-bit gain `G = R.squaredRadii[j] − (P >> 13) + 0x2000`.
    - F5: if `F5 > rate / 2`, there is none: word 21 = 0x2000 and words 4 and 5 become 0. Otherwise `i = F5 >> 3`, `j = V.bandwidth5 >> 2`; words 4 and 5 are B and −C, word 21 is `s16(G)`.
@@ -243,3 +247,92 @@ The tables are the data pack's (datapack.md). An index computed from a voice's e
 
 - **`levels`** is the data pack's `decibels` (213 values, about `8192 · 10^((i − 200) / 20)`), followed by the value 0, the `formantLevels` and the `proximity` table: 453 values. The original reads its decibel table without a limit, and this is what follows it in its memory: an AV of 73 or more reads 0 and then the formant levels.
 - In the recorded runs, every other index stays within its table. The original would read unrelated memory past a table; the port takes the nearest entry instead (the first for an index below 0, the last past the end), and does the same past the end of `levels`.
+
+## 5. The step and the output
+
+The synthesizer is the engine's last stage. The parameter generator hands it frames through a ring; the synthesizer converts and renders them one at a time, in steps, and collects the samples in a buffer that the engine hands to the audio destination.
+
+### 5.1 The frame ring
+
+The ring holds 256 frames. Each **slot** holds a frame (section 4.1), a **marker** bit and a **tone** bit. A frame's slot is its position modulo 256. Positions are counted by four 32-bit signed numbers:
+
+- `position`: the next frame to convert;
+- `written`: the frames written so far;
+- `end`: the frame at which speech stops for now, or −1 for none;
+- `lookahead`: how many written frames the synthesizer leaves alone, because the parameter generator may still change them.
+
+The synthesizer also keeps three flags, `done`, `hold` and `ready` (a converted block waits to be rendered), and `passed`, a count of the marker bits it has met.
+
+The parameter generator writes the frames and their bits and sets `written`, `end`, `lookahead` and `done`; its own spec will say when. Two operations on the ring are shared:
+
+- **Reset**, when the engine resets its pipeline: clear every marker and tone bit; fill slots 0 to 11 with the parameter generator's initial frame; `position = 0`, `written = 12`, `end = 10`, `passed = 0`, `done` cleared. The parameter generator's own reset sets `lookahead = 2`. A session therefore starts with 10 copies of the initial frame, 100 ms.
+- **Rebase**, when the parameter generator asks for it: if `position > 2048`, subtract 2048 from `position`, `written` and `end` (unless it is −1). The slots stay where they are. The parameter generator moves its own positions back by the same amount. The recorded runs contain one rebase, at position 2056; the limit of 2048 comes from the code.
+
+### 5.2 A step
+
+1. If `hold` and `done` are clear and `ready` is set:
+   - if rendering is on, render the block (section 3) with the output-filter voice and the gain;
+   - clear `ready`;
+   - if `position = end`, set `done`.
+2. If `lookahead + position < written` and `ready` is clear, convert the frame at `position`:
+   - if its marker bit is set, clear it and add 1 to `passed`;
+   - read its tone bit, then clear it;
+   - convert it (section 4.3) with the engine's mute flag (section 5.4);
+   - add 1 to `position` and set `ready`.
+
+The first step after a reset only converts, so the block of section 4.2's reset is never rendered. Once `position` reaches `end`, the frame before it is the last one rendered until the parameter generator moves `end` on and clears `done`.
+
+**Rendering** is on whenever the engine speaks. The engine also runs its pipeline without rendering, to turn text into phonemes.
+
+**Hold** is set and cleared by the input stages (their spec will say when). The recorded runs never set it. Nor do they ever step while `done` is set: the loop below doesn't.
+
+### 5.3 The loop and the buffer
+
+Each time the engine's scheduler runs the synthesizer, the synthesizer runs a loop of steps:
+
+1. If `done` is set, go to 3.
+2. Repeat:
+   1. If `hold` is set, stop.
+   2. Step.
+   3. If `ready` is clear, stop.
+   4. If `passed` isn't 0, run the output stage and note a hand-over.
+   5. If the buffer holds more than 12,000 bytes, note a hand-over and stop.
+   6. If `done` is set, stop.
+3. Run the output stage once more.
+
+The **buffer** collects the rendered samples, 2 bytes each. When the loop has noted a hand-over, the engine hands the whole buffer to the audio queue and empties it. Otherwise the buffer keeps its samples for the next loop. Without markers a chunk is therefore 55 frames (12,100 bytes) at 11025 Hz and 76 frames (12,160 bytes) at 8000 Hz. The buffer the engine allocates holds 13,500 bytes.
+
+The **output stage** (specified with the pipeline) frees the pipeline's records up to the audio, uses up one passed marker per phoneme record, and runs the commands it reaches, which queue events such as words and bookmarks. It queues an event straight away, while the buffer still holds the samples rendered before it. So an event's position in the audio is where the last hand-over before it ended: every event falls on a hand-over boundary, never inside a chunk.
+
+### 5.4 Volume, gain and the output format
+
+**Volume.** Whenever the volume has changed, the engine applies it before it runs its scheduler again:
+
+- A volume below 80 sets the mute flag, which mutes every frame converted from then on (section 4.3, step 5). The attenuation stays as it was.
+- Any other volume clears the mute flag and sets the attenuation to `min(15, trunc(−10 · log10(volume / 65535)))` dB. The parameter generator subtracts the attenuation from its amplitudes (its spec will say how).
+
+The original computes the logarithm with x87 floating point. For every volume, at 24-, 53- and 64-bit x87 precision and in 64-bit floating point, the attenuation is the same. The value closest to an integer is 2.8·10⁻⁶ away from it. The thresholds are:
+
+| Attenuation (dB) | Volumes |
+|---|---|
+| 0 | 52057–65535 |
+| 1 | 41350–52056 |
+| 2 | 32846–41349 |
+| 3 | 26090–32845 |
+| 4 | 20724–26089 |
+| 5 | 16462–20723 |
+| 6 | 13076–16461 |
+| 7 | 10387–13075 |
+| 8 | 8251–10386 |
+| 9 | 6554–8250 |
+| 10 | 5206–6553 |
+| 11 | 4135–5205 |
+| 12 | 3285–4134 |
+| 13 | 2609–3284 |
+| 14 | 2073–2608 |
+| 15 | 80–2072 |
+| mute | 0–79 |
+
+**Gain.** The engine copies its gain (1 to 3, set with Inject `\gain=n\`) to the synthesizer when its speaking thread starts; a later Inject waits for the next session. The renderer multiplies by it (section 3.6).
+
+**Output format.** The samples are 16-bit little-endian. In an 8-bit format each sample becomes one unsigned byte, `(sample >> 8) + 128`.
