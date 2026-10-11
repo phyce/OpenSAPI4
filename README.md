@@ -103,6 +103,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 |---|---|
 | `docs/command-line.md` | The command-line tools, the stream and the HTTP server |
 | `docs/whistler/` | How the Microsoft engine behaves, and the data pack format |
+| `docs/truvoice/` | How the TruVoice engine behaves, and its data pack format (in progress) |
 | `cmd/opensapi4`, `cmd/sapi4out`, `cmd/sapi4limits` | The command-line tools |
 | `scripts/release` | Builds the release archives |
 | `scripts/check-release` | Runs a release archive's programs and checks what they give |
@@ -119,6 +120,8 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `whistler/units` | Turns unit records into frames, controls and settings |
 | `whistler/synthesis` | Turns frames into samples: 16- or 8-bit, at the voice's rate or resampled |
 | `whistler/effects` | Whisper, the post-filter, the reverb, `\Chr=` and `\Rst\` switching |
+| `truvoice/datapack` | Reads and checks the TruVoice data pack |
+| `truvoice/synthesizer` | TruVoice's formant synthesizer: coefficient blocks to samples |
 
 ## Building releases
 
