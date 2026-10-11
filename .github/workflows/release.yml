@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release to check, such as v0.1.0
+        required: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, archive: windows-x64.zip }
+          - { runner: windows-latest, archive: windows-x86.zip }
+          - { runner: windows-11-arm, archive: windows-arm64.zip }
+          - { runner: ubuntu-latest, archive: linux-x64.tar.gz }
+          - { runner: ubuntu-24.04-arm, archive: linux-arm64.tar.gz }
+          - { runner: macos-15-intel, archive: macos-x64.tar.gz }
+          - { runner: macos-latest, archive: macos-arm64.tar.gz }
+    name: ${{ matrix.archive }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ github.event.release.tag_name || inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Download
+        shell: bash
+        run: gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "opensapi4-$VERSION-${{ matrix.archive }}"
+      - name: Check
+        shell: bash
+        run: go run ./scripts/check-release -archive "opensapi4-$VERSION-${{ matrix.archive }}"

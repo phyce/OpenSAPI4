@@ -14,8 +14,9 @@ Running them today is hard. You need 25-year-old 32-bit installers on Windows, o
 |---|---|
 | Microsoft voices | Done: all 19 voices, every tag, event and setting |
 | Command-line tools, HTTP and stream modes | Done |
-| Releases for Windows, Linux and macOS | In progress |
-| L&H TruVoice voices | Planned |
+| Releases for Windows, Linux and macOS | Done: [v0.1.0](https://github.com/phyce/OpenSAPI4/releases/tag/v0.1.0) |
+| L&H TruVoice voices | Next |
+| AT&T FlexTalk voices | Planned |
 
 The engine is checked against the original on more than 40,000 cases, and it's identical in every sample and event. Details are in [docs/plan.md](docs/plan.md).
 
@@ -104,6 +105,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `docs/whistler/` | How the Microsoft engine behaves, and the data pack format |
 | `cmd/opensapi4`, `cmd/sapi4out`, `cmd/sapi4limits` | The command-line tools |
 | `scripts/release` | Builds the release archives |
+| `scripts/check-release` | Runs a release archive's programs and checks what they give |
 | `opensapi4.go` | Package `opensapi4`: the voices of a voices folder, and requests |
 | `whistler` | The engine: speaks texts with one voice, joining the stages below |
 | `whistler/datapack` | Reads and checks the data pack |
@@ -126,6 +128,12 @@ go run ./scripts/release -version v0.1.0 -voices <voices folder>
 
 Builds the programs for every system in the table above, packs each with the voice data, and writes the archives and their `SHA256SUMS` to `dist/`. The voice data isn't in this repository, so releases are built where it is. The script checks the data against its manifest, speaks with every voice, and runs the programs of the archive for the computer it runs on. The same commit and data always give the same archives.
 
+When a release is published, the Release workflow downloads its archives on Windows (x64, x86, arm64), Linux (x64, arm64) and macOS (Apple silicon, Intel), and checks each with `scripts/check-release`: every voice speaks three texts, `sapi4out` and `sapi4limits` run, and what they give must match the sums in `scripts/check-release/speech.sha256`. To check an archive by hand:
+
+```sh
+go run ./scripts/check-release -archive dist/opensapi4-v0.1.0-linux-x64.tar.gz
+```
+
 ## Tests
 
 ```sh
@@ -136,4 +144,4 @@ The conformance tests compare every stage with the original engine's output. The
 
 ## Trademarks
 
-OpenSAPI4 is an independent project. It is not affiliated with, endorsed by or sponsored by Microsoft. Microsoft and Windows are trademarks of Microsoft Corporation, and TruVoice is a trademark of its owner. The names are used only to say which voices this project is compatible with.
+OpenSAPI4 is an independent project. It is not affiliated with, endorsed by or sponsored by Microsoft. Microsoft and Windows are trademarks of Microsoft Corporation, and TruVoice, AT&T and FlexTalk are trademarks of their owners. The names are used only to say which voices this project is compatible with.
