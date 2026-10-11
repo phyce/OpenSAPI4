@@ -33,7 +33,7 @@ Every part is checked against the original engine, on more than 40,000 cases, an
 ## Next
 
 1. **Command-line tools**, in this repo:
-   - `sapi4out` and `sapi4limits`, drop-in replacements for the tools of the same name that other projects call: the same arguments, the same output;
+   - *Done:* `sapi4out` and `sapi4limits` (`cmd/`), drop-in replacements for the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4) that other projects call: the same arguments, the same output, the same WAV files. Compared with the originals on 2,492 command lines (every voice, odd voice names, pitches and speeds in and out of range, quoting, texts with tags and non-ASCII characters): identical, except that the original's voice list also has the TruVoice voices, and one text crashes the original ([whistler/engine.md](whistler/engine.md) §9; the audio it wrote before the crash matches);
    - `opensapi4`: speaks with flags or JSON parameters, lists the voices, and runs as a stream over standard input and output or as an HTTP server.
 2. **Releases** for Windows, Linux and macOS, with the data pack.
 3. **L&H TruVoice:** its ten voices. A separate engine, rule-based, with all its data inside its DLL.
