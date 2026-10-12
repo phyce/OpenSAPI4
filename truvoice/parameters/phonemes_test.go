@@ -85,6 +85,8 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::SonorantTransitions":     plain((*Generator).SonorantTransitions),
 		"Parameters::ObstruentVoicing":        plain((*Generator).ObstruentVoicing),
 		"Parameters::ConsonantShapes":         plain((*Generator).ConsonantShapes),
+		"Parameters::FricativeAmplitudes":     plain((*Generator).FricativeAmplitudes),
+		"Parameters::StopClosureBurst":        plain((*Generator).StopClosureBurst),
 		"PullAspirationBack":                  plain((*Generator).PullAspirationBack),
 	})
 	t.Logf("calls replayed: %v", counts)

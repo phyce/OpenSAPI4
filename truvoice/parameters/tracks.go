@@ -68,6 +68,15 @@ func (ring Ring) Set(position int32, value byte) {
 	ring.frames[uint8(position)][ring.track] = value
 }
 
+// weights returns a shape's weights. The original has 31 shapes and reads outside its table for the others
+// (parameters.md §11); the port gives them none.
+func (ring Ring) weights(shape int32) []byte {
+	if shape < 0 || int(shape) >= len(ring.shapes) {
+		return nil
+	}
+	return ring.shapes[shape]
+}
+
 func weighted(difference int32, weight byte) byte {
 	return byte(multiply(difference, int32(weight)<<7))
 }
@@ -75,7 +84,7 @@ func weighted(difference int32, weight byte) byte {
 // Fill writes frames frames from position on: while the shape lasts, onset moved toward target by the shape's
 // weights, then target. A negative count writes the whole shape (parameters.md §2.5).
 func (ring Ring) Fill(position, shape, frames int32, onset, target byte) {
-	for _, weight := range ring.shapes[shape] {
+	for _, weight := range ring.weights(shape) {
 		if frames == 0 {
 			return
 		}
@@ -91,7 +100,7 @@ func (ring Ring) Fill(position, shape, frames int32, onset, target byte) {
 
 // PullBack moves up to frames frames before position toward value, by the shape's weights after its first.
 func (ring Ring) PullBack(position, shape, frames int32, value byte) {
-	weights := ring.shapes[shape]
+	weights := ring.weights(shape)
 	for index := 1; index < len(weights) && frames != 0; index++ {
 		position--
 		frame := ring.At(position)
@@ -102,7 +111,7 @@ func (ring Ring) PullBack(position, shape, frames int32, value byte) {
 
 // PullForward moves up to frames frames from position on toward value, by the shape's weights.
 func (ring Ring) PullForward(position, shape, frames int32, value byte) {
-	for _, weight := range ring.shapes[shape] {
+	for _, weight := range ring.weights(shape) {
 		if frames == 0 {
 			return
 		}
@@ -150,7 +159,7 @@ func (ring Ring) AddBack(position, shape, frames, change int32) {
 	if first := int32(ring.At(position)); first+change < 0 {
 		change = -first
 	}
-	weights := ring.shapes[shape]
+	weights := ring.weights(shape)
 	for index := 1; index < len(weights) && frames != 0; index++ {
 		value := multiply(change, int32(weights[index])<<7) + int32(ring.At(position))
 		if value < 1 && ring.track < 3 {
