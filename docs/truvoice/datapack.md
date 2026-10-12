@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes ([parameters.md](parameters.md) §2.5). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes and rules ([parameters.md](parameters.md) §2.5 and §3 to §5). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -83,3 +83,30 @@ A **rate** (§4.2, §4.3) has:
 | Field | Values | Meaning |
 |---|---|---|
 | `shapes` | 31 lists | The transition shapes ([parameters.md](parameters.md) §2.5): shape `i` is at most `i` weights, 1 to 255, the first 255. Shape 0 is empty, and shapes 23 to 30 have one weight fewer than their number |
+| `phonemes` | 59 objects | The phonemes in their order ([parameters.md](parameters.md) §3.1), below |
+| `classes` | 6 lists of 128 bytes | The class bytes of the symbols 0 to 127 ([parameters.md](parameters.md) §3.2): `classes[p][s]` is symbol `s`'s byte `p` |
+| `voices` | 10 objects | Per voice: `tracks`, the targets of tracks 18 to 20, and `fourthFormantLimit`, the highest F4 target in Hz ([parameters.md](parameters.md) §4.1 and §6) |
+| `categoryWeights` | 4 lists of 4 | The weight, Q15, for a phoneme's category after the previous one's: `categoryWeights[previous][current]` ([parameters.md](parameters.md) §4.1) |
+| `defaultShapes` | 22 numbers, 0 to 30 | Each track's forward shape before the rules ([parameters.md](parameters.md) §4.1) |
+| `ruleMatrix` | 59 lists of 59 | The rule set for each current phoneme and previous phoneme ([parameters.md](parameters.md) §5.2) |
+| `ruleSets` | lists of rules | The rule sets, below |
+
+A phoneme:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `symbol` | one character | The phoneme's symbol |
+| `formants` | 4 numbers | F1 to F4 targets, Hz |
+| `bandwidths` | 3 numbers | B1 to B3 targets, Hz |
+| `voicing` | 0 to 255 | Track 0's (AV) target |
+| `amplitudes` | 8 bytes | Tracks 1 to 8's targets |
+| `nasalZero` | number | Track 16's (FNZ) target, Hz |
+| `frontness` | Q15 | The phoneme's frontness |
+| `place` | 0 to 9 | Its place |
+| `offglide`, `endFrontness`, `transition` | 7 numbers, Q15, byte | Only the vowels with an offglide: the offglide's F1 to F4 and B1 to B3 in Hz, the frontness the vowel ends with, its transition |
+| `burst` | 2 lists of 4 bytes | Only `B P D T G K`: AV, AF, AH and AB before a vowel, and otherwise |
+
+A rule is `{"if": conditions, "set": assignments, "do": actions}` ([parameters.md](parameters.md) §5):
+- a condition is `{"flag": f, "is": b}` for flag `f` (0 to 10), `{"phoneme": who, "plane": p, "bits": m, "is": b}` for class `(p, m)`, `m` one bit, or `{"phoneme": who, "in": symbols, "is": b}`, with `who` one of `current`, `next`, `afterNext` and `beforePrevious`;
+- an assignment is `{"to": place, "set": n}`, `"add"` or `"subtract"` instead of `"set"`, or `{"to": place, "copy": place}`. A place is `[field, track]` for the fields with tracks (`burstLevel`: 0 to 2), or `[field]`;
+- the actions are numbers from 1 to 16.

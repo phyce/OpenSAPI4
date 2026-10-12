@@ -8,14 +8,14 @@ import (
 // TestTracks replays every recorded call of the track renderer, the ring writers the stage's actions call, the
 // advance after a phoneme and the ring's room and rebase.
 func TestTracks(t *testing.T) {
-	tables := loadParameters(t)
+	data := loadTestData(t)
 	onRing := func(write func(ring Ring, call *call) error) replayer {
 		return func(call *call) error {
 			track, err := call.ring(0)
 			if err != nil {
 				return err
 			}
-			generator := load(tables, call.before)
+			generator := data.load(call)
 			if err := write(generator.Ring(track), call); err != nil {
 				return err
 			}
@@ -24,7 +24,7 @@ func TestTracks(t *testing.T) {
 	}
 	counts := replay(t, map[string]replayer{
 		"RenderTrackSegment": func(call *call) error {
-			generator := load(tables, call.before)
+			generator := data.load(call)
 			generator.RenderSegment(int(call.argument(0)))
 			return compare(generator, call)
 		},
@@ -56,12 +56,12 @@ func TestTracks(t *testing.T) {
 			return nil
 		}),
 		"Parameters::AdvanceTracks": func(call *call) error {
-			generator := load(tables, call.before)
+			generator := data.load(call)
 			generator.Advance()
 			return compare(generator, call)
 		},
 		"Frames::Control": func(call *call) error {
-			generator := load(tables, call.before)
+			generator := data.load(call)
 			var result bool
 			switch call.argument(0) {
 			case 1:

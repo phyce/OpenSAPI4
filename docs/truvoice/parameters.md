@@ -2,15 +2,16 @@
 
 How L&H TruVoice (`tv_enua.dll`) turns timed phonemes into frames for its synthesizer. For each phoneme or pause the parameter generator works out what each of the 22 tracks of a frame should do ([synthesizer.md](synthesizer.md) §4.1), and writes the phoneme's frames into the synthesizer's ring ([synthesizer.md](synthesizer.md) §5.1), rewriting the end of the previous phoneme's where the two blend.
 
-This spec covers the tracks, and how the generator writes them (section 2). The targets, the rules and their actions, the vowel database and the stage's driver are still to come.
+This spec covers the tracks and how the generator writes them (section 2), the phonemes (section 3), the targets a phoneme starts from (section 4), the rules that change them (section 5), how a phoneme is rendered (section 6) and the stage's resets (section 7). The rules' actions, the vowel database and the stage's driver are still to come.
 
 **In short.**
 - The generator works track by track. For each phoneme it fills in a **segment** for each track: a mode, how many frames, an onset and a target, two shapes, and a value to pull the previous phoneme's last frames toward. Rendering the segment writes the phoneme's frames of that track.
 - A segment's values are in the track's units (Hz for the formants and bandwidths, the frame byte for the amplitudes) and become frame bytes by a shift. Frame bytes wrap around; nothing is clamped.
 - Transitions follow 31 fixed shapes: decaying weights from 255 down, one per frame.
 - After each phoneme every track moves on by its segment's frames. The ring's written frames end where the slowest track is, and the frame before it is marked for the output stage.
+- A phoneme's segments start from its targets in the data pack. Then the first rule that applies, of the rule set for the phoneme and the one before it, changes them and runs its actions. Voicing, the attenuation and the voice adjust them last.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its track functions recorded in 140 runs (the ten voices, both rates, every speed range, pitch and volume tags, whisper, monotone, emphasis, tones and generated segments, texts spoken one after another in one session, long texts with a long pause, and 44 sentences chosen for their sounds): each of the 222,460 segments rendered (section 2.4), the stage's 124,149 direct writes into the ring (section 2.5), 10,100 advances (section 2.6) and 25,731 room checks and rebases (section 2.7) left the speaking thread's state byte-identical to the original's.
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its track functions recorded in 151 runs (the ten voices, both rates, every speed range, pitch and volume tags, whisper, monotone, emphasis, tones and generated segments, texts spoken one after another in one session, long texts with a long pause, 44 sentences chosen for their sounds and 11 for their clusters of consonants): each of the 232,915 segments rendered (section 2.4), the stage's 129,350 direct writes into the ring (section 2.5), 10,575 advances (section 2.6) and 26,936 room checks and rebases (section 2.7) left the speaking thread's state byte-identical to the original's. So did the 10,575 phonemes rendered (section 6), with their target loading and rules, the rules' actions taken from the recording after checking that each started from the original's state, and the stage's 151 resets and 194 context resets (section 7).
 
 ## 1. Arithmetic
 
@@ -106,11 +107,215 @@ Then the lowest `next` of the tracks becomes the ring's `written`, the highest b
 - The ring has **room** for `n` frames when `margin + furthest − position + n < 256`, with the synthesizer's `position`.
 - **Rebase**: the synthesizer's rebase ([synthesizer.md](synthesizer.md) §5.1). If it moved its counters back, every track's `next` and `earliest` and `furthest` move back by 2048 too.
 
-## 3. What the recorded runs don't reach
+## 3. Phonemes
+
+### 3.1 The phonemes
+
+The generator knows 59 phonemes, numbered in this order:
+
+| Numbers | Phonemes |
+|---|---|
+| 0–18 | the vowels with an offglide: `4 5 A E I O U a b c e f g i k r u w y` |
+| 19–23 | `3 @ o v \|` |
+| 24–29 | `j l L W Y R` |
+| 30–33 | `p d h H` |
+| 34–44 | `B P D T t J C G K Q q` |
+| 45–52 | `V F x X Z S z s` |
+| 53–57 | `M m N n ~` |
+| 58 | the pause, a space |
+
+The data pack gives each phoneme ([datapack.md](datapack.md) §5) its F1 to F4 targets (`formants`), B1 to B3 (`bandwidths`) and FNZ (`nasalZero`) in Hz, its AV target (`voicing`) and its tracks 1 to 8 (`amplitudes`), a Q15 `frontness`, and a `place`:
+
+| Place | Phonemes |
+|---|---|
+| 0 | `4 E U` |
+| 1 | `A a e i k \|` |
+| 2 | `O b c g u w y` |
+| 3 | `5 I f r 3 @ o v` |
+| 4 | `j l L W Y R` |
+| 5 | `p` |
+| 6 | `V F x X Z S z s` |
+| 7 | `d h H` |
+| 8 | `B P D T t J C G K Q q M m N n ~` |
+| 9 | the pause |
+
+The vowels with an offglide also have the offglide's F1 to F4 and B1 to B3 in Hz (`offglide`), the frontness they end with (`endFrontness`) and a `transition`. `B P D T G K` have a `burst`: AV, AF, AH and AB before a vowel, and the same otherwise.
+
+### 3.2 Classes
+
+Every symbol below 128 has six **class bytes** in the data pack; their bits sort the symbols into classes. Class `(p, b)` is bit `b` of class byte `p`. The rules can test any class (section 5.2). The generator itself tests these:
+
+| Class | Name here | Phonemes |
+|---|---|---|
+| (0, 0x02) | sonorant | the vowels, `p`, `j l L W Y R`, `d h H`, the nasals `M m N n ~` |
+| (0, 0x04) | voiced | the vowels, `p`, `j l L W Y R d h`, `B D t J G Q q V x Z z`, the nasals |
+| (0, 0x10) | nasal | `M m N n ~` |
+| (0, 0x20) | stop | `B P D T J C G K q` |
+| (0, 0x40) | fricative | `V F x X Z S z s` |
+| (2, 0x01) | closure | `B P D T t J C G K Q q` and the nasals |
+| (2, 0x02) | vowel | the vowels and `p` |
+| (2, 0x10) | labial | `W h B P V F M m` |
+| (3, 0x02) | silence | `d H Q` and the pause |
+
+### 3.3 Categories
+
+A symbol's **category** is 0 (vowel) if it is in class vowel, else 3 (closure) if it is in class closure, else 1 (sonorant) if it is in class sonorant, else 2. So category 2 is the fricatives and the pause.
+
+### 3.4 The phonemes around
+
+The generator renders the node its cursor scans ([pipeline.md](pipeline.md) §3): the **current** phoneme. The cursor's done node is the **previous** phoneme and its first node the **next**; all three are segments, phonemes or pauses. The rules also test the node after the next one and the node before the previous one, whatever their type: punctuation and word marks too, and a sentinel, whose symbol is 0.
+
+## 4. Targets
+
+### 4.1 Loading the targets
+
+A phoneme starts from its targets. `P` is the current phoneme's entry in the data pack, `N` the next's:
+
+1. **Frontness.** If the previous phoneme has an offglide and isn't `u`, and the current one isn't `j`, the previous frontness becomes the previous phoneme's `endFrontness`; otherwise it becomes the frontness, still the previous phoneme's. Then the frontness becomes `P.frontness`.
+2. **Category.** The previous category becomes the category, and the category the current phoneme's (section 3.3).
+3. The aspiration and the fricative aspiration become 51, the three burst levels 0.
+4. **Targets.** Tracks 9 to 12 (F1 to F4) get `P.formants`, 13 to 15 (B1 to B3) `P.bandwidths`, 0 (AV) `P.voicing`, 1 to 8 `P.amplitudes`, 17 (F0) twice the node's second value, 18 to 20 the voice's `tracks` (the data pack's `voices`, for the cursor's voice), 21 zero.
+5. A vowel with an offglide: the vowel transition becomes `P.transition`, the offglide `P.offglide`.
+6. `u` before `j`: the frontness becomes 0.
+7. `B P D T G K` get their burst (section 4.2), `t J C` theirs (section 4.3).
+8. Track 16 (FNZ) gets `P.nasalZero`.
+9. Every track's segment gets the forward shape of the data pack's `defaultShapes`, mode 7 and the node's value as its frames; every track's weight becomes `categoryWeights[previous category][category]`. Tracks 20 and 21 then get mode 4.
+10. The next targets of F1 to F3 become `N.formants`; if the next phoneme is number 34 (`B`) or later, those of B1 to B3 become `N.bandwidths`.
+
+The phonemes' other values are what the rules and actions use: the voice onset and burst frames, the burst levels, the frontness, the offglide, the next targets.
+
+### 4.2 Stop bursts
+
+For `B P D T G K`:
+1. The burst levels (AV, AF, AH) and track 8's (AB) target become the burst's row before a vowel when the next phoneme is in class vowel, else its other row.
+2. Before a phoneme of place 8 or 9: the burst levels become 127 and AB's target 0, except for `K` before a nasal, `Q` or `t`.
+3. The **voice onset** becomes 127, or, for a phoneme not in class voiced, the node's byte 0x10.
+4. The **burst frames** become 0. Then, if the next phoneme is in class closure but not nasal, and the previous one isn't such a phoneme too:
+   - `D`: 1 after `j` and before `B` or `G`, else they stay 0;
+   - `K` before `P`, and `P` before a phoneme not in class voiced: the burst levels of AF and AH become 60 and 48, and the burst frames 1;
+   - otherwise 127.
+5. Otherwise, the first that applies:
+   - `K` before a fricative: 1;
+   - `G`: 1 before a vowel whose node hasn't flag bit 0x20, else 2;
+   - `T` before a fricative: 127;
+   - `D`: 127 before a phoneme in class sonorant but not vowel, else 2 after the pause and 1 after anything else;
+   - a phoneme not in class labial, not before `p`: 2;
+   - else 1.
+
+### 4.3 Affricate bursts
+
+For `t J C`, unless the next phoneme is of place 8 or 9: with `f` true when it is of place 6,
+- the burst levels become 127, 127 and 51; AH's becomes 0 for `J`, and for `C` when `f`; when `f`, AF's becomes 70 for `C` and 0 for `J`, and AV's 0 for `J`;
+- the voice onset becomes 127, and the burst frames 127 for `t` and 1 for the others.
+
+### 4.4 Modes
+
+After loading the targets, with the previous phoneme:
+1. Track 17's weight becomes 0 and its mode 6.
+2. After a phoneme not in class voiced: track 0's mode becomes 6, and track 17's earliest frame its next (section 2.1), so that its frames before stay.
+3. After one in class silence: the weights of tracks 9 to 11 become 32766.
+4. After one in class stop: track 1's earliest frame becomes its next.
+
+## 5. Rules
+
+### 5.1 Flags
+
+Before the rules, the generator sets eleven flags; each is cleared first:
+
+| Flag | Set when |
+|---|---|
+| 0 | the current phoneme is in class voiced |
+| 1 | the previous category is 0 |
+| 2 | the previous category is 3 |
+| 3 | the previous category is 1, or it is 3 and the previous phoneme is nasal, or it is 0 |
+| 4 | the previous category is 2 |
+| 5 | the category isn't 0, the current phoneme is in class stop, and either the next one is in class closure or the pause, or the current node has flag bit 0x40 |
+| 6, 7, 8, 9 | the category isn't 0 and the next phoneme is of place 0, 1, 3, 2 |
+| 10 | the next node has flag bit 0x20 |
+
+### 5.2 Rule sets and conditions
+
+The data pack has 54 **rule sets** and a matrix that gives the set for each current phoneme and previous phoneme (`ruleMatrix[current][previous]`). Each set is a list of rules; the generator applies the first rule whose conditions all hold, and no other. A rule's conditions, in order, each with the result it wants (`is`):
+- a flag's value;
+- whether a phoneme is in a class (`plane` and `bits`);
+- whether a phoneme is one of a list of symbols (`in`).
+
+The phoneme is the current one, the next, the one after the next or the one before the previous (section 3.4); no rule in the data pack tests the one before the previous. A set may have no rule that applies; then nothing is done.
+
+### 5.3 Assignments
+
+A rule first runs its **assignments** in order: each sets a field to a number, adds a number to it, subtracts one from it, or copies another field into it. The fields:
+
+| Field | Value |
+|---|---|
+| `target`, `mode`, `forward`, `back`, `onset`, `backTarget`, `frames` | a track's segment (section 2.3) |
+| `next`, `earliest`, `last` | a track's next and earliest frames and last value (section 2.1) |
+| `nextTarget` | a track's next target (section 4.1) |
+| `weight` | a track's weight (section 4.1) |
+| `burstLevel` | the burst level of track 0, 1 or 2 |
+| `previousCategory`, `category`, `previousFrontness`, `frontness` | section 4.1 |
+| `aspirationShift`, `voiceOnset`, `burstFrames`, `closureFrames`, `fricativeAspiration`, `aspiration`, `vowelOffset`, `vowelTransition` | values the actions use |
+
+### 5.4 Actions
+
+A rule then runs its **actions**, numbers 1 to 16, in order. Each is a step of its own, which the following parts of this spec describe:
+
+| Action | Step |
+|---|---|
+| 1 | shift the aspiration boundary |
+| 2 | shapes from the previous phoneme |
+| 3 | vowel onset |
+| 4 | vowel coarticulation |
+| 5 | sonorant transitions |
+| 6 | obstruent voicing |
+| 7 | fricative amplitudes |
+| 8 | consonant shapes |
+| 9 | stop closure and burst |
+| 10 | finish the phoneme |
+| 11 | locus weights |
+| 12 | special loci |
+| 13 | consonant targets and F0 |
+| 14 | source boundaries |
+| 15 | pull the aspiration back |
+| 16 | the per-phoneme rules |
+
+## 6. Rendering a phoneme
+
+To render the current phoneme, the generator:
+1. loads its targets and sets its modes (section 4);
+2. sets the flags (section 5.1) and applies the rules (sections 5.2 to 5.4);
+3. **Voicing.** For a phoneme not in class voiced: the unvoiced pitch becomes track 17's target, which becomes 0, and the 2 is taken out of track 17's mode (6 becomes 4). For a node whose second value is 0: track 2's target becomes track 0's plus 5; track 0's target, onset and back target become 0; the 2 is taken out of track 17's mode. When the previous phoneme isn't in class voiced or its node's second value is 0, the 1, the pull back, is taken out of track 17's mode;
+4. **Attenuation.** With the cursor's attenuation `a` in dB: the targets, onsets and back targets of tracks 0, 1 and 2 go down by `a`, to 0 at the lowest;
+5. **Voice.** With a voice other than 0: track 12's target goes down to the voice's `fourthFormantLimit` at the most. Track 21's target gets `voice << 4` and track 20's `a << 4`, both by a bitwise or;
+6. if the flag to keep the earlier frames is set (the stage's driver sets it), every track's earliest frame becomes its next, and the flag is cleared;
+7. **Visual event.** If the visual events are on ([pipeline.md](pipeline.md) §8.1) and the phoneme isn't `p`, and the pipeline speaks for an engine, the generator queues a visual event with the phoneme's symbol, sign-extended, for the destination. A pause is queued only if the last visual event wasn't one;
+8. renders the 22 segments, tracks 0 to 21 (section 2.4).
+
+## 7. Resets
+
+**The stage's reset**, with the pipeline's ([pipeline.md](pipeline.md) §7):
+1. The stage's own state: its pause and end states 0 and 1, the end and keep-earlier flags off, the generated-segment flag on, two bytes the actions use 0, the unvoiced pitch 0, the transition limit 4. Its cursor's types are 4 and 5, and the track levels the escape parser's (the pipeline does both).
+2. The ring's lookahead becomes 2 and the margin 3.
+3. The context is reset.
+
+**The context's reset**, also when a generated segment starts:
+1. The frontness and the previous frontness become −13120; both categories, the aspiration shift, the voicing shift, the burst frames, the vowel offset and transition, the closure frames, the voice onset, the burst levels, the aspiration and the fricative aspiration 0.
+2. Every track's next frame becomes the ring's `written`, its earliest frame `written − lookahead`, and its last value the initial frame's value for the track ([pipeline.md](pipeline.md) §7), in the track's units.
+3. The phoneme before the previous one is the pause, and `furthest` becomes `written`.
+
+## 8. What the recorded runs don't reach
 
 These follow the original's code, but no recorded run gets there:
-- Segments of modes 2, 3, 9, 17, 21 or above 21. A pull forward comes only from the generator's direct calls.
+- Segments of modes 2, 9, 17, 21 or above 21. Mode 3 came up 4 times.
 - A negative `frames`, `back target`, `onset` or `target` in a segment.
 - A Q15 product where dividing by 32767 instead of 32768 changes the result, as for `151 · 217 · 128`.
 - `AddBack` taking a frame other than the first below 0, or a first frame plus `change` of exactly −1.
 - A ring without room: the generator was at most 115 frames ahead of the synthesizer, margin included, because the synthesizer renders after every step of the generator.
+- 193 of the 468 rules: 275 applied. No rule of sets 43 (`z` after a closure), 47 and 48 (`h`, which no recorded run produced) applied; set 53 is empty and the matrix never gives it.
+- A stop burst's exceptions: `t`, `J` or `C` before a pause (the stages before split `J` and `C` into `J z` and `C s`), `K` before `t` or `Q` (section 4.2).
+- An F4 target above the voice's limit (section 6): no target in the data pack is.
+
+In these the original reads outside its tables, and the port does something else instead. No recorded run gets there either:
+- A previous, current or next node whose symbol isn't one of the phonemes: the port takes the pause.
+- A symbol of 128 or more in a node a rule tests: the port gives it no classes.
+- A voice other than 0 to 9: the port takes voice 0's tracks and F4 limit.

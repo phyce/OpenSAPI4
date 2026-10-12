@@ -44,6 +44,11 @@ type Pipeline struct {
 	ResetRequested bool
 	ResetValue     uint32
 
+	// VisualEvents is whether the parameter generator queues a visual event for each phoneme, PostedSpace
+	// whether the last one it queued was a pause.
+	VisualEvents bool
+	PostedSpace  bool
+
 	Synthesizer *synthesizer.Synthesizer
 	Engine      *Engine
 	tables      *datapack.Pipeline
@@ -113,6 +118,28 @@ const (
 	initialGain       = 1
 	initialSampleRate = 8000
 )
+
+// InitialFrame is the frame the synthesizer's ring starts with.
+func (pipeline *Pipeline) InitialFrame() [datapack.TrackCount]byte {
+	return pipeline.tables.InitialFrame
+}
+
+// PostVisual queues a visual event for a phoneme the parameter generator renders, unless it is a pause and so was
+// the last one (parameters.md §6.4).
+func (pipeline *Pipeline) PostVisual(symbol byte) {
+	if pipeline.Engine == nil {
+		return
+	}
+	if symbol == ' ' {
+		if pipeline.PostedSpace {
+			return
+		}
+		pipeline.PostedSpace = true
+	} else {
+		pipeline.PostedSpace = false
+	}
+	pipeline.Engine.Queue = append(pipeline.Engine.Queue, Item{Event: &Event{Kind: Visual, Value: uint32(int8(symbol))}})
+}
 
 // New returns a pipeline as the speaking thread constructs it on its stack: its nodes all zero, its attributes
 // pitch 85, speed 150, full volume, normal character and voice 0, gain 1, rendering at 8000 Hz.

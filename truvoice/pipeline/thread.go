@@ -14,7 +14,8 @@ const (
 )
 
 // Start prepares the pipeline for a speaking thread of its engine: it takes the engine's sample rate and, if
-// it is 1 to 4, its output gain, has the synthesizer render, and initializes the pipeline (pipeline.md §8.1).
+// it is 1 to 4, its output gain, has the synthesizer render, turns the visual events on and initializes the
+// pipeline (pipeline.md §8.1).
 func (pipeline *Pipeline) Start() {
 	engine := pipeline.Engine
 	pipeline.SampleRate = engine.SampleRate
@@ -22,6 +23,7 @@ func (pipeline *Pipeline) Start() {
 		pipeline.Synthesizer.Gain = uint16(engine.Gain)
 	}
 	pipeline.Synthesizer.Rendering = true
+	pipeline.VisualEvents = true
 	pipeline.Initialize()
 }
 

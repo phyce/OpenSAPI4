@@ -283,7 +283,7 @@ A new pipeline's attributes are pitch 85 Hz, speed 150 words a minute, volume 65
 The speaking thread then starts its pipeline:
 1. The sample rate becomes the engine's.
 2. If the engine's output gain is 1 to 4, it becomes the synthesizer's gain ([synthesizer.md](synthesizer.md) §5.4).
-3. The synthesizer renders ([synthesizer.md](synthesizer.md) §5.2), and the visual events are on: the parameter generator queues them (its spec will say how).
+3. The synthesizer renders ([synthesizer.md](synthesizer.md) §5.2), and the visual events are on: the parameter generator queues them ([parameters.md](parameters.md) §6).
 4. The input side takes the engine's settings for the pre-formatter and the TextIn tokenizer, and the tokenizer is created if it is on (the input stage's spec will say how).
 5. Initialize the pipeline (section 7).
 

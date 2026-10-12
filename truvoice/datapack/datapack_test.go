@@ -164,6 +164,36 @@ func TestParameters(t *testing.T) {
 	if len(parameters.Shapes[0]) != 0 || !slices.Equal(parameters.Shapes[3], []byte{255, 114, 28}) || len(parameters.Shapes[30]) != 29 {
 		t.Errorf("shapes %v %v %v", parameters.Shapes[0], parameters.Shapes[3], parameters.Shapes[30])
 	}
+	index, found := parameters.Index('B')
+	if !found || index != 34 || parameters.Phonemes[index].Burst == nil || parameters.Phonemes[index].Burst[0] != [4]int32{50, 65, 40, 0} {
+		t.Errorf("B is phoneme %d, %+v", index, parameters.Phonemes[index])
+	}
+	if _, found := parameters.Index('!'); found {
+		t.Error("! is a phoneme")
+	}
+	if vowel := parameters.Phonemes[0].Vowel; vowel == nil || vowel.Transition != 7 || parameters.Phonemes[19].Vowel != nil {
+		t.Errorf("vowels %+v %+v", parameters.Phonemes[0].Vowel, parameters.Phonemes[19].Vowel)
+	}
+	rules := 0
+	for _, set := range parameters.RuleSets {
+		rules += len(set)
+	}
+	if len(parameters.RuleSets) != 54 || rules != 468 || parameters.Classes[0]['B'] != 0xa4 || parameters.Voices[1].Tracks != [3]int32{17, 8, 5} || parameters.CategoryWeights[3][0] != 21320 {
+		t.Errorf("%d rule sets, %d rules, class %#x, voice %+v, weight %d", len(parameters.RuleSets), rules, parameters.Classes[0]['B'], parameters.Voices[1], parameters.CategoryWeights[3][0])
+	}
+	first := parameters.RuleSets[0][0]
+	if len(first.Conditions) != 1 || first.Conditions[0] != (datapack.Condition{Kind: datapack.SymbolCondition, Phoneme: datapack.CurrentPhoneme, Symbols: "EUY4", Is: true}) ||
+		len(first.Assignments) != 2 || first.Assignments[1] != (datapack.Assignment{Operation: datapack.Set, To: datapack.Place{Field: datapack.TargetField, Track: 4}}) || !slices.Equal(first.Actions, []int{2, 3, 4, 10}) {
+		t.Errorf("rule set 0's first rule %+v", first)
+	}
+}
+
+func phoneme(content map[string]any, index int) map[string]any {
+	return content["phonemes"].([]any)[index].(map[string]any)
+}
+
+func rule(content map[string]any, set, number int) map[string]any {
+	return content["ruleSets"].([]any)[set].([]any)[number].(map[string]any)
 }
 
 func TestChangedParameters(t *testing.T) {
@@ -179,6 +209,32 @@ func TestChangedParameters(t *testing.T) {
 		{func(content map[string]any) { content["shapes"].([]any)[2] = []any{255, 1, 1} }, "shapes[2] has 3 weights"},
 		{func(content map[string]any) { content["shapes"].([]any)[4].([]any)[0] = 254 }, "shapes[4] starts with 254"},
 		{func(content map[string]any) { content["shapes"].([]any)[5].([]any)[2] = 0 }, "shapes[5][2] is 0"},
+		{func(content map[string]any) { phoneme(content, 3)["symbol"] = "4" }, `phonemes[3].symbol "4" is also phonemes[0]'s`},
+		{func(content map[string]any) { phoneme(content, 58)["symbol"] = "!" }, "the pause is phonemes[-1]"},
+		{func(content map[string]any) { delete(phoneme(content, 34), "voicing") }, "phonemes[34].voicing is missing"},
+		{func(content map[string]any) { phoneme(content, 34)["burst"] = []any{[]any{1, 2, 3, 4}} }, "phonemes[34].burst has 1 rows"},
+		{func(content map[string]any) { content["classes"] = content["classes"].([]any)[:5] }, "classes has 5 planes"},
+		{func(content map[string]any) { content["defaultShapes"].([]any)[3] = 31 }, "defaultShapes[3] is 31"},
+		{func(content map[string]any) { content["ruleMatrix"].([]any)[2].([]any)[5] = 54 }, "ruleMatrix[2][5] is 54, outside 0 to 53"},
+		{func(content map[string]any) { rule(content, 3, 0)["do"] = []any{17} }, "ruleSets[3][0].do[0] is 17"},
+		{func(content map[string]any) {
+			rule(content, 3, 0)["if"] = []any{map[string]any{"flag": 11, "is": true}}
+		}, "ruleSets[3][0].if[0].flag is 11"},
+		{func(content map[string]any) {
+			rule(content, 3, 0)["if"] = []any{map[string]any{"phoneme": "next", "plane": 2, "bits": 3, "is": true}}
+		}, "bits is 3, expected one bit"},
+		{func(content map[string]any) {
+			rule(content, 3, 0)["if"] = []any{map[string]any{"phoneme": "previous", "in": "a", "is": true}}
+		}, `phoneme is "previous"`},
+		{func(content map[string]any) {
+			rule(content, 3, 0)["set"] = []any{map[string]any{"to": []any{"pitch"}, "set": 1}}
+		}, `field is "pitch"`},
+		{func(content map[string]any) {
+			rule(content, 3, 0)["set"] = []any{map[string]any{"to": []any{"burstLevel", 3}, "set": 1}}
+		}, "track is 3, outside 0 to 2"},
+		{func(content map[string]any) {
+			rule(content, 3, 0)["set"] = []any{map[string]any{"to": []any{"target", 1}, "set": 1, "add": 2}}
+		}, "has 2 of set, add, subtract and copy"},
 	}
 	for _, test := range tests {
 		var content map[string]any
