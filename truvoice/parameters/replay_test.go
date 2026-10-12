@@ -27,29 +27,30 @@ const stateSize = 0x9184
 // The thread state's places the replay maps: the ring's, the generator's own, the pipeline's nodes, the
 // parameters cursor and the visual events.
 const (
-	stateMarkers      = 0x14
-	stateSegments     = 0x144
-	segmentSize       = 0x1c
-	stateFrames       = 0x3ac
-	stateTones        = 0x1fbd
-	stateLevels       = 0x1f98
-	stateSettings     = 0x1a28
-	stateEngine       = 0x20f4
-	stateSampleRate   = 0x210c
-	stateVisualEvents = 0x2130
-	statePostedSpace  = 0x2132
-	stateCursor       = 0x2210
-	stateAttenuation  = 0x223c
-	stateInputFlags   = 0x2248
-	stateTypes        = 0x224c
-	stateVoice        = 0x2250
-	stateListLast     = 0x22a0
-	stateListFirst    = 0x22c0
-	stateFreeLast     = 0x22e8
-	stateFreeFirst    = 0x2308
-	stateNodes        = 0x2328
-	nodeSize          = 0x20
-	nodeData          = 8
+	stateMarkers        = 0x14
+	stateSegments       = 0x144
+	segmentSize         = 0x1c
+	stateFrames         = 0x3ac
+	stateTones          = 0x1fbd
+	stateCoarticulation = 0x2034
+	stateLevels         = 0x1f98
+	stateSettings       = 0x1a28
+	stateEngine         = 0x20f4
+	stateSampleRate     = 0x210c
+	stateVisualEvents   = 0x2130
+	statePostedSpace    = 0x2132
+	stateCursor         = 0x2210
+	stateAttenuation    = 0x223c
+	stateInputFlags     = 0x2248
+	stateTypes          = 0x224c
+	stateVoice          = 0x2250
+	stateListLast       = 0x22a0
+	stateListFirst      = 0x22c0
+	stateFreeLast       = 0x22e8
+	stateFreeFirst      = 0x2308
+	stateNodes          = 0x2328
+	nodeSize            = 0x20
+	nodeData            = 8
 )
 
 type diffRun struct {
@@ -223,7 +224,9 @@ func replayCase(golden goldenCase, replayers map[string]replayer) (map[string]in
 			continue
 		}
 		counts[record.Function]++
-		entry.call.after = state
+		if entry.call.after == nil {
+			entry.call.after = state
+		}
 		if err := replayers[record.Function](entry.call); err != nil {
 			failures[record.Function]++
 			if len(messages[record.Function]) < 5 {
@@ -272,7 +275,8 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 		{0x1e50, "closure frames", &generator.ClosureFrames}, {0x1e54, "fricative aspiration", &generator.FricativeAspiration},
 		{0x1e58, "aspiration", &generator.Aspiration}, {0x1fb8, "unvoiced pitch", &generator.UnvoicedPitch},
 		{0x1fe8, "transition limit", &generator.TransitionLimit}, {0x1fb0, "pause state", &generator.PauseState},
-		{0x1fb4, "end state", &generator.EndState}, {0x2010, "previous group", &generator.PreviousGroup}}
+		{0x1fb4, "end state", &generator.EndState}, {0x2010, "previous group", &generator.PreviousGroup},
+		{0x2014, "vowel frames", &generator.VowelFrames}}
 	for index := range generator.BurstLevels {
 		dwords = append(dwords, dwordField{0x1e5c + 4*index, label("burst level %d", index), &generator.BurstLevels[index]})
 	}
@@ -297,8 +301,8 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 	for flag := range generator.Flags {
 		bools = append(bools, boolField{0x1e68 + flag, label("flag %d", flag), &generator.Flags[flag]})
 	}
-	bytes := []byteField{{0x2034, "coarticulation", &generator.Coarticulation}, {0x2035, "pitch mark", &generator.PitchMark},
-		{0x1fed, "before previous", &generator.BeforePrevious}}
+	bytes := []byteField{{stateCoarticulation, "coarticulation", &generator.Coarticulation}, {0x2035, "pitch mark", &generator.PitchMark},
+		{0x1fed, "before previous", &generator.BeforePrevious}, {0x1fec, "after next", &generator.AfterNext}}
 	return dwords, bools, bytes
 }
 
@@ -341,6 +345,7 @@ func nodeIndex(offset int) int {
 // testData are the data pack's tables the replays need.
 type testData struct {
 	parameters *datapack.Parameters
+	vowels     *datapack.Vowels
 	pipeline   *datapack.Pipeline
 }
 
@@ -351,16 +356,20 @@ func loadTestData(t *testing.T) *testData {
 	if err != nil {
 		t.Fatal(err)
 	}
+	vowels, err := pack.LoadVowels()
+	if err != nil {
+		t.Fatal(err)
+	}
 	pipelineTables, err := pack.LoadPipeline()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testData{parameters, pipelineTables}
+	return &testData{parameters, vowels, pipelineTables}
 }
 
 // load returns a generator with the thread state's values when the call started.
 func (data *testData) load(call *call) *Generator {
-	generator := New(data.parameters, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
+	generator := New(data.parameters, data.vowels, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
 	loadInto(generator, call.before, call.base)
 	return generator
 }
@@ -445,7 +454,7 @@ func store(generator *Generator, state []byte) {
 
 var stateNames = sync.OnceValue(func() map[int]string {
 	names := map[int]string{statePostedSpace: "posted space"}
-	dwords, bools, bytes := generatorFields(New(nil, pipeline.New(nil, new(synthesizer.Synthesizer), nil, nil)), true)
+	dwords, bools, bytes := generatorFields(New(nil, nil, pipeline.New(nil, new(synthesizer.Synthesizer), nil, nil)), true)
 	for _, field := range dwords {
 		for offset := range 4 {
 			names[field.offset+offset] = field.name

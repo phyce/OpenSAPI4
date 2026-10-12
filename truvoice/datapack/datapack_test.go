@@ -253,3 +253,80 @@ func TestChangedParameters(t *testing.T) {
 		}
 	}
 }
+
+func TestVowels(t *testing.T) {
+	vowels, err := conformance.Pack(t).LoadVowels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vowels.Index('@') != 0 || vowels.Index('c') != 23 || vowels.Index('p') != -1 || vowels.Index(200) != -1 {
+		t.Errorf("indexes %d %d %d", vowels.Index('@'), vowels.Index('c'), vowels.Index('p'))
+	}
+	if vowels.Contexts[' '] != 33 || vowels.Contexts['d'] != 5 || vowels.Contexts['H'] != 5 || vowels.Contexts['A'] != -1 {
+		t.Errorf("contexts %d %d %d %d", vowels.Contexts[' '], vowels.Contexts['d'], vowels.Contexts['H'], vowels.Contexts['A'])
+	}
+	schwa := &vowels.Vowels[vowels.Index('@')]
+	if len(schwa.Records) != 695 || !datapack.Reduced(schwa.Symbol) || schwa.Trajectories[0] != nil {
+		t.Errorf("@ has %d records", len(schwa.Records))
+	}
+	if record := schwa.Find(0, 0); record == nil || record.Start != [4]byte{100, 65, 159, 207} || record.Middle != [4]byte{106, 63, 160, 209} || record.Timing != [4]int32{11, 11, 11, 11} || record.BandwidthEnds != [3]byte{25, 52, 47} {
+		t.Errorf("@ record %+v", record)
+	}
+	alternatives := 0
+	for _, record := range vowels.Vowels[vowels.Index('a')].Records {
+		if record.Alternative != nil {
+			alternatives++
+		}
+	}
+	if alternatives != 23 || len(vowels.Vowels[vowels.Index('O')].Trajectories[1]) != 263 {
+		t.Errorf("a has %d alternatives, O %d F2 trajectories", alternatives, len(vowels.Vowels[vowels.Index('O')].Trajectories[1]))
+	}
+}
+
+func TestChangedVowels(t *testing.T) {
+	original, err := os.ReadFile(conformance.Path(t, "datapack", "truvoice", "vowels.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vowel := func(content map[string]any, index int) map[string]any {
+		return content["vowels"].([]any)[index].(map[string]any)
+	}
+	tests := []struct {
+		change  func(map[string]any)
+		message string
+	}{
+		{func(content map[string]any) { content["contexts"] = []any{1} }, "contexts has 1 values"},
+		{func(content map[string]any) { content["contexts"].([]any)[65] = 34 }, "contexts[65] is 34"},
+		{func(content map[string]any) { content["vowels"] = content["vowels"].([]any)[:23] }, "vowels has 23 entries"},
+		{func(content map[string]any) { vowel(content, 3)["symbol"] = "O" }, `vowels[3] has symbol "O"`},
+		{func(content map[string]any) {
+			records := vowel(content, 0)["records"].([]any)
+			records[0], records[1] = records[1], records[0]
+		}, "vowels[0].records[1] is out of order"},
+		{func(content map[string]any) { vowel(content, 2)["records"].([]any)[5] = []any{0, 5, 1} }, "vowels[2].records[5] has 3 values, expected 23"},
+		{func(content map[string]any) { vowel(content, 2)["records"].([]any)[5].([]any)[10] = 9999 }, "vowels[2].records[5] trajectory 0 is 9999"},
+		{func(content map[string]any) { vowel(content, 0)["records"].([]any)[0].([]any)[14] = 16 }, "vowels[0].records[0] timing[0] is 16"},
+		{func(content map[string]any) { vowel(content, 0)["trajectories"] = vowel(content, 2)["trajectories"] }, "vowels[0] has 4 trajectory tables"},
+		{func(content map[string]any) {
+			vowel(content, 6)["alternatives"].([]any)[0].(map[string]any)["neighbour"] = "after"
+		}, "vowels[6].alternatives[0] has no neighbour or a wrong one"},
+		{func(content map[string]any) {
+			alternatives := vowel(content, 6)["alternatives"].([]any)
+			alternatives[1].(map[string]any)["record"] = alternatives[0].(map[string]any)["record"]
+		}, "vowels[6].alternatives[1] has no record or a wrong one"},
+	}
+	for _, test := range tests {
+		var content map[string]any
+		if err := json.Unmarshal(original, &content); err != nil {
+			t.Fatal(err)
+		}
+		test.change(content)
+		changed, err := json.Marshal(content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writePack(t, "vowels.json", changed).LoadVowels(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
+		}
+	}
+}

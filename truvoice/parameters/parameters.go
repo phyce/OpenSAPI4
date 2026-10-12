@@ -46,6 +46,10 @@ type Generator struct {
 	// leave the frames before it as they are.
 	UnvoicedPitch int32
 	KeepEarlier   bool
+	// VowelFrames are the current vowel's frames after its voice onset (parameters.md §11.3), AfterNext the
+	// symbol of the phoneme after the next one, or a space.
+	VowelFrames int32
+	AfterNext   byte
 
 	// The stage's own state, which its reset sets (parameters.md §7).
 	TransitionLimit int32
@@ -61,6 +65,7 @@ type Generator struct {
 	Pipeline    *pipeline.Pipeline
 	Synthesizer *synthesizer.Synthesizer
 	tables      *datapack.Parameters
+	vowels      *datapack.Vowels
 }
 
 // Actions runs the rules' actions the port doesn't have yet (parameters.md §5.4).
@@ -68,8 +73,8 @@ type Actions interface {
 	Run(generator *Generator, action int)
 }
 
-func New(tables *datapack.Parameters, pipeline *pipeline.Pipeline) *Generator {
-	return &Generator{Pipeline: pipeline, Synthesizer: pipeline.Synthesizer, tables: tables}
+func New(tables *datapack.Parameters, vowels *datapack.Vowels, pipeline *pipeline.Pipeline) *Generator {
+	return &Generator{Pipeline: pipeline, Synthesizer: pipeline.Synthesizer, tables: tables, vowels: vowels}
 }
 
 func multiply(first, second int32) int32 {

@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules and articulators ([parameters.md](parameters.md) §2.5, §3 to §5 and §9.2). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules and articulators ([parameters.md](parameters.md) §2.5, §3 to §5 and §9.2) and its vowel database (§11). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -11,6 +11,7 @@ manifest.json
 synthesizer.json
 pipeline.json
 parameters.json
+vowels.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -112,3 +113,21 @@ A rule is `{"if": conditions, "set": assignments, "do": actions}` ([parameters.m
 - a condition is `{"flag": f, "is": b}` for flag `f` (0 to 10), `{"phoneme": who, "plane": p, "bits": m, "is": b}` for class `(p, m)`, `m` one bit, or `{"phoneme": who, "in": symbols, "is": b}`, with `who` one of `current`, `next`, `afterNext` and `beforePrevious`;
 - an assignment is `{"to": place, "set": n}`, `"add"` or `"subtract"` instead of `"set"`, or `{"to": place, "copy": place}`. A place is `[field, track]` for the fields with tracks (`burstLevel`: 0 to 2), or `[field]`;
 - the actions are numbers from 1 to 16.
+
+## 6. `vowels.json`
+
+The vowel database ([parameters.md](parameters.md) §11). Bytes are frame bytes of their track (parameters.md §2.2).
+
+| Field | Values | Meaning |
+|---|---|---|
+| `contexts` | 128 numbers, −1 to 33 | Each symbol's context, −1 for none |
+| `vowels` | 24 objects | The database's vowels in its order, `@ \| O b f U A E I y a e i v o w u 3 r g 5 k 4 c`, below |
+
+A vowel:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `symbol` | one character | The vowel's symbol |
+| `records` | lists of numbers | The records, ordered by left context, then right context. Each starts with its left and right context, 0 to 33. For `@` and `\|` it goes on with F1 to F4 start, middle and end bytes, the four timings (0 to 15) and the B1 to B3 end bytes: 21 numbers. For the others it goes on with F1 to F4 start and end bytes, an entry of each formant's trajectory table, and the B1 to B3 starts, middles and ends in Hz: 23 numbers |
+| `trajectories` | 4 lists | Not for `@` and `\|`: F1 to F4's trajectory tables, whose entries are four point bytes and four timings (0 to 15) |
+| `alternatives` | objects | Only some vowels: `{"record": i, "neighbour": n, "symbol": s, "values": v}`, an alternative of record `i`, used when the node before the previous phoneme (`n` is `beforePrevious`) or after the next one (`afterNext`) has symbol `s`. `v` is a record without its contexts |

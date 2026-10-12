@@ -20,6 +20,7 @@ func TestPhonemes(t *testing.T) {
 	fired := map[[2]int]int{}
 	roles := map[string]int{}
 	phonemeRules := map[string]int{}
+	database := map[string]int{}
 	note := func(generator *Generator) {
 		cursor := generator.cursor()
 		current, _ := generator.phoneme(cursor.Scan.Symbol())
@@ -88,6 +89,20 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::FricativeAmplitudes":     plain((*Generator).FricativeAmplitudes),
 		"Parameters::StopClosureBurst":        plain((*Generator).StopClosureBurst),
 		"PullAspirationBack":                  plain((*Generator).PullAspirationBack),
+		"Parameters::VowelCoarticulation": func(call *call) error {
+			generator := data.load(call)
+			found := generator.fromDatabase()
+			lock.Lock()
+			database[fmt.Sprint(found)]++
+			lock.Unlock()
+			if recorded := call.after[stateCoarticulation] == 1; found != recorded {
+				return fmt.Errorf("the vowel database found a record: %v, expected %v", found, recorded)
+			}
+			if !found {
+				return nil
+			}
+			return compare(generator, call)
+		},
 	})
 	t.Logf("calls replayed: %v", counts)
 	ruleCount, unreached := 0, []int{}
@@ -99,4 +114,5 @@ func TestPhonemes(t *testing.T) {
 	}
 	t.Logf("rules fired: %d of %d; rule sets none fired in: %v; phonemes that aren't: %v", len(fired), ruleCount, unreached, roles)
 	t.Logf("per-phoneme rules by phoneme: %v", phonemeRules)
+	t.Logf("action 4 from the vowel database: %v", database)
 }
