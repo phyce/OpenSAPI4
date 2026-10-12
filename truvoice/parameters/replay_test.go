@@ -270,7 +270,7 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 		{0x1e50, "closure frames", &generator.ClosureFrames}, {0x1e54, "fricative aspiration", &generator.FricativeAspiration},
 		{0x1e58, "aspiration", &generator.Aspiration}, {0x1fb8, "unvoiced pitch", &generator.UnvoicedPitch},
 		{0x1fe8, "transition limit", &generator.TransitionLimit}, {0x1fb0, "pause state", &generator.PauseState},
-		{0x1fb4, "end state", &generator.EndState}}
+		{0x1fb4, "end state", &generator.EndState}, {0x2010, "previous group", &generator.PreviousGroup}}
 	for index := range generator.BurstLevels {
 		dwords = append(dwords, dwordField{0x1e5c + 4*index, label("burst level %d", index), &generator.BurstLevels[index]})
 	}
@@ -495,8 +495,10 @@ func compare(generator *Generator, call *call) error {
 	return difference(generator, call.before, call.after)
 }
 
-// recordedActions stands for the rules' actions: each takes the generator to the state the original's action
-// left, after checking that the generator is in the state it started from.
+// recordedActions stands for the rules' actions the port doesn't have: each takes the generator to the state
+// the original's action left, after checking that the generator is in the state it started from. The
+// recorded calls of the actions the port has are skipped: the state the next action starts from, or the
+// state the call leaves, checks them.
 type recordedActions struct {
 	call     *call
 	position int
@@ -508,6 +510,7 @@ func (recorded *recordedActions) Run(generator *Generator, action int) {
 	if recorded.err != nil {
 		return
 	}
+	recorded.skipPorted()
 	if recorded.position == len(recorded.call.actions) {
 		recorded.err = fmt.Errorf("action %d (%s) wasn't recorded", action, actionFunctions[action])
 		return
@@ -526,6 +529,12 @@ func (recorded *recordedActions) Run(generator *Generator, action int) {
 	recorded.image = actionCall.after
 }
 
+func (recorded *recordedActions) skipPorted() {
+	for recorded.position < len(recorded.call.actions) && recorded.call.actions[recorded.position].record.Function == actionFunctions[phonemeRulesAction] {
+		recorded.position++
+	}
+}
+
 // withActions runs a Go function on the call's state with the recorded actions, and compares the state it
 // leaves.
 func (data *testData) withActions(call *call, run func(generator *Generator)) error {
@@ -536,6 +545,7 @@ func (data *testData) withActions(call *call, run func(generator *Generator)) er
 	if recorded.err != nil {
 		return recorded.err
 	}
+	recorded.skipPorted()
 	if recorded.position != len(call.actions) {
 		return fmt.Errorf("%d of %d recorded actions ran, the next %s", recorded.position, len(call.actions), call.actions[recorded.position].record.Function)
 	}

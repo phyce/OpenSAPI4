@@ -39,6 +39,8 @@ type Generator struct {
 	Weights             [datapack.TrackCount]int32
 	Offglide            [7]int32
 	NextTargets         [datapack.TrackCount]int32
+	// PreviousGroup is the group of the previous phoneme the per-phoneme rules last sorted (parameters.md §8.2).
+	PreviousGroup int32
 
 	// UnvoicedPitch is the pitch target of the last phoneme without voicing. KeepEarlier makes the next phoneme
 	// leave the frames before it as they are.
@@ -61,7 +63,7 @@ type Generator struct {
 	tables      *datapack.Parameters
 }
 
-// Actions runs the rules' actions (parameters.md §5.4), which the port doesn't have yet.
+// Actions runs the rules' actions the port doesn't have yet (parameters.md §5.4).
 type Actions interface {
 	Run(generator *Generator, action int)
 }

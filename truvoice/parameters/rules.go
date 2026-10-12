@@ -34,9 +34,21 @@ func (generator *Generator) ApplyRules() {
 		}
 		generator.Assign(rule.Assignments)
 		for _, action := range rule.Actions {
-			generator.Actions.Run(generator, action)
+			generator.act(action)
 		}
 		return
+	}
+}
+
+// The actions the port has.
+const phonemeRulesAction = 16
+
+func (generator *Generator) act(action int) {
+	switch action {
+	case phonemeRulesAction:
+		generator.PhonemeRules()
+	default:
+		generator.Actions.Run(generator, action)
 	}
 }
 

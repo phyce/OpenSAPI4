@@ -12,13 +12,14 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// TestPhonemes replays every recorded call of the stage's resets, the target loading, the rules and the
-// rendering of a phoneme, with the rules' actions taken from the records.
+// TestPhonemes replays every recorded call of the stage's resets, the target loading, the rules, the
+// per-phoneme rules and the rendering of a phoneme, with the other actions taken from the records.
 func TestPhonemes(t *testing.T) {
 	data := loadTestData(t)
 	var lock sync.Mutex
 	fired := map[[2]int]int{}
 	roles := map[string]int{}
+	phonemeRules := map[string]int{}
 	note := func(generator *Generator) {
 		cursor := generator.cursor()
 		current, _ := generator.phoneme(cursor.Scan.Symbol())
@@ -68,6 +69,16 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::RenderPhoneme": func(call *call) error {
 			return data.withActions(call, (*Generator).RenderPhoneme)
 		},
+		"Parameters::PhonemeRules": func(call *call) error {
+			generator := data.load(call)
+			cursor := generator.cursor()
+			lock.Lock()
+			phonemeRules[string(cursor.Scan.Symbol())]++
+			lock.Unlock()
+			generator.PhonemeRules()
+			return compare(generator, call)
+		},
+		"Parameters::ClassifyPrevVowel": plain((*Generator).groupPrevious),
 	})
 	t.Logf("calls replayed: %v", counts)
 	ruleCount, unreached := 0, []int{}
@@ -78,4 +89,5 @@ func TestPhonemes(t *testing.T) {
 		}
 	}
 	t.Logf("rules fired: %d of %d; rule sets none fired in: %v; phonemes that aren't: %v", len(fired), ruleCount, unreached, roles)
+	t.Logf("per-phoneme rules by phoneme: %v", phonemeRules)
 }
