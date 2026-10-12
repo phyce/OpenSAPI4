@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,6 +151,46 @@ func TestChangedPipeline(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := writePack(t, "pipeline.json", changed).LoadPipeline(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
+		}
+	}
+}
+
+func TestParameters(t *testing.T) {
+	parameters, err := conformance.Pack(t).LoadParameters()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parameters.Shapes[0]) != 0 || !slices.Equal(parameters.Shapes[3], []byte{255, 114, 28}) || len(parameters.Shapes[30]) != 29 {
+		t.Errorf("shapes %v %v %v", parameters.Shapes[0], parameters.Shapes[3], parameters.Shapes[30])
+	}
+}
+
+func TestChangedParameters(t *testing.T) {
+	original, err := os.ReadFile(conformance.Path(t, "datapack", "truvoice", "parameters.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		change  func(map[string]any)
+		message string
+	}{
+		{func(content map[string]any) { content["shapes"] = content["shapes"].([]any)[:30] }, "shapes has 30 entries"},
+		{func(content map[string]any) { content["shapes"].([]any)[2] = []any{255, 1, 1} }, "shapes[2] has 3 weights"},
+		{func(content map[string]any) { content["shapes"].([]any)[4].([]any)[0] = 254 }, "shapes[4] starts with 254"},
+		{func(content map[string]any) { content["shapes"].([]any)[5].([]any)[2] = 0 }, "shapes[5][2] is 0"},
+	}
+	for _, test := range tests {
+		var content map[string]any
+		if err := json.Unmarshal(original, &content); err != nil {
+			t.Fatal(err)
+		}
+		test.change(content)
+		changed, err := json.Marshal(content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writePack(t, "parameters.json", changed).LoadParameters(); err == nil || !strings.Contains(err.Error(), test.message) {
 			t.Errorf("%v, expected %q", err, test.message)
 		}
 	}

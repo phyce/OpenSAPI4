@@ -36,6 +36,15 @@ func Pack(t testing.TB) *datapack.Pack {
 // ReadLines reads a gzip-compressed file of JSON lines from the golden folder.
 func ReadLines[T any](t testing.TB, elements ...string) []T {
 	t.Helper()
+	var lines []T
+	EachLine(t, func(line T) { lines = append(lines, line) }, elements...)
+	return lines
+}
+
+// EachLine reads a gzip-compressed file of JSON lines from the golden folder and hands each line to use, so
+// that a large file isn't held in memory.
+func EachLine[T any](t testing.TB, use func(T), elements ...string) {
+	t.Helper()
 	file, err := os.Open(Path(t, append([]string{"golden", "truvoice"}, elements...)...))
 	if err != nil {
 		t.Fatal(err)
@@ -47,16 +56,14 @@ func ReadLines[T any](t testing.TB, elements ...string) []T {
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(nil, 1<<28)
-	var lines []T
 	for scanner.Scan() {
 		var line T
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
 			t.Fatal(err)
 		}
-		lines = append(lines, line)
+		use(line)
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	return lines
 }

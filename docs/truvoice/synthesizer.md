@@ -263,10 +263,10 @@ The ring holds 256 frames. Each **slot** holds a frame (section 4.1), a **marker
 
 The synthesizer also keeps three flags, `done`, `hold` and `ready` (a converted block waits to be rendered), and `passed`, a count of the marker bits it has met.
 
-The parameter generator writes the frames and their bits and sets `written`, `end`, `lookahead` and `done`; its own spec will say when. Two operations on the ring are shared:
+The parameter generator writes the frames and their bits, sets `written` and a marker bit after each phoneme or pause ([parameters.md](parameters.md) §2.6), and sets `end`, `lookahead` and `done`; its own spec will say when. Two operations on the ring are shared:
 
 - **Reset**, when the engine resets its pipeline: clear every marker and tone bit; fill slots 0 to 11 with the parameter generator's initial frame; `position = 0`, `written = 12`, `end = 10`, `passed = 0`, `done` cleared. The parameter generator's own reset sets `lookahead = 2`. A session therefore starts with 10 copies of the initial frame, 100 ms.
-- **Rebase**, when the parameter generator asks for it: if `position > 2048`, subtract 2048 from `position`, `written` and `end` (unless it is −1). The slots stay where they are. The parameter generator moves its own positions back by the same amount. The recorded runs contain one rebase, at position 2056; the limit of 2048 comes from the code.
+- **Rebase**, when the parameter generator asks for it: if `position > 2048`, subtract 2048 from `position`, `written` and `end` (unless it is −1). The slots stay where they are. The parameter generator moves its own positions back by the same amount ([parameters.md](parameters.md) §2.7). The recorded runs contain one rebase, at position 2056; the limit of 2048 comes from the code.
 
 ### 5.2 A step
 

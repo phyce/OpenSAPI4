@@ -219,7 +219,7 @@ The original computes it in x87 floating point. The value closest to an integer 
 
 ## 5. The output stage
 
-The output stage frees the nodes the synthesizer has spoken. The synthesizer counts the **markers** it passes: the parameter generator marks one frame of each segment (its spec will say which), and the synthesizer counts the mark when it converts that frame ([synthesizer.md](synthesizer.md) §5.2). The output stage runs:
+The output stage frees the nodes the synthesizer has spoken. The synthesizer counts the **markers** it passes: the parameter generator marks one frame of each segment, the last one every track has written for it ([parameters.md](parameters.md) §2.6), and the synthesizer counts the mark when it converts that frame ([synthesizer.md](synthesizer.md) §5.2). The output stage runs:
 
 1. Begin on the output cursor (section 3.2). Its types are all six, so no command runs here. If the window has no node, go to 4: the result is **done**.
 2. Go from `scan` up to the window's end, not including it:
@@ -244,7 +244,7 @@ The speaking thread runs the pipeline one **step** at a time. Besides the stages
 A step:
 1. If a reset is requested, reset the stages (section 7).
 2. If the output stage's last result isn't **done**, run the output stage and keep its result.
-3. If waiting for room and the ring has room, stop waiting. The ring has room when `margin + highest − position + frames < 256`: the synthesizer's position ([synthesizer.md](synthesizer.md) §5.1), and the parameter generator's margin, highest frame written and the frames it waits to write (its spec will say how it sets them).
+3. If waiting for room and the ring has room, stop waiting. The ring has room when `margin + furthest − position + frames < 256` ([parameters.md](parameters.md) §2.7): the synthesizer's position ([synthesizer.md](synthesizer.md) §5.1), and the parameter generator's margin, furthest frame written and the frames it waits to write (its spec will say how it sets the margin and the frames).
 4. If the parameter generator has work and isn't waiting for room:
    1. Run the parameter generator's step. It reports **finished**, **waiting** or **working**. If finished, it no longer has work; if waiting, wait for room.
    2. Run the synthesizer's loop ([synthesizer.md](synthesizer.md) §5.3). Each time the loop runs the output stage, keep its result.

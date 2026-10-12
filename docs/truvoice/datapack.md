@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4) and the pipeline's ([pipeline.md](pipeline.md)). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes ([parameters.md](parameters.md) §2.5). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -10,6 +10,7 @@ The files the Go engine reads instead of the TruVoice engine's own tables. A con
 manifest.json
 synthesizer.json
 pipeline.json
+parameters.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -76,3 +77,9 @@ A **rate** (§4.2, §4.3) has:
 | `voices` | 10 objects | Each voice's own `pitch` (50 to 400 Hz), `rate` (rate index, 0 to 25) and `speed` (50 to 250 words a minute) ([pipeline.md](pipeline.md) §4) |
 | `initialFrame` | 22 bytes | The frame the synthesizer's ring starts with ([synthesizer.md](synthesizer.md) §5.1), track by track |
 | `generatedFrame` | 22 bytes | The frame a generated segment starts from, track by track |
+
+## 5. `parameters.json`
+
+| Field | Values | Meaning |
+|---|---|---|
+| `shapes` | 31 lists | The transition shapes ([parameters.md](parameters.md) §2.5): shape `i` is at most `i` weights, 1 to 255, the first 255. Shape 0 is empty, and shapes 23 to 30 have one weight fewer than their number |
