@@ -12,8 +12,8 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// TestPhonemes replays every recorded call of the stage's resets, the target loading, the rules, the
-// per-phoneme rules and the rendering of a phoneme, with the other actions taken from the records.
+// TestPhonemes replays every recorded call of the stage's resets, the target loading, the rules, the actions
+// the port has and the rendering of a phoneme, with the other actions taken from the records.
 func TestPhonemes(t *testing.T) {
 	data := loadTestData(t)
 	var lock sync.Mutex
@@ -78,7 +78,14 @@ func TestPhonemes(t *testing.T) {
 			generator.PhonemeRules()
 			return compare(generator, call)
 		},
-		"Parameters::ClassifyPrevVowel": plain((*Generator).groupPrevious),
+		"Parameters::ClassifyPrevVowel":       plain((*Generator).groupPrevious),
+		"Parameters::ShiftAspirationBoundary": plain((*Generator).ShiftAspiration),
+		"Parameters::ShapesFromPrevious":      plain((*Generator).ShapesFromPrevious),
+		"Parameters::VowelOnset":              plain((*Generator).VowelOnset),
+		"Parameters::SonorantTransitions":     plain((*Generator).SonorantTransitions),
+		"Parameters::ObstruentVoicing":        plain((*Generator).ObstruentVoicing),
+		"Parameters::ConsonantShapes":         plain((*Generator).ConsonantShapes),
+		"PullAspirationBack":                  plain((*Generator).PullAspirationBack),
 	})
 	t.Logf("calls replayed: %v", counts)
 	ruleCount, unreached := 0, []int{}

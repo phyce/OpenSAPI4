@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) turns timed phonemes into frames for its synthesizer. For each phoneme or pause the parameter generator works out what each of the 22 tracks of a frame should do ([synthesizer.md](synthesizer.md) §4.1), and writes the phoneme's frames into the synthesizer's ring ([synthesizer.md](synthesizer.md) §5.1), rewriting the end of the previous phoneme's where the two blend.
 
-This spec covers the tracks and how the generator writes them (section 2), the phonemes (section 3), the targets a phoneme starts from (section 4), the rules that change them (section 5), how a phoneme is rendered (section 6), the stage's resets (section 7) and the per-phoneme rules, action 16 (section 8). The other actions, the vowel database and the stage's driver are still to come.
+This spec covers the tracks and how the generator writes them (section 2), the phonemes (section 3), the targets a phoneme starts from (section 4), the rules that change them (section 5), how a phoneme is rendered (section 6), the stage's resets (section 7), the per-phoneme rules, action 16 (section 8), and the actions that set the onsets and shapes, actions 1, 2, 3, 5, 6, 8 and 15 (section 9). The other actions, the vowel database and the stage's driver are still to come.
 
 **In short.**
 - The generator works track by track. For each phoneme it fills in a **segment** for each track: a mode, how many frames, an onset and a target, two shapes, and a value to pull the previous phoneme's last frames toward. Rendering the segment writes the phoneme's frames of that track.
@@ -11,7 +11,7 @@ This spec covers the tracks and how the generator writes them (section 2), the p
 - After each phoneme every track moves on by its segment's frames. The ring's written frames end where the slowest track is, and the frame before it is marked for the output stage.
 - A phoneme's segments start from its targets in the data pack. Then the first rule that applies, of the rule set for the phoneme and the one before it, changes them and runs its actions. Voicing, the attenuation and the voice adjust them last.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its track functions recorded in 161 runs (the ten voices, both rates, every speed range, pitch and volume tags, whisper, monotone, emphasis, tones and generated segments, texts spoken one after another in one session, long texts with a long pause, 44 sentences chosen for their sounds, 11 for their clusters of consonants and 10 for the contexts of the per-phoneme rules): each of the 242,874 segments rendered (section 2.4), the stage's 133,733 direct writes into the ring (section 2.5), 11,027 advances (section 2.6) and 28,108 room checks and rebases (section 2.7) left the speaking thread's state byte-identical to the original's. So did the 11,027 phonemes rendered (section 6), with their target loading, their rules and the per-phoneme rules (section 8; 5,795 runs of action 16, 456 groupings of the previous phoneme), the other actions taken from the recording after checking that each started from the original's state, and the stage's 161 resets and 204 context resets (section 7).
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its track functions recorded in 164 runs (the ten voices, both rates, every speed range, pitch and volume tags, whisper, monotone, emphasis, tones and generated segments, texts spoken one after another in one session, long texts with a long pause, 44 sentences chosen for their sounds, 11 for their clusters of consonants and 13 for the contexts of the per-phoneme rules and the actions): each of the 248,330 segments rendered (section 2.4), the stage's 136,539 direct writes into the ring (section 2.5), 11,275 advances (section 2.6) and 28,769 room checks and rebases (section 2.7) left the speaking thread's state byte-identical to the original's. So did the 11,275 phonemes rendered (section 6), with their target loading, their rules, the per-phoneme rules (section 8; 5,919 runs of action 16, 467 groupings of the previous phoneme) and the actions of section 9 (1,990 runs of action 1, 2,432 of action 2, 5,956 of action 3, 2,175 of action 5, 3,636 of action 6, 2,833 of action 8 and 1,375 of action 15), the other actions taken from the recording after checking that each started from the original's state, and the stage's 164 resets and 207 context resets (section 7).
 
 ## 1. Arithmetic
 
@@ -262,21 +262,21 @@ A rule then runs its **actions**, numbers 1 to 16, in order. Each is a step of i
 
 | Action | Step |
 |---|---|
-| 1 | shift the aspiration boundary |
-| 2 | shapes from the previous phoneme |
-| 3 | vowel onset |
+| 1 | shift the aspiration's start (section 9.3) |
+| 2 | shapes from the previous phoneme (section 9.4) |
+| 3 | the voice onset (section 9.5) |
 | 4 | vowel coarticulation |
-| 5 | sonorant transitions |
-| 6 | obstruent voicing |
+| 5 | sonorant transitions (section 9.6) |
+| 6 | obstruent voicing (section 9.7) |
 | 7 | fricative amplitudes |
-| 8 | consonant shapes |
+| 8 | consonant shapes (section 9.8) |
 | 9 | stop closure and burst |
 | 10 | finish the phoneme |
 | 11 | locus weights |
 | 12 | special loci |
 | 13 | consonant targets and F0 |
 | 14 | source boundaries |
-| 15 | pull the aspiration back |
+| 15 | pull the aspiration back (section 9.3) |
 | 16 | the per-phoneme rules (section 8) |
 
 ## 6. Rendering a phoneme
@@ -403,7 +403,128 @@ Then in every case, before `l`: `T9..12 = 376, 1032, 1671, 2757`.
 - `A a e i |`: `T1, T2` become tracks 1 and 2's `last` values;
 - `y`: if the node before the previous one is the pause, `T9..12 = 254, 1613, 2088, 2735`.
 
-## 9. What the recorded runs don't reach
+## 9. Onsets and shapes: actions 1, 2, 3, 5, 6, 8 and 15
+
+These actions set the consonants' and vowels' transitions: where the aspiration and the voicing start, the shapes and modes of the segments, and some targets. The notation is section 8's: a phoneme named alone is the current one, "after" names the previous phoneme and "before" the next. A track **moves on** by `n` frames: its next frame goes up by `n` and its segment's frames go down by `n`. `L0`, `L1`, … are the tracks' last values (section 2.1). The writers are section 2.5's, on the track named.
+
+### 9.1 Classes
+
+The actions test the syllabic class (section 8.1) and these:
+
+| Class | Name here | Phonemes |
+|---|---|---|
+| (1, 0x08) | affricate | `J C` |
+| (2, 0x04) | alveolar | `D T t q Z S N n` |
+| (2, 0x08) | rhotic | `3 R` |
+| (2, 0x20) | front | `4 A E U a e i k \|` |
+| (2, 0x40) | lateral | `j l L` |
+| (3, 0x01) | approximant | `j l L W Y R h` |
+| (3, 0x04) | palatal | `Y J C z s` |
+| (3, 0x20) | rounded | `O U b c g u w y W h` |
+| (3, 0x40) | front-ending | `5 A E I y` |
+| (4, 0x01) | high | `4 E U b c i u \| W Y h` |
+| (4, 0x02) | r-coloured | `4 5 c g k r` |
+| (4, 0x04) | round-ending | `O U b f` |
+
+A **word mark** is a node of symbol `&` or `%`, which start a word.
+
+### 9.2 Articulators
+
+Each phoneme has an **articulator** in the data pack (`articulator`), and each articulator a forward shape (`articulatorShapes`):
+
+| Articulator | Phonemes | Shape |
+|---|---|---|
+| 0 | the vowels, `j L W Y R p h` | 0 |
+| 1 (lips) | `B P V F M m` | 6 |
+| 2 (teeth) | `x X` | 8 |
+| 3 (gums) | `l D T t q Z S N n` | 8 |
+| 4 (palate) | `J C z s` | 10 |
+| 5 | none | 10 |
+| 6 (velum) | `G K ~` | 10 |
+| 7 (glottis) | `d H Q` and the pause | 8 |
+
+To give the **formant shapes** `s`: tracks 9 to 16 get `forward` `s`, then track 9's becomes `s / 2 + 1`.
+
+### 9.3 The aspiration's start (actions 1 and 15)
+
+**Action 1.**
+1. After a phoneme in class sonorant, if the current one isn't in class closure: the aspiration shift becomes 1. If the current phoneme is in class fricative and track 1's next frame is 2 or more, that frame moves back 2 and track 1's segment gets 2 frames more. Then action 15.
+2. Track 17's mode becomes 4, unless the current phoneme is `S` before the pause after a phoneme in class vowel.
+3. Unless the current phoneme is `S`, track 0's mode becomes 5.
+
+**Action 15** moves the start of the aspiration back by the aspiration shift `h`. With `n` track 2's next frame and `a` the aspiration, if `h ≤ n` and the voice isn't 8 (Wanda) at 8000 Hz:
+1. `n` goes down by `h`. On track 2, `AddBack(n, 3, n − earliest, a − f)`, where `f` is frame `n`.
+2. Track 2's segment gets `h` frames more and `forward` 3, and `L2 = a`.
+3. If the current phoneme is the pause: on track 0, `AddBack(next, 10 − h, next − earliest, −4)`.
+4. If the current phoneme is in class closure, track 2's mode becomes 5.
+
+### 9.4 Shapes from the previous phoneme (action 2)
+
+1. The formant shapes of the previous phoneme's articulator.
+2. After an affricate, tracks 0 to 2 get mode 6 and tracks 3 to 8 mode 4. Else after a stop, tracks 1 to 8 get mode 4, and a current `p` after `T` makes `W1, W2 = 0, 0` and tracks 1 and 2's mode 6. After the others, tracks 0 to 8 get mode 6.
+3. After a nasal, a current phoneme in class voiced: track 0's mode becomes 4.
+4. After `J`, `B`, `D` or `G` whose node before is in class voiced: track 0's `onset` and `back target` become 52.
+
+### 9.5 The voice onset (action 3)
+
+1. The voice onset is written (below) when the current phoneme is `R`, `L` or `W` after a fricative in class voiced, or when the previous phoneme isn't in class voiced, the pause or `H`, and its node hasn't flag bit 0x40. (The original's code also leaves out a vowel with a stressed node after `D`, which is in class voiced anyway.)
+2. If the current phoneme isn't in class vowel, the voice onset becomes 127.
+3. After a phoneme in class stop or fricative other than `s`: track 1's segment loses the voicing shift's frames.
+4. If the current phoneme isn't a vowel:
+   - after an approximant, tracks 9 to 16 get `forward` 7, or 11 for a rounded phoneme after `Y`; then after a rhotic, track 11's `forward` becomes 9;
+   - if it isn't labial and the previous phoneme is round-ending or front-ending: `W9..11 = 11480`;
+   - if it is rounded and the previous phoneme palatal: track 10's `forward` goes up by 5.
+5. `T3..8` become `L3..8` for a phoneme in class vowel or `n` after `T`; a phoneme of place 2 or 3 or one of `a l W L Y p` after `K`; `i` after `P`, and `R` after `P` before a phoneme in class vowel whose node is stressed; `R` or a phoneme in class vowel after `X`.
+6. A current `p` after `P`, `T` or `K`: `T0 = 0`.
+7. A current phoneme in class vowel: if its node isn't stressed, the node after it isn't a word mark and the next phoneme is in class vowel with a stressed node, `T0` goes down by 2. If its node is stressed, the node before it isn't a word mark and the previous phoneme is in class vowel with a node that isn't stressed, `T0` goes up by 2.
+8. A current `R` or `L` whose node before is `P`: `T8 = 0`.
+
+**Writing the voice onset.** With `v` the voice onset and `a` the aspiration:
+1. If the previous node isn't stressed, `a` goes down by 3, to 0 at the lowest.
+2. After a phoneme that isn't a stop:
+   - `v = 1` if the current phoneme is syllabic, else track 2's frames / 2;
+   - unless the previous phoneme is `X` and the current one `R` or in class vowel: on track 2, `AddBack(next, 3, next − earliest, a − L2)`.
+3. After a stop:
+   1. `v = 2` if the cursor's input flags (the `A` command, [pipeline.md](pipeline.md) §4) have bit 0x10.
+   2. A rhotic after an alveolar: `a` goes up by 9.
+   3. After `P`, `T` or `K`: `a = L2` for `y` after `P`, `L2 − 6` for `p`, `L2 − 2` for the others; 0 at the lowest.
+   4. A `p` after a stop other than `P`, `T` and `K` (only `C` can come here): track 1 gets `v` frames of an undefined value (section 10) and moves on by `v`.
+   5. With `m` the current node's frames minus 3: if `v > m`, comparing both as unsigned 32-bit numbers, `v` becomes `m`, or 1 if `m` is 0.
+   6. **Burst.** If the previous node is stressed and the current phoneme is syllabic or of place 4, or for `r`, `g` or `c` after `K`: track 1 gets `Repeat(next, v, b)` and moves on by `v`. `b` is 60 after a stop other than `P`, `T` and `K`, and else `L1 − 2`, 0 at the lowest, except 0 for a vowel whose node is stressed after `P` or `T`, and `L1` for `i b u U L` and 55 for `O` after `K`. Then the pitch's silence `s` is `v` after `K`, `v − 3` for `L` after `P`, `v − 1` otherwise; if that is below 0, `v − 1`, 0 at the lowest; and at most track 17's frames − 1. Track 17 gets `Repeat(next, s, 0)` and moves on by `s`, and `L17` becomes the unvoiced pitch (section 6).
+   7. Track 2's earliest frame becomes its next.
+4. `v` goes down to track 2's frames and to track 0's frames at the most. If it is below 1, that's all.
+5. Track 0: for `R` after `z` or `V`, `Repeat(next, v, L0)`. For `R` after `X`: if `v > 1`, `Repeat(next, v − 1, 0)` and frame `next + v − 1` becomes 57; if `v` is 1, frame `next + 1` becomes 57 and frame `next` stays; `L0 = 57`. For a vowel with `v = 1` after a phoneme that isn't a stop: frame `next` becomes 48, `L0 = 48`. Otherwise `Repeat(next, v, 0)`, `L0 = 0`.
+6. For `R` or a phoneme in class vowel after `X`: `Repeat(next, v, L2)` on track 2, `Repeat(next, v, L1)` on track 1, and track 1 moves on by `v`. Otherwise `Repeat(next, v, a)` on track 2.
+7. `L2 = a`, track 0's mode becomes 6, and tracks 2 and 0 move on by `v`.
+
+### 9.6 Sonorant transitions (action 5)
+
+1. A lateral after a phoneme in class sonorant that isn't nasal: `W9..11 = 29520`.
+2. Unless the current phoneme is `l` or the next is the pause: tracks 9 to 16 get `forward` 9, or for an approximant 7, or 5 if the previous phoneme is one too.
+3. A rhotic: tracks 10 to 12 get `forward` 6.
+4. `n`: before the pause whose node after is the pause too, tracks 10 to 12 get `forward` 4; after `D`, track 10's mode becomes 6.
+5. `H`: before an r-coloured phoneme, `T2 = 55`; before `g`, after `s` whose node before is `C`, `T2 = 67`.
+
+### 9.7 Obstruent voicing (action 6)
+
+1. A palatal: track 1's `forward` becomes 6, except for `s`: it goes down by 2 if the node after the current one is `|` or `@` and the node after that `N`; otherwise it becomes 6 before a front or rounded phoneme and goes down by 2 before the others. An affricate after a phoneme not in class voiced: `T0 = 0`.
+2. Before a phoneme in class sonorant: the voicing shift becomes 2, or the next node's frames minus 1 if they are 2 or fewer (unsigned); then 0 for a stop, for `X` before `R` and for `S`. Unless the current phoneme is `s`, track 1's segment gets the voicing shift's frames more.
+3. A stop in class voiced (`B D J G q`):
+   1. `T4, T5 = 0, 0`, unless it is `D` before a phoneme in class vowel or `n`, or `J` before `z`, or the next node is stressed.
+   2. `T0` goes down by 20, unless the next phoneme is in class vowel or is `Z`, or it is `G` before `Y` or `D` before `n`.
+   3. `T0 = 0` after a phoneme not in class voiced, except for `D` before `|`, and for `q`. Otherwise, after a phoneme not in class sonorant, `T0` goes down by 30.
+   4. The first that applies: after a phoneme in class voiced, other than `q`: `T0 = 50` and track 0's `forward` becomes the node's frames; `B` or `G` after `S`: `T0 = 0`; before a phoneme not in class vowel: nothing; `B`: `T0 = 50`; any but `D`: nothing; `D` before `|`: `T0 = 0`; `D` after the pause or `S`: `T4, T5 = 0, 0` if the previous phoneme is syllabic and the next isn't `p`, which never holds; `D` before a stressed node: `T0 = 43`.
+4. Before `s` whose node after is `R`, with the current node stressed: `T4 = 60`, `b1 = 60`, `b2 = 0` and `T7 = 65`.
+5. `F` after the pause: `T8 = 60`. `V`: `T8 = 56`.
+
+### 9.8 Consonant shapes (action 8)
+
+1. After a phoneme not in class closure, tracks 0 to 9 get mode 5; then for `T`, or `M` after `z`, track 9's mode becomes 7.
+2. A phoneme in class voiced: track 0's mode becomes 6 for a stop, 4 for a nasal.
+3. After a lateral: tracks 10 and 11 get mode 5.
+4. The formant shapes: 5 after a high phoneme, else those of the current phoneme's articulator.
+
+## 10. What the recorded runs don't reach
 
 These follow the original's code, but no recorded run gets there:
 - Segments of modes 2, 9, 17, 21 or above 21. Mode 3 came up 4 times.
@@ -411,12 +532,17 @@ These follow the original's code, but no recorded run gets there:
 - A Q15 product where dividing by 32767 instead of 32768 changes the result, as for `151 · 217 · 128`.
 - `AddBack` taking a frame other than the first below 0, or a first frame plus `change` of exactly −1.
 - A ring without room: the generator was at most 115 frames ahead of the synthesizer, margin included, because the synthesizer renders after every step of the generator.
-- 176 of the 468 rules: 292 applied. No rule of sets 43 (`z` after a closure), 47 and 48 (`h`, which no recorded run produced) applied; set 53 is empty and the matrix never gives it.
+- 169 of the 468 rules: 299 applied. No rule of sets 43 (`z` after a closure), 47 and 48 (`h`, which no recorded run produced) applied; set 53 is empty and the matrix never gives it.
 - A stop burst's exceptions: `t`, `J` or `C` before a pause (the stages before split `J` and `C` into `J z` and `C s`), `K` before `t` or `Q` (section 4.2).
 - An F4 target above the voice's limit (section 6): no target in the data pack is.
-- Some of the per-phoneme rules (section 8.3), as the stages before don't produce their contexts from English text: `D` after the pause before a nasal, before `n`, or after `S` before `R` (the stages before turn `D R` into `J z R`); `G` before `l` (they write `j` after `G`); `R` after `G` or `K` before a phoneme that isn't a vowel, `R` before `l` and `l` after `R`; `z` after `J` before `y` with the pause before `J` (a word mark always comes between); `M` or `m` after `Y` or `R` before a phoneme that isn't a vowel. Nor does the group of `H` or `d`, which only come before vowels. Where a rule tests for a vowel and another for class vowel, they differ only for `p`, which follows only a stop before a pause: no recorded `p` came after or before `M m R Z j s x z`.
+- Some of the per-phoneme rules (section 8.3), as the stages before don't produce their contexts from English text: `D` after the pause before a nasal, before `n`, or after `S` before `R` (the stages before turn `D R` into `J z R`); `G` before `l` (they write `j` after `G`); `R` after `G` or `K` before a phoneme that isn't a vowel, `R` before `l` and `l` after `R`; `z` after `J` before `y` with the pause before `J` (a word mark always comes between); `M` or `m` after `Y` or `R` before a phoneme that isn't a vowel. Nor does the group of `H` or `d`, which only come before vowels. Where a rule tests for a vowel and another for class vowel, they differ only for `p`, which comes only before a pause, after a stop or `~`: no recorded `p` came after or before `M m R Z j s x z`.
+- Some contexts of the actions (section 9), for the same reason: a rounded phoneme after `Y` and a phoneme after `R`, neither a vowel, in the voice onset; `n` after `D` (the stages before write no `D n`), `n` after `T` and `l` after `K` (they write `q n` and `K L`), `H` before `g` (`H` only starts a phrase), `D` before `|` after a phoneme not in class voiced, and `s` before `|` (`|` only comes after `t` or `d` in a word); `R` after `P` before a stressed phoneme that isn't a vowel; a vowel with a stressed node right after another, no word mark between (the stages before put `W` or `Y` between most vowels); a syllabic `m`, `l` or `n` after a phoneme neither in class voiced nor a stop; `p` in step 4 of the voice onset, or after a vowel; `r`, `g` or `c` after a `K` whose node isn't stressed, and a vowel whose node isn't stressed after a `P` or `T` whose node is (the stages before mark a stressed syllable's consonant and vowel together); action 8 after `W`, `Y`, `R` or `h`, which only come before vowels. Action 3 never runs after `C`, as the stages before always write `s` after it and the rules don't run action 3 on `s`: so the burst's 60 isn't reached either. Nor does a previous node with flag bit 0x40 outside class voiced: the stages before set the bit only on vowels, approximants and voiced consonants. Nor does a stop after which the cursor's input flags have bit 0x10, which the escape parser's `A` command sets.
+- Values that make a step change nothing. In the voice onset: the aspiration is always 51 when the voice onset is written, so taking 3 off never goes below 0; the only alveolar stop the writer comes to is `T`, whose aspiration step 3.3 replaces, so the 9 of step 3.2 never shows; track 1's last value is never below 2 when a burst follows `P`, `T` or `K`; `L17` already is the unvoiced pitch when the burst sets it; the voice onset is never above track 0's or track 2's frames in step 4; step 5's `v = 1` always holds for a vowel after a phoneme that isn't a stop, as every vowel is syllabic; and the track 8 target of `L` after `P` is already 0. In action 6: the test for `@` before `N`, as `s` goes down by 2 before `@` anyway; an affricate after a phoneme in class voiced, as `J` gets `T0 = 50` in step 3.4 anyway and `C`'s `T0` is already 0; `G` after `S` in step 3.4, as `G` keeps step 3.3's `T0 = 0`; and steps 3.2 and 3.3 but for `T0 = 0`, as step 3.3 or 3.4 then sets every voiced stop's `T0` to 0, 43 or 50, whatever the text.
+- A node of fewer than 3 frames: the shortest phonemes were 3 frames long. So the voicing shift never came from the next node's frames, the voice onset's limit was never 0, and the pitch's silence never reached track 17's frames (section 9.5 and 9.7).
+- Action 15 on a phoneme in class closure: the rules run it only on the pause, and action 1 only on a phoneme not in class closure. Its check that the aspiration shift is at most track 2's next frame, and action 1's that track 1's next frame is 2 or more: the next frames are always larger.
 
 In these the original reads outside its tables, and the port does something else instead. No recorded run gets there either:
 - A previous, current or next node whose symbol isn't one of the phonemes: the port takes the pause.
 - A symbol of 128 or more in a node a rule tests: the port gives it no classes.
 - A voice other than 0 to 9: the port takes voice 0's tracks and F4 limit.
+- A `p` after `C` in the voice onset (section 9.5, step 3.4; the stages before write `C s`): the original writes into track 1 the low byte of its state's address, which differs from run to run. The port writes 0.

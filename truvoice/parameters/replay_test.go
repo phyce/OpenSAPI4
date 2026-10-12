@@ -35,10 +35,12 @@ const (
 	stateLevels       = 0x1f98
 	stateSettings     = 0x1a28
 	stateEngine       = 0x20f4
+	stateSampleRate   = 0x210c
 	stateVisualEvents = 0x2130
 	statePostedSpace  = 0x2132
 	stateCursor       = 0x2210
 	stateAttenuation  = 0x223c
+	stateInputFlags   = 0x2248
 	stateTypes        = 0x224c
 	stateVoice        = 0x2250
 	stateListLast     = 0x22a0
@@ -399,6 +401,8 @@ func loadInto(generator *Generator, state []byte, base uint32) {
 	cursor.Start, cursor.Done, cursor.Scan = node(dword(state, stateCursor)), node(dword(state, stateCursor+4)), node(dword(state, stateCursor+8))
 	cursor.First, cursor.End = node(dword(state, stateCursor+12)), node(dword(state, stateCursor+16))
 	cursor.Attenuation, cursor.Voice = int32(dword(state, stateAttenuation)), int32(dword(state, stateVoice))
+	cursor.InputFlags = dword(state, stateInputFlags)
+	pipelineState.SampleRate = int(binary.LittleEndian.Uint16(state[stateSampleRate:]))
 	pipelineState.VisualEvents = binary.LittleEndian.Uint16(state[stateVisualEvents:]) != 0
 	pipelineState.PostedSpace = binary.LittleEndian.Uint16(state[statePostedSpace:]) != 0
 	if dword(state, stateEngine) != 0 && pipelineState.Engine == nil {
@@ -530,9 +534,14 @@ func (recorded *recordedActions) Run(generator *Generator, action int) {
 }
 
 func (recorded *recordedActions) skipPorted() {
-	for recorded.position < len(recorded.call.actions) && recorded.call.actions[recorded.position].record.Function == actionFunctions[phonemeRulesAction] {
+	for recorded.position < len(recorded.call.actions) && isPorted(recorded.call.actions[recorded.position].record.Function) {
 		recorded.position++
 	}
+}
+
+func isPorted(function string) bool {
+	action := slices.Index(actionFunctions[:], function)
+	return action > 0 && ported[action] != nil
 }
 
 // withActions runs a Go function on the call's state with the recorded actions, and compares the state it

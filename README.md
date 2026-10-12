@@ -123,7 +123,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `truvoice/datapack` | Reads and checks the TruVoice data pack |
 | `truvoice/synthesizer` | TruVoice's formant synthesizer: parameter frames to coefficient blocks to samples, its frame ring, steps and audio buffer |
 | `truvoice/pipeline` | TruVoice's pipeline: the nodes its stages pass on, the stages' cursors, the text's control commands, the output stage, the scheduler and the speaking thread's start, attributes and hand-overs |
-| `truvoice/parameters` | TruVoice's parameter generator (in progress): its tracks and the segments it renders into the frame ring, the phonemes' targets, the rules, the per-phoneme rules and the rendering of a phoneme |
+| `truvoice/parameters` | TruVoice's parameter generator (in progress): its tracks and the segments it renders into the frame ring, the phonemes' targets, the rules, the per-phoneme rules, the actions that set the onsets and shapes, and the rendering of a phoneme |
 
 ## Building releases
 

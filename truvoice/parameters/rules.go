@@ -40,16 +40,24 @@ func (generator *Generator) ApplyRules() {
 	}
 }
 
-// The actions the port has.
-const phonemeRulesAction = 16
+// ported are the rules' actions the port has (parameters.md §5.4).
+var ported = [datapack.ActionCount + 1]func(generator *Generator){
+	1:  (*Generator).ShiftAspiration,
+	2:  (*Generator).ShapesFromPrevious,
+	3:  (*Generator).VowelOnset,
+	5:  (*Generator).SonorantTransitions,
+	6:  (*Generator).ObstruentVoicing,
+	8:  (*Generator).ConsonantShapes,
+	15: (*Generator).PullAspirationBack,
+	16: (*Generator).PhonemeRules,
+}
 
 func (generator *Generator) act(action int) {
-	switch action {
-	case phonemeRulesAction:
-		generator.PhonemeRules()
-	default:
-		generator.Actions.Run(generator, action)
+	if run := ported[action]; run != nil {
+		run(generator)
+		return
 	}
+	generator.Actions.Run(generator, action)
 }
 
 func (generator *Generator) passes(conditions []datapack.Condition) bool {

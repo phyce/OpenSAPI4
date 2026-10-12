@@ -215,6 +215,8 @@ func TestChangedParameters(t *testing.T) {
 		{func(content map[string]any) { phoneme(content, 34)["burst"] = []any{[]any{1, 2, 3, 4}} }, "phonemes[34].burst has 1 rows"},
 		{func(content map[string]any) { content["classes"] = content["classes"].([]any)[:5] }, "classes has 5 planes"},
 		{func(content map[string]any) { content["defaultShapes"].([]any)[3] = 31 }, "defaultShapes[3] is 31"},
+		{func(content map[string]any) { phoneme(content, 34)["articulator"] = 8 }, "phonemes[34].articulator is 8"},
+		{func(content map[string]any) { content["articulatorShapes"].([]any)[1] = 31 }, "articulatorShapes[1] is 31"},
 		{func(content map[string]any) { content["ruleMatrix"].([]any)[2].([]any)[5] = 54 }, "ruleMatrix[2][5] is 54, outside 0 to 53"},
 		{func(content map[string]any) { rule(content, 3, 0)["do"] = []any{17} }, "ruleSets[3][0].do[0] is 17"},
 		{func(content map[string]any) {

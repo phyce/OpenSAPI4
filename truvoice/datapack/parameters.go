@@ -22,22 +22,26 @@ const (
 	CategoryCount = 4
 	FlagCount     = 11
 	ActionCount   = 16
+	// ArticulatorCount is the number of articulators.
+	ArticulatorCount = 8
 )
 
 // A Phoneme is one of the parameter generator's phonemes (parameters.md §3.1). Formants and Bandwidths are in
-// Hz, Voicing is track 0's target, Amplitudes tracks 1 to 8's, NasalZero track 16's in Hz. Vowel is set for the
-// vowels with an offglide, Burst for the stops with a burst.
+// Hz, Voicing is track 0's target, Amplitudes tracks 1 to 8's, NasalZero track 16's in Hz. Articulator is what
+// makes the phoneme (parameters.md §9.2). Vowel is set for the vowels with an offglide, Burst for the stops with
+// a burst.
 type Phoneme struct {
-	Symbol     byte
-	Formants   [4]int32
-	Bandwidths [3]int32
-	Voicing    int32
-	Amplitudes [8]int32
-	NasalZero  int32
-	Frontness  int32
-	Place      int32
-	Vowel      *Vowel
-	Burst      *[2][4]int32
+	Symbol      byte
+	Formants    [4]int32
+	Bandwidths  [3]int32
+	Voicing     int32
+	Amplitudes  [8]int32
+	NasalZero   int32
+	Frontness   int32
+	Place       int32
+	Articulator int32
+	Vowel       *Vowel
+	Burst       *[2][4]int32
 }
 
 // Vowel is what a vowel has besides a phoneme's targets: its offglide's formants and bandwidths in Hz, the
@@ -153,17 +157,19 @@ type Rule struct {
 // Parameters are the parameter generator's tables. Shapes are the transition shapes: shape i has at most i
 // weights, 1 to 255, the first 255. Classes are the symbols' class bytes. CategoryWeights are a weight for
 // each category of a phoneme and of the one before it, DefaultShapes each track's forward shape. RuleMatrix is
-// the rule set for each phoneme and the one before it.
+// the rule set for each phoneme and the one before it. ArticulatorShapes are a forward shape for each
+// articulator.
 type Parameters struct {
-	Shapes          [ShapeCount][]byte
-	Phonemes        [PhonemeCount]Phoneme
-	Classes         [ClassPlanes][SymbolCount]byte
-	Voices          [VoiceCount]VoiceTracks
-	CategoryWeights [CategoryCount][CategoryCount]int32
-	DefaultShapes   [TrackCount]int32
-	RuleMatrix      [PhonemeCount][PhonemeCount]int
-	RuleSets        [][]Rule
-	indexes         [256]int
+	Shapes            [ShapeCount][]byte
+	Phonemes          [PhonemeCount]Phoneme
+	Classes           [ClassPlanes][SymbolCount]byte
+	Voices            [VoiceCount]VoiceTracks
+	CategoryWeights   [CategoryCount][CategoryCount]int32
+	DefaultShapes     [TrackCount]int32
+	RuleMatrix        [PhonemeCount][PhonemeCount]int
+	RuleSets          [][]Rule
+	ArticulatorShapes [ArticulatorCount]int32
+	indexes           [256]int
 }
 
 // Index returns the phoneme a symbol is, and whether it is one.
@@ -181,6 +187,7 @@ type phonemeDescription struct {
 	NasalZero    *int64    `json:"nasalZero"`
 	Frontness    *int64    `json:"frontness"`
 	Place        *int64    `json:"place"`
+	Articulator  *int64    `json:"articulator"`
 	Offglide     []int64   `json:"offglide"`
 	EndFrontness *int64    `json:"endFrontness"`
 	Transition   *int64    `json:"transition"`
@@ -216,14 +223,15 @@ type ruleDescription struct {
 }
 
 type parametersDescription struct {
-	Shapes          [][]int64                `json:"shapes"`
-	Phonemes        []phonemeDescription     `json:"phonemes"`
-	Classes         [][]int64                `json:"classes"`
-	Voices          []voiceTracksDescription `json:"voices"`
-	CategoryWeights [][]int64                `json:"categoryWeights"`
-	DefaultShapes   []int64                  `json:"defaultShapes"`
-	RuleMatrix      [][]int64                `json:"ruleMatrix"`
-	RuleSets        [][]ruleDescription      `json:"ruleSets"`
+	Shapes            [][]int64                `json:"shapes"`
+	Phonemes          []phonemeDescription     `json:"phonemes"`
+	Classes           [][]int64                `json:"classes"`
+	Voices            []voiceTracksDescription `json:"voices"`
+	CategoryWeights   [][]int64                `json:"categoryWeights"`
+	DefaultShapes     []int64                  `json:"defaultShapes"`
+	RuleMatrix        [][]int64                `json:"ruleMatrix"`
+	RuleSets          [][]ruleDescription      `json:"ruleSets"`
+	ArticulatorShapes []int64                  `json:"articulatorShapes"`
 }
 
 // The ranges the tables' values must be in.
@@ -296,6 +304,9 @@ func parseParameters(data []byte) (*Parameters, error) {
 	if err := parseRules(parameters, description); err != nil {
 		return nil, err
 	}
+	if err := copyValues(parameters.ArticulatorShapes[:], description.ArticulatorShapes, "articulatorShapes", 0, ShapeCount-1); err != nil {
+		return nil, err
+	}
 	return parameters, nil
 }
 
@@ -341,6 +352,7 @@ func parsePhonemes(parameters *Parameters, descriptions []phonemeDescription) er
 			{"nasalZero", description.NasalZero, &phoneme.NasalZero, 0, highestFrequency},
 			{"frontness", description.Frontness, &phoneme.Frontness, math.MinInt16, math.MaxInt16},
 			{"place", description.Place, &phoneme.Place, 0, highestPlace},
+			{"articulator", description.Articulator, &phoneme.Articulator, 0, ArticulatorCount - 1},
 		} {
 			if err := copyValue(field.target, field.value, name+"."+field.name, field.minimum, field.maximum); err != nil {
 				return err
