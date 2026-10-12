@@ -51,6 +51,9 @@ var ported = [datapack.ActionCount + 1]func(generator *Generator){
 	7:  (*Generator).FricativeAmplitudes,
 	8:  (*Generator).ConsonantShapes,
 	9:  (*Generator).StopClosureBurst,
+	10: (*Generator).FinishPhoneme,
+	11: (*Generator).LocusWeights,
+	12: (*Generator).SpecialLoci,
 	15: (*Generator).PullAspirationBack,
 	16: (*Generator).PhonemeRules,
 }

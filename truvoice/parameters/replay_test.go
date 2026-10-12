@@ -93,7 +93,7 @@ type goldenCase struct {
 }
 
 // A call is a recorded call of one of the original's functions, with its return and the thread state at both.
-// Actions are the calls of the rules' actions it made, directly or not.
+// Actions are the calls of the rules' actions it made, directly or from the actions the port has.
 type call struct {
 	record, result *callRecord
 	before, after  []byte
@@ -178,8 +178,10 @@ func replayCase(golden goldenCase, replayers map[string]replayer) (map[string]in
 		replayed bool
 	}
 	var stack []open
-	inAction := func() bool {
-		return slices.ContainsFunc(stack, func(entry open) bool { return isAction[entry.call.record.Function] })
+	inRecordedAction := func() bool {
+		return slices.ContainsFunc(stack, func(entry open) bool {
+			return isAction[entry.call.record.Function] && !isPorted(entry.call.record.Function)
+		})
 	}
 	replayedOpen := func() bool {
 		return slices.ContainsFunc(stack, func(entry open) bool { return entry.replayed })
@@ -198,7 +200,7 @@ func replayCase(golden goldenCase, replayers map[string]replayer) (map[string]in
 		}
 		if record.Kind == "call" {
 			entry := open{call: &call{record: record, base: base}, replayed: replayers[record.Function] != nil}
-			if entry.replayed || isAction[record.Function] && replayedOpen() && !inAction() {
+			if entry.replayed || isAction[record.Function] && replayedOpen() && !inRecordedAction() {
 				entry.call.before = slices.Clone(state)
 			}
 			stack = append(stack, entry)

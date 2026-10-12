@@ -90,6 +90,12 @@ func (generator *Generator) setForward(first, last int, shape int32) {
 	}
 }
 
+func (generator *Generator) setBack(first, last int, back int32) {
+	for track := first; track <= last; track++ {
+		generator.Segments[track].Back = back
+	}
+}
+
 func (generator *Generator) setWeights(first, last int, weight int32) {
 	for track := first; track <= last; track++ {
 		generator.Weights[track] = weight

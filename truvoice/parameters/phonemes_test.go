@@ -89,6 +89,12 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::FricativeAmplitudes":     plain((*Generator).FricativeAmplitudes),
 		"Parameters::StopClosureBurst":        plain((*Generator).StopClosureBurst),
 		"PullAspirationBack":                  plain((*Generator).PullAspirationBack),
+		"Parameters::LocusWeights":            plain((*Generator).LocusWeights),
+		"Parameters::SpecialLoci":             plain((*Generator).SpecialLoci),
+		"Parameters::FinalAdjustments":        plain((*Generator).FinalAdjustments),
+		"Parameters::FinishPhoneme": func(call *call) error {
+			return data.withActions(call, (*Generator).FinishPhoneme)
+		},
 		"Parameters::VowelCoarticulation": func(call *call) error {
 			generator := data.load(call)
 			cursor := generator.cursor()
