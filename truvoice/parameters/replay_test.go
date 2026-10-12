@@ -281,7 +281,8 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 		dwords = append(dwords, dwordField{0x1e5c + 4*index, label("burst level %d", index), &generator.BurstLevels[index]})
 	}
 	for index := range generator.Offglide {
-		dwords = append(dwords, dwordField{0x1f24 + 4*index, label("offglide %d", index), &generator.Offglide[index]})
+		dwords = append(dwords, dwordField{0x1f24 + 4*index, label("offglide %d", index), &generator.Offglide[index]},
+			dwordField{0x2018 + 4*index, label("midpoint %d", index), &generator.Midpoints[index]})
 	}
 	for track := range generator.Tracks {
 		dwords = append(dwords, dwordField{0x3c + 4*track, label("track %d next", track), &generator.Tracks[track].Next},

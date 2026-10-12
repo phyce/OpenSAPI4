@@ -45,6 +45,7 @@ var ported = [datapack.ActionCount + 1]func(generator *Generator){
 	1:  (*Generator).ShiftAspiration,
 	2:  (*Generator).ShapesFromPrevious,
 	3:  (*Generator).VowelOnset,
+	4:  (*Generator).VowelCoarticulation,
 	5:  (*Generator).SonorantTransitions,
 	6:  (*Generator).ObstruentVoicing,
 	7:  (*Generator).FricativeAmplitudes,

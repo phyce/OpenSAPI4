@@ -171,7 +171,7 @@ func TestParameters(t *testing.T) {
 	if _, found := parameters.Index('!'); found {
 		t.Error("! is a phoneme")
 	}
-	if vowel := parameters.Phonemes[0].Vowel; vowel == nil || vowel.Transition != 7 || parameters.Phonemes[19].Vowel != nil {
+	if vowel := parameters.Phonemes[0].Vowel; vowel == nil || vowel.Transition != 7 || vowel.Offset != 14760 || parameters.Phonemes[19].Vowel != nil {
 		t.Errorf("vowels %+v %+v", parameters.Phonemes[0].Vowel, parameters.Phonemes[19].Vowel)
 	}
 	rules := 0
@@ -180,6 +180,9 @@ func TestParameters(t *testing.T) {
 	}
 	if len(parameters.RuleSets) != 54 || rules != 468 || parameters.Classes[0]['B'] != 0xa4 || parameters.Voices[1].Tracks != [3]int32{17, 8, 5} || parameters.CategoryWeights[3][0] != 21320 {
 		t.Errorf("%d rule sets, %d rules, class %#x, voice %+v, weight %d", len(parameters.RuleSets), rules, parameters.Classes[0]['B'], parameters.Voices[1], parameters.CategoryWeights[3][0])
+	}
+	if parameters.NeutralFormants != [3]int32{490, 1450, 2500} || parameters.ReductionWeights[0] != 28864 || parameters.ReductionWeights[15] != 528 {
+		t.Errorf("neutral formants %v, reduction weights %v", parameters.NeutralFormants, parameters.ReductionWeights)
 	}
 	first := parameters.RuleSets[0][0]
 	if len(first.Conditions) != 1 || first.Conditions[0] != (datapack.Condition{Kind: datapack.SymbolCondition, Phoneme: datapack.CurrentPhoneme, Symbols: "EUY4", Is: true}) ||
@@ -217,6 +220,9 @@ func TestChangedParameters(t *testing.T) {
 		{func(content map[string]any) { content["defaultShapes"].([]any)[3] = 31 }, "defaultShapes[3] is 31"},
 		{func(content map[string]any) { phoneme(content, 34)["articulator"] = 8 }, "phonemes[34].articulator is 8"},
 		{func(content map[string]any) { content["articulatorShapes"].([]any)[1] = 31 }, "articulatorShapes[1] is 31"},
+		{func(content map[string]any) { delete(phoneme(content, 3), "offset") }, "phonemes[3].offset is missing"},
+		{func(content map[string]any) { content["neutralFormants"] = []any{490, 1450} }, "neutralFormants has 2"},
+		{func(content map[string]any) { content["reductionWeights"].([]any)[2] = -1 }, "reductionWeights[2] is -1"},
 		{func(content map[string]any) { content["ruleMatrix"].([]any)[2].([]any)[5] = 54 }, "ruleMatrix[2][5] is 54, outside 0 to 53"},
 		{func(content map[string]any) { rule(content, 3, 0)["do"] = []any{17} }, "ruleSets[3][0].do[0] is 17"},
 		{func(content map[string]any) {

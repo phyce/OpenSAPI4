@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules and articulators ([parameters.md](parameters.md) §2.5, §3 to §5 and §9.2) and its vowel database (§11). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -92,6 +92,8 @@ A **rate** (§4.2, §4.3) has:
 | `ruleMatrix` | 59 lists of 59 | The rule set for each current phoneme and previous phoneme ([parameters.md](parameters.md) §5.2) |
 | `ruleSets` | lists of rules | The rule sets, below |
 | `articulatorShapes` | 8 numbers, 0 to 30 | Each articulator's forward shape ([parameters.md](parameters.md) §9.2) |
+| `neutralFormants` | 3 numbers | The F1 to F3 in Hz that action 4 moves a vowel toward, the more the shorter it is ([parameters.md](parameters.md) §12.2) |
+| `reductionWeights` | 16 numbers, 0 to 32767 | The Q15 weight of that move, by the vowel's frames: entry `min(10f, 255) / 16` |
 
 A phoneme:
 
@@ -106,7 +108,7 @@ A phoneme:
 | `frontness` | Q15 | The phoneme's frontness |
 | `place` | 0 to 9 | Its place |
 | `articulator` | 0 to 7 | Its articulator ([parameters.md](parameters.md) §9.2) |
-| `offglide`, `endFrontness`, `transition` | 7 numbers, Q15, byte | Only the vowels with an offglide: the offglide's F1 to F4 and B1 to B3 in Hz, the frontness the vowel ends with, its transition |
+| `offglide`, `endFrontness`, `transition`, `offset` | 7 numbers, Q15, byte, 0 to 32767 | Only the vowels with an offglide: the offglide's F1 to F4 and B1 to B3 in Hz, the frontness the vowel ends with, its transition, and the Q15 share of its frames that its start takes ([parameters.md](parameters.md) §12.5) |
 | `burst` | 2 lists of 4 bytes | Only `B P D T G K`: AV, AF, AH and AB before a vowel, and otherwise |
 
 A rule is `{"if": conditions, "set": assignments, "do": actions}` ([parameters.md](parameters.md) §5):

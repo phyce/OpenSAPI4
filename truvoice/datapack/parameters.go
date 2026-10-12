@@ -24,6 +24,8 @@ const (
 	ActionCount   = 16
 	// ArticulatorCount is the number of articulators.
 	ArticulatorCount = 8
+	// ReductionCount is the number of reduction weights, one for each 1.6 frames of a vowel.
+	ReductionCount = 16
 )
 
 // A Phoneme is one of the parameter generator's phonemes (parameters.md §3.1). Formants and Bandwidths are in
@@ -45,11 +47,12 @@ type Phoneme struct {
 }
 
 // Vowel is what a vowel has besides a phoneme's targets: its offglide's formants and bandwidths in Hz, the
-// frontness it ends with and its transition.
+// frontness it ends with, its transition and the Q15 share of its frames that go to its offset.
 type Vowel struct {
 	Offglide     [7]int32
 	EndFrontness int32
 	Transition   int32
+	Offset       int32
 }
 
 // VoiceTracks are a voice's targets of tracks 18 to 20 and the highest F4 target it allows.
@@ -158,7 +161,8 @@ type Rule struct {
 // weights, 1 to 255, the first 255. Classes are the symbols' class bytes. CategoryWeights are a weight for
 // each category of a phoneme and of the one before it, DefaultShapes each track's forward shape. RuleMatrix is
 // the rule set for each phoneme and the one before it. ArticulatorShapes are a forward shape for each
-// articulator.
+// articulator. NeutralFormants are the F1 to F3 that vowels move toward, by a Q15 reduction weight for their
+// frames.
 type Parameters struct {
 	Shapes            [ShapeCount][]byte
 	Phonemes          [PhonemeCount]Phoneme
@@ -169,6 +173,8 @@ type Parameters struct {
 	RuleMatrix        [PhonemeCount][PhonemeCount]int
 	RuleSets          [][]Rule
 	ArticulatorShapes [ArticulatorCount]int32
+	NeutralFormants   [3]int32
+	ReductionWeights  [ReductionCount]int32
 	indexes           [256]int
 }
 
@@ -191,6 +197,7 @@ type phonemeDescription struct {
 	Offglide     []int64   `json:"offglide"`
 	EndFrontness *int64    `json:"endFrontness"`
 	Transition   *int64    `json:"transition"`
+	Offset       *int64    `json:"offset"`
 	Burst        [][]int64 `json:"burst"`
 }
 
@@ -232,6 +239,8 @@ type parametersDescription struct {
 	RuleMatrix        [][]int64                `json:"ruleMatrix"`
 	RuleSets          [][]ruleDescription      `json:"ruleSets"`
 	ArticulatorShapes []int64                  `json:"articulatorShapes"`
+	NeutralFormants   []int64                  `json:"neutralFormants"`
+	ReductionWeights  []int64                  `json:"reductionWeights"`
 }
 
 // The ranges the tables' values must be in.
@@ -307,6 +316,12 @@ func parseParameters(data []byte) (*Parameters, error) {
 	if err := copyValues(parameters.ArticulatorShapes[:], description.ArticulatorShapes, "articulatorShapes", 0, ShapeCount-1); err != nil {
 		return nil, err
 	}
+	if err := copyValues(parameters.NeutralFormants[:], description.NeutralFormants, "neutralFormants", 0, highestFrequency); err != nil {
+		return nil, err
+	}
+	if err := copyValues(parameters.ReductionWeights[:], description.ReductionWeights, "reductionWeights", 0, math.MaxInt16); err != nil {
+		return nil, err
+	}
 	return parameters, nil
 }
 
@@ -358,7 +373,7 @@ func parsePhonemes(parameters *Parameters, descriptions []phonemeDescription) er
 				return err
 			}
 		}
-		if description.Offglide != nil || description.EndFrontness != nil || description.Transition != nil {
+		if description.Offglide != nil || description.EndFrontness != nil || description.Transition != nil || description.Offset != nil {
 			phoneme.Vowel = &Vowel{}
 			if err := copyValues(phoneme.Vowel.Offglide[:], description.Offglide, name+".offglide", 0, highestFrequency); err != nil {
 				return err
@@ -367,6 +382,9 @@ func parsePhonemes(parameters *Parameters, descriptions []phonemeDescription) er
 				return err
 			}
 			if err := copyValue(&phoneme.Vowel.Transition, description.Transition, name+".transition", 0, highestByte); err != nil {
+				return err
+			}
+			if err := copyValue(&phoneme.Vowel.Offset, description.Offset, name+".offset", 0, math.MaxInt16); err != nil {
 				return err
 			}
 		}

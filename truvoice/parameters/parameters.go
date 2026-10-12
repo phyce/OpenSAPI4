@@ -39,6 +39,9 @@ type Generator struct {
 	Weights             [datapack.TrackCount]int32
 	Offglide            [7]int32
 	NextTargets         [datapack.TrackCount]int32
+	// Midpoints are where action 4 last took tracks 9 to 15 between a vowel's targets and its offglide
+	// (parameters.md §12.5).
+	Midpoints [7]int32
 	// PreviousGroup is the group of the previous phoneme the per-phoneme rules last sorted (parameters.md §8.2).
 	PreviousGroup int32
 
