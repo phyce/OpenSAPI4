@@ -71,8 +71,9 @@ func startingContext(symbol byte) byte {
 	return 'Y'
 }
 
-// variant is the symbol the database tries in place of a context it has no record for.
-func variant(symbol byte, right bool) byte {
+// variant is the symbol the database tries in place of a context it has no record for. z has J only as the
+// right context of the current vowel.
+func variant(symbol byte, ofVowel bool) byte {
 	switch symbol {
 	case 'D':
 		return 't'
@@ -89,7 +90,7 @@ func variant(symbol byte, right bool) byte {
 	case 'x':
 		return 'X'
 	case 'z':
-		if right {
+		if ofVowel {
 			return 'J'
 		}
 	}
@@ -166,13 +167,14 @@ func (generator *Generator) databaseContexts() (left, right, symbol byte) {
 	return left, right, symbol
 }
 
-// findRecord looks the vowel up by its contexts, then by their variants (parameters.md §11.4).
-func (generator *Generator) findRecord(entry *datapack.VowelEntry, left, right byte) *datapack.VowelRecord {
+// findRecord looks a vowel up by its contexts, then by their variants (parameters.md §11.4): the current vowel,
+// or the next one for a consonant (parameters.md §14.1).
+func (generator *Generator) findRecord(entry *datapack.VowelEntry, left, right byte, ofVowel bool) *datapack.VowelRecord {
 	leftContext, rightContext := generator.context(left), generator.context(right)
 	record := entry.Find(leftContext, rightContext)
 	tryLeft, tryRight := left, right
 	for pass := 0; pass < 2 && record == nil; pass++ {
-		tryRight = variant(tryRight, true)
+		tryRight = variant(tryRight, ofVowel)
 		if tryRight != right && generator.context(tryRight) >= 0 {
 			rightContext = generator.context(tryRight)
 			record = entry.Find(leftContext, rightContext)
@@ -218,7 +220,7 @@ func (generator *Generator) vowelFromDatabase(vowel int) bool {
 		return false
 	}
 	entry := &generator.vowels.Vowels[vowel]
-	record := generator.findRecord(entry, left, right)
+	record := generator.findRecord(entry, left, right, true)
 	if record == nil {
 		return false
 	}

@@ -94,6 +94,7 @@ A **rate** (§4.2, §4.3) has:
 | `articulatorShapes` | 8 numbers, 0 to 30 | Each articulator's forward shape ([parameters.md](parameters.md) §9.2) |
 | `neutralFormants` | 3 numbers | The F1 to F3 in Hz that action 4 moves a vowel toward, the more the shorter it is ([parameters.md](parameters.md) §12.2) |
 | `reductionWeights` | 16 numbers, 0 to 32767 | The Q15 weight of that move, by the vowel's frames: entry `min(10f, 255) / 16` |
+| `liquids` | object | The formants' trajectories through the liquids ([parameters.md](parameters.md) §14.3), below |
 
 A phoneme:
 
@@ -115,6 +116,13 @@ A rule is `{"if": conditions, "set": assignments, "do": actions}` ([parameters.m
 - a condition is `{"flag": f, "is": b}` for flag `f` (0 to 10), `{"phoneme": who, "plane": p, "bits": m, "is": b}` for class `(p, m)`, `m` one bit, or `{"phoneme": who, "in": symbols, "is": b}`, with `who` one of `current`, `next`, `afterNext` and `beforePrevious`;
 - an assignment is `{"to": place, "set": n}`, `"add"` or `"subtract"` instead of `"set"`, or `{"to": place, "copy": place}`. A place is `[field, track]` for the fields with tracks (`burstLevel`: 0 to 2), or `[field]`;
 - the actions are numbers from 1 to 16.
+
+The liquids:
+- `R`, `L` and `Y`: 4 objects each, for F1 to F4, with `rows` and `contexts`, one list of contexts for each row but the last. A context is `[symbol, symbols]`: the row is for that symbol before the liquid, or for `Y` that vowel, with any of the symbols after it;
+- `rAfterVowel`: 3 lists of 1, 2 and 2 rows, F1 to F3 of `R` after a vowel; `rAcrossMark`: 4 lists of 1, 5, 4 and 4 rows, F1 to F4 of `R` after a word mark;
+- `targetsAcrossMark`: 4 lists of 2, 7, 5 and 4 numbers, the F1 to F4 targets in Hz of a consonant before a word mark and `R`.
+
+A row is 7 numbers: the kinds of its start, middle and end (0 to 2), its duration in percent (0 to 100), and the values of its start, middle and end in Hz.
 
 ## 6. `vowels.json`
 

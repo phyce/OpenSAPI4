@@ -297,7 +297,7 @@ func (generator *Generator) InitModes() {
 // §7).
 func (generator *Generator) Reset() {
 	generator.Coarticulation = 0
-	generator.PitchMark = 0
+	generator.DatabaseLoci = false
 	generator.PauseState = 0
 	generator.EndReached = false
 	generator.KeepEarlier = false

@@ -162,7 +162,7 @@ type Rule struct {
 // each category of a phoneme and of the one before it, DefaultShapes each track's forward shape. RuleMatrix is
 // the rule set for each phoneme and the one before it. ArticulatorShapes are a forward shape for each
 // articulator. NeutralFormants are the F1 to F3 that vowels move toward, by a Q15 reduction weight for their
-// frames.
+// frames. Liquids are the formants' trajectories through the liquids.
 type Parameters struct {
 	Shapes            [ShapeCount][]byte
 	Phonemes          [PhonemeCount]Phoneme
@@ -175,6 +175,7 @@ type Parameters struct {
 	ArticulatorShapes [ArticulatorCount]int32
 	NeutralFormants   [3]int32
 	ReductionWeights  [ReductionCount]int32
+	Liquids           Liquids
 	indexes           [256]int
 }
 
@@ -241,6 +242,7 @@ type parametersDescription struct {
 	ArticulatorShapes []int64                  `json:"articulatorShapes"`
 	NeutralFormants   []int64                  `json:"neutralFormants"`
 	ReductionWeights  []int64                  `json:"reductionWeights"`
+	Liquids           liquidsDescription       `json:"liquids"`
 }
 
 // The ranges the tables' values must be in.
@@ -320,6 +322,9 @@ func parseParameters(data []byte) (*Parameters, error) {
 		return nil, err
 	}
 	if err := copyValues(parameters.ReductionWeights[:], description.ReductionWeights, "reductionWeights", 0, math.MaxInt16); err != nil {
+		return nil, err
+	}
+	if err := parseLiquids(&parameters.Liquids, description.Liquids); err != nil {
 		return nil, err
 	}
 	return parameters, nil

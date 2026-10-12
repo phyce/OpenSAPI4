@@ -92,6 +92,23 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::LocusWeights":            plain((*Generator).LocusWeights),
 		"Parameters::SpecialLoci":             plain((*Generator).SpecialLoci),
 		"Parameters::FinalAdjustments":        plain((*Generator).FinalAdjustments),
+		"Parameters::ConsonantLociFromDatabase": func(call *call) error {
+			generator := data.load(call)
+			found := generator.lociFromDatabase(int(call.argument(0)))
+			if expected := call.result.EAX&0xff != 0; found != expected {
+				return fmt.Errorf("found a record: %t, expected %t", found, expected)
+			}
+			return compare(generator, call)
+		},
+		"Parameters::LiquidCluster": func(call *call) error {
+			generator := data.load(call)
+			if call.argument(0)&0xff != 0 {
+				generator.targetsBeforeLiquid()
+			} else {
+				generator.liquidTrajectories()
+			}
+			return compare(generator, call)
+		},
 		"Parameters::FinishPhoneme": func(call *call) error {
 			return data.withActions(call, (*Generator).FinishPhoneme)
 		},

@@ -184,6 +184,16 @@ func TestParameters(t *testing.T) {
 	if parameters.NeutralFormants != [3]int32{490, 1450, 2500} || parameters.ReductionWeights[0] != 28864 || parameters.ReductionWeights[15] != 528 {
 		t.Errorf("neutral formants %v, reduction weights %v", parameters.NeutralFormants, parameters.ReductionWeights)
 	}
+	liquids := &parameters.Liquids
+	if row := liquids.R[1].Row('G', 'v'); *row != (datapack.LiquidRow{Duration: 75, Values: [3]int32{1065, 945, -5}, Kinds: [3]int32{0, 0, 1}}) {
+		t.Errorf("R's F2 row for G and v %+v", row)
+	}
+	if row := liquids.L[0].Row('K', 'E'); row != &liquids.L[0].Rows[7] || len(liquids.Y[2].Rows) != 2 {
+		t.Errorf("L's F1 row for K and E %+v, Y's F3 rows %d", row, len(liquids.Y[2].Rows))
+	}
+	if len(liquids.RAcrossMark[1]) != 5 || liquids.TargetsAcrossMark[3][2] != 3600 || liquids.RAfterVowel[2][1].Values[1] != 1500 {
+		t.Errorf("R across a mark %v, targets %v, R after a vowel %v", liquids.RAcrossMark, liquids.TargetsAcrossMark, liquids.RAfterVowel)
+	}
 	first := parameters.RuleSets[0][0]
 	if len(first.Conditions) != 1 || first.Conditions[0] != (datapack.Condition{Kind: datapack.SymbolCondition, Phoneme: datapack.CurrentPhoneme, Symbols: "EUY4", Is: true}) ||
 		len(first.Assignments) != 2 || first.Assignments[1] != (datapack.Assignment{Operation: datapack.Set, To: datapack.Place{Field: datapack.TargetField, Track: 4}}) || !slices.Equal(first.Actions, []int{2, 3, 4, 10}) {
@@ -197,6 +207,10 @@ func phoneme(content map[string]any, index int) map[string]any {
 
 func rule(content map[string]any, set, number int) map[string]any {
 	return content["ruleSets"].([]any)[set].([]any)[number].(map[string]any)
+}
+
+func liquids(content map[string]any) map[string]any {
+	return content["liquids"].(map[string]any)
 }
 
 func TestChangedParameters(t *testing.T) {
@@ -224,6 +238,23 @@ func TestChangedParameters(t *testing.T) {
 		{func(content map[string]any) { content["neutralFormants"] = []any{490, 1450} }, "neutralFormants has 2"},
 		{func(content map[string]any) { content["reductionWeights"].([]any)[2] = -1 }, "reductionWeights[2] is -1"},
 		{func(content map[string]any) { content["ruleMatrix"].([]any)[2].([]any)[5] = 54 }, "ruleMatrix[2][5] is 54, outside 0 to 53"},
+		{func(content map[string]any) { liquids(content)["L"] = liquids(content)["L"].([]any)[:3] }, "liquids.L has 3 tracks"},
+		{func(content map[string]any) {
+			track := liquids(content)["R"].([]any)[2].(map[string]any)
+			track["rows"] = track["rows"].([]any)[1:]
+		}, "liquids.R[2] has 25 rows for 25 contexts"},
+		{func(content map[string]any) {
+			liquids(content)["Y"].([]any)[0].(map[string]any)["contexts"].([]any)[1] = []any{[]any{"y", ""}}
+		}, `liquids.Y[0].contexts[1] has ["y" ""]`},
+		{func(content map[string]any) {
+			liquids(content)["rAcrossMark"].([]any)[1].([]any)[0].([]any)[2] = 3
+		}, "liquids.rAcrossMark[1][0] kinds[2] is 3"},
+		{func(content map[string]any) {
+			liquids(content)["rAfterVowel"].([]any)[0] = []any{}
+		}, "liquids.rAfterVowel[0] has 0 rows, expected 1"},
+		{func(content map[string]any) {
+			liquids(content)["targetsAcrossMark"].([]any)[0] = []any{1}
+		}, "liquids.targetsAcrossMark[0] has 1 values, expected 2"},
 		{func(content map[string]any) { rule(content, 3, 0)["do"] = []any{17} }, "ruleSets[3][0].do[0] is 17"},
 		{func(content map[string]any) {
 			rule(content, 3, 0)["if"] = []any{map[string]any{"flag": 11, "is": true}}

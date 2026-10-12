@@ -61,7 +61,7 @@ type Generator struct {
 	EndReached      bool
 	GeneratedDone   bool
 	Coarticulation  byte
-	PitchMark       byte
+	DatabaseLoci    bool
 	BeforePrevious  byte
 
 	Actions     Actions

@@ -300,11 +300,11 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 		}
 	}
 	bools := []boolField{{0x1fdd, "keep earlier", &generator.KeepEarlier}, {0x1fbc, "end reached", &generator.EndReached},
-		{0x1fae, "generated done", &generator.GeneratedDone}}
+		{0x1fae, "generated done", &generator.GeneratedDone}, {0x2035, "database loci", &generator.DatabaseLoci}}
 	for flag := range generator.Flags {
 		bools = append(bools, boolField{0x1e68 + flag, label("flag %d", flag), &generator.Flags[flag]})
 	}
-	bytes := []byteField{{stateCoarticulation, "coarticulation", &generator.Coarticulation}, {0x2035, "pitch mark", &generator.PitchMark},
+	bytes := []byteField{{stateCoarticulation, "coarticulation", &generator.Coarticulation},
 		{0x1fed, "before previous", &generator.BeforePrevious}, {0x1fec, "after next", &generator.AfterNext}}
 	return dwords, bools, bytes
 }
