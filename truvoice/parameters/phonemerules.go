@@ -54,7 +54,7 @@ func isVowel(symbol byte) bool {
 }
 
 func stressed(node *pipeline.Node) bool {
-	return node.Flags()&stressedFlag != 0
+	return node != nil && node.Flags()&stressedFlag != 0
 }
 
 func (generator *Generator) setTargets(first int, targets ...int32) {

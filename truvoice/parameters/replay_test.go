@@ -93,12 +93,10 @@ type goldenCase struct {
 }
 
 // A call is a recorded call of one of the original's functions, with its return and the thread state at both.
-// Actions are the calls of the rules' actions it made, directly or from the actions the port has.
 type call struct {
 	record, result *callRecord
 	before, after  []byte
 	base           uint32
-	actions        []*call
 }
 
 func (call *call) argument(index int) int32 {
@@ -113,14 +111,6 @@ func (call *call) ring(index int) (int, error) {
 	}
 	return int(offset / synthesizer.RingLength), nil
 }
-
-// actionFunctions are the original's functions of the rules' actions 1 to 16.
-var actionFunctions = [datapack.ActionCount + 1]string{"", "Parameters::ShiftAspirationBoundary",
-	"Parameters::ShapesFromPrevious", "Parameters::VowelOnset", "Parameters::VowelCoarticulation",
-	"Parameters::SonorantTransitions", "Parameters::ObstruentVoicing", "Parameters::FricativeAmplitudes",
-	"Parameters::ConsonantShapes", "Parameters::StopClosureBurst", "Parameters::FinishPhoneme",
-	"Parameters::LocusWeights", "Parameters::SpecialLoci", "Parameters::ConsonantTargetsAndF0",
-	"Parameters::SourceBoundaries", "PullAspirationBack", "Parameters::PhonemeRules"}
 
 type replayer func(call *call) error
 
@@ -169,23 +159,11 @@ func replayCase(golden goldenCase, replayers map[string]replayer) (map[string]in
 	messages := map[string][]string{}
 	state := make([]byte, stateSize)
 	var base uint32
-	isAction := map[string]bool{}
-	for _, function := range actionFunctions[1:] {
-		isAction[function] = true
-	}
 	type open struct {
 		call     *call
 		replayed bool
 	}
 	var stack []open
-	inRecordedAction := func() bool {
-		return slices.ContainsFunc(stack, func(entry open) bool {
-			return isAction[entry.call.record.Function] && !isPorted(entry.call.record.Function)
-		})
-	}
-	replayedOpen := func() bool {
-		return slices.ContainsFunc(stack, func(entry open) bool { return entry.replayed })
-	}
 	for index := range golden.Records {
 		record := &golden.Records[index]
 		if record.Kind != "call" && record.Kind != "return" {
@@ -200,7 +178,7 @@ func replayCase(golden goldenCase, replayers map[string]replayer) (map[string]in
 		}
 		if record.Kind == "call" {
 			entry := open{call: &call{record: record, base: base}, replayed: replayers[record.Function] != nil}
-			if entry.replayed || isAction[record.Function] && replayedOpen() && !inRecordedAction() {
+			if entry.replayed {
 				entry.call.before = slices.Clone(state)
 			}
 			stack = append(stack, entry)
@@ -214,21 +192,11 @@ func replayCase(golden goldenCase, replayers map[string]replayer) (map[string]in
 		entry := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		entry.call.result = record
-		if isAction[record.Function] && entry.call.before != nil {
-			entry.call.after = slices.Clone(state)
-			for _, ancestor := range stack {
-				if ancestor.replayed {
-					ancestor.call.actions = append(ancestor.call.actions, entry.call)
-				}
-			}
-		}
 		if !entry.replayed {
 			continue
 		}
 		counts[record.Function]++
-		if entry.call.after == nil {
-			entry.call.after = state
-		}
+		entry.call.after = state
 		if err := replayers[record.Function](entry.call); err != nil {
 			failures[record.Function]++
 			if len(messages[record.Function]) < 5 {
@@ -509,66 +477,4 @@ func difference(generator *Generator, image, expected []byte) error {
 // compare reports where the state the generator leaves differs from the original's.
 func compare(generator *Generator, call *call) error {
 	return difference(generator, call.before, call.after)
-}
-
-// recordedActions stands for the rules' actions the port doesn't have: each takes the generator to the state
-// the original's action left, after checking that the generator is in the state it started from. The
-// recorded calls of the actions the port has are skipped: the state the next action starts from, or the
-// state the call leaves, checks them.
-type recordedActions struct {
-	call     *call
-	position int
-	image    []byte
-	err      error
-}
-
-func (recorded *recordedActions) Run(generator *Generator, action int) {
-	if recorded.err != nil {
-		return
-	}
-	recorded.skipPorted()
-	if recorded.position == len(recorded.call.actions) {
-		recorded.err = fmt.Errorf("action %d (%s) wasn't recorded", action, actionFunctions[action])
-		return
-	}
-	actionCall := recorded.call.actions[recorded.position]
-	recorded.position++
-	if actionCall.record.Function != actionFunctions[action] {
-		recorded.err = fmt.Errorf("action %d (%s) runs where the original ran %s", action, actionFunctions[action], actionCall.record.Function)
-		return
-	}
-	if err := difference(generator, recorded.image, actionCall.before); err != nil {
-		recorded.err = fmt.Errorf("before %s: %v", actionCall.record.Function, err)
-		return
-	}
-	loadInto(generator, actionCall.after, actionCall.base)
-	recorded.image = actionCall.after
-}
-
-func (recorded *recordedActions) skipPorted() {
-	for recorded.position < len(recorded.call.actions) && isPorted(recorded.call.actions[recorded.position].record.Function) {
-		recorded.position++
-	}
-}
-
-func isPorted(function string) bool {
-	action := slices.Index(actionFunctions[:], function)
-	return action > 0 && ported[action] != nil
-}
-
-// withActions runs a Go function on the call's state with the recorded actions, and compares the state it
-// leaves.
-func (data *testData) withActions(call *call, run func(generator *Generator)) error {
-	generator := data.load(call)
-	recorded := &recordedActions{call: call, image: call.before}
-	generator.Actions = recorded
-	run(generator)
-	if recorded.err != nil {
-		return recorded.err
-	}
-	recorded.skipPorted()
-	if recorded.position != len(call.actions) {
-		return fmt.Errorf("%d of %d recorded actions ran, the next %s", recorded.position, len(call.actions), call.actions[recorded.position].record.Function)
-	}
-	return difference(generator, recorded.image, call.after)
 }

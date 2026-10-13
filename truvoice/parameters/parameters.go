@@ -64,16 +64,10 @@ type Generator struct {
 	DatabaseLoci    bool
 	BeforePrevious  byte
 
-	Actions     Actions
 	Pipeline    *pipeline.Pipeline
 	Synthesizer *synthesizer.Synthesizer
 	tables      *datapack.Parameters
 	vowels      *datapack.Vowels
-}
-
-// Actions runs the rules' actions the port doesn't have yet (parameters.md §5.4).
-type Actions interface {
-	Run(generator *Generator, action int)
 }
 
 func New(tables *datapack.Parameters, vowels *datapack.Vowels, pipeline *pipeline.Pipeline) *Generator {

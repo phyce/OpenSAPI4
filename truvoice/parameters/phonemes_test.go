@@ -13,7 +13,7 @@ import (
 )
 
 // TestPhonemes replays every recorded call of the stage's resets, the target loading, the rules, the actions
-// the port has and the rendering of a phoneme, with the other actions taken from the records.
+// and the rendering of a phoneme.
 func TestPhonemes(t *testing.T) {
 	data := loadTestData(t)
 	var lock sync.Mutex
@@ -65,11 +65,9 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::InitModes":    plain((*Generator).InitModes),
 		"Parameters::ApplyPhonemeRules": func(call *call) error {
 			note(data.load(call))
-			return data.withActions(call, (*Generator).ApplyRules)
+			return plain((*Generator).ApplyRules)(call)
 		},
-		"Parameters::RenderPhoneme": func(call *call) error {
-			return data.withActions(call, (*Generator).RenderPhoneme)
-		},
+		"Parameters::RenderPhoneme": plain((*Generator).RenderPhoneme),
 		"Parameters::PhonemeRules": func(call *call) error {
 			generator := data.load(call)
 			cursor := generator.cursor()
@@ -110,9 +108,8 @@ func TestPhonemes(t *testing.T) {
 			return compare(generator, call)
 		},
 		"Parameters::ConsonantTargetsAndF0": plain((*Generator).ConsonantTargetsAndPitch),
-		"Parameters::FinishPhoneme": func(call *call) error {
-			return data.withActions(call, (*Generator).FinishPhoneme)
-		},
+		"Parameters::SourceBoundaries":      plain((*Generator).SourceBoundaries),
+		"Parameters::FinishPhoneme":         plain((*Generator).FinishPhoneme),
 		"Parameters::VowelCoarticulation": func(call *call) error {
 			generator := data.load(call)
 			cursor := generator.cursor()

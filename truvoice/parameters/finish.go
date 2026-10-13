@@ -5,16 +5,13 @@ import "strings"
 // The class only action 10 tests (parameters.md §13.1): of class byte 2.
 const velarClass = 0x80
 
-// The action action 10 runs that the port doesn't have yet (parameters.md §5.4).
-const sourceBoundariesAction = 14
-
 // FinishPhoneme is action 10, which every rule ends with: it sets the loci, the consonants' targets, the pitch
 // and the source, adjusts some contexts and holds the segments to their limits (parameters.md §13).
 func (generator *Generator) FinishPhoneme() {
 	generator.LocusWeights()
 	generator.SpecialLoci()
 	generator.ConsonantTargetsAndPitch()
-	generator.Actions.Run(generator, sourceBoundariesAction)
+	generator.SourceBoundaries()
 	generator.FinalAdjustments()
 	cursor := generator.cursor()
 	segments := &generator.Segments

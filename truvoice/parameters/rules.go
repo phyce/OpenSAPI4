@@ -34,14 +34,14 @@ func (generator *Generator) ApplyRules() {
 		}
 		generator.Assign(rule.Assignments)
 		for _, action := range rule.Actions {
-			generator.act(action)
+			actions[action](generator)
 		}
 		return
 	}
 }
 
-// ported are the rules' actions the port has (parameters.md §5.4).
-var ported = [datapack.ActionCount + 1]func(generator *Generator){
+// actions are the rules' actions (parameters.md §5.4).
+var actions = [datapack.ActionCount + 1]func(generator *Generator){
 	1:  (*Generator).ShiftAspiration,
 	2:  (*Generator).ShapesFromPrevious,
 	3:  (*Generator).VowelOnset,
@@ -55,16 +55,9 @@ var ported = [datapack.ActionCount + 1]func(generator *Generator){
 	11: (*Generator).LocusWeights,
 	12: (*Generator).SpecialLoci,
 	13: (*Generator).ConsonantTargetsAndPitch,
+	14: (*Generator).SourceBoundaries,
 	15: (*Generator).PullAspirationBack,
 	16: (*Generator).PhonemeRules,
-}
-
-func (generator *Generator) act(action int) {
-	if run := ported[action]; run != nil {
-		run(generator)
-		return
-	}
-	generator.Actions.Run(generator, action)
 }
 
 func (generator *Generator) passes(conditions []datapack.Condition) bool {
