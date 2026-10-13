@@ -21,9 +21,11 @@ type Pipeline struct {
 	SettingsSpeed  int32
 	SettingsLevels [datapack.TrackCount]byte
 
-	// The scheduler's state: the stages that have work, whether the escape parser's ring has run out, whether
-	// the parameter generator waits for room in the frame ring, and what the output stage reported last.
+	// The stages, the parameter generator and the scheduler's state: the stages that have work, whether the
+	// escape parser's ring has run out, whether the parameter generator waits for room in the frame ring, and
+	// what the output stage reported last.
 	Stages         Stages
+	Generator      Generator
 	HasWork        [Output]bool
 	OutOfInput     bool
 	WaitingForRoom bool
@@ -148,7 +150,8 @@ func (pipeline *Pipeline) PostVisual(symbol byte) {
 }
 
 // New returns a pipeline as the speaking thread constructs it on its stack: its nodes all zero, its attributes
-// pitch 85, speed 150, full volume, normal character and voice 0, gain 1, rendering at 8000 Hz.
+// pitch 85, speed 150, full volume, normal character and voice 0, gain 1, rendering at 8000 Hz. Its parameter
+// generator, which works on the pipeline, is set after.
 func New(tables *datapack.Pipeline, synthesizer *synthesizer.Synthesizer, stages Stages, engine *Engine) *Pipeline {
 	pipeline := &Pipeline{Synthesizer: synthesizer, Stages: stages, Engine: engine, tables: tables,
 		Pitch: initialPitch, Speed: initialSpeed, Volume: initialVolume, SampleRate: initialSampleRate}

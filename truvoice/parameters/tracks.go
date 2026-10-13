@@ -232,6 +232,11 @@ func (generator *Generator) Room(frames int32) bool {
 	return generator.Margin+generator.Furthest-generator.Synthesizer.Position+frames < synthesizer.RingLength
 }
 
+// HasRoom reports whether the ring has room for the frames the stage waits to write, as the scheduler asks.
+func (generator *Generator) HasRoom() bool {
+	return generator.Room(generator.Wanted)
+}
+
 // Rebase moves the ring's frame counters and the tracks' back by the synthesizer's RebaseFrames once the
 // synthesizer has passed them, and reports whether it did.
 func (generator *Generator) Rebase() bool {

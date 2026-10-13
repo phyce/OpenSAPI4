@@ -23,7 +23,7 @@ const (
 	prosodyFreeNodes    = 106
 )
 
-// Stages are the stages the scheduler runs besides the output stage and the synthesizer.
+// Stages are the stages the scheduler runs before the parameter generator.
 type Stages interface {
 	// Input makes the nodes of the next word from the escape parser's ring and reports whether there was one.
 	Input() bool
@@ -31,11 +31,16 @@ type Stages interface {
 	Normalizer() bool
 	Lexical() bool
 	Prosody() bool
-	// Parameters runs the parameter generator once.
-	Parameters() int
-	// Room reports whether the frame ring has room for the frames the parameter generator waits to write.
-	Room() bool
-	// Reset resets the escape parser, the input stage and the stages with cursors.
+	// Reset resets the escape parser, the input stage, the normalizer, the lexical stage and prosody.
+	Reset()
+}
+
+// Generator is the parameter generator, as the scheduler runs it.
+type Generator interface {
+	// Step runs it once and reports ParametersFinished, ParametersWaiting or ParametersWorking.
+	Step() int
+	// HasRoom reports whether the frame ring has room for the frames it waits to write.
+	HasRoom() bool
 	Reset()
 }
 
@@ -48,11 +53,11 @@ func (pipeline *Pipeline) Step() int {
 	if pipeline.Retired != RetireDone {
 		pipeline.Retired = pipeline.Retire()
 	}
-	if pipeline.WaitingForRoom && pipeline.Stages.Room() {
+	if pipeline.WaitingForRoom && pipeline.Generator.HasRoom() {
 		pipeline.WaitingForRoom = false
 	}
 	if !pipeline.WaitingForRoom && pipeline.HasWork[Parameters] {
-		switch pipeline.Stages.Parameters() {
+		switch pipeline.Generator.Step() {
 		case ParametersFinished:
 			pipeline.HasWork[Parameters] = false
 		case ParametersWaiting:
@@ -122,5 +127,6 @@ func (pipeline *Pipeline) ResetStages() {
 	pipeline.Synthesizer.ResetFrames(&initial)
 	pipeline.Synthesizer.Reset(pipeline.SampleRate)
 	pipeline.Levels = pipeline.SettingsLevels
+	pipeline.Generator.Reset()
 	pipeline.Stages.Reset()
 }

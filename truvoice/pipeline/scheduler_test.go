@@ -311,15 +311,23 @@ func (stages *replayStages) Input() bool      { return stages.run("input") != 0 
 func (stages *replayStages) Normalizer() bool { return stages.run("normalizer") != 0 }
 func (stages *replayStages) Lexical() bool    { return stages.run("lexical") != 0 }
 func (stages *replayStages) Prosody() bool    { return stages.run("prosody") != 0 }
-func (stages *replayStages) Room() bool       { return stages.room }
+func (stages *replayStages) Reset()           {}
 
-func (stages *replayStages) Reset() {
-	stages.replay.pipeline.Synthesizer.Lookahead = 2
+// replayGenerator stands in for the parameter generator, from the records.
+type replayGenerator struct {
+	*replayStages
 }
 
-// Parameters replays the parameter generator's step, then writes the frames the synthesizer converts in this
-// step of the scheduler and sets the ring's cursors as the first of the synthesizer's steps found them.
-func (stages *replayStages) Parameters() int {
+func (generator replayGenerator) HasRoom() bool { return generator.room }
+
+func (generator replayGenerator) Reset() {
+	generator.replay.pipeline.Synthesizer.Lookahead = 2
+}
+
+// Step replays the parameter generator's step, then writes the frames the synthesizer converts in this step
+// of the scheduler and sets the ring's cursors as the first of the synthesizer's steps found them.
+func (generator replayGenerator) Step() int {
+	stages := generator.replayStages
 	result := int(stages.run("parameters"))
 	if stages.err != nil {
 		return result
@@ -569,6 +577,7 @@ func replayScheduler(tables *datapack.Pipeline, synthesizerTables *datapack.Synt
 	replay := &replay{texts: map[int]*Text{}, records: golden.Records, counts: counts, racy: golden.Racy}
 	engine := &Engine{}
 	replay.pipeline = New(tables, synthesizer.New(synthesizerTables, rate), stages, engine)
+	replay.pipeline.Generator = replayGenerator{stages}
 	stages.replay = replay
 	var applied []goldenRecord
 	for index := 0; index < len(golden.Records); index++ {

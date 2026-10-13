@@ -20,6 +20,8 @@ The speaking thread, the scheduler, the output stage and the reset were also che
 - each step ran the same stages (3,787 input steps, 7,899 normalizer, 8,848 lexical, 11,138 prosody and 15,293 parameter generator steps, 98,430 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor;
 - the audio handed over, 8,300,290 samples in 7,451 hand-overs, was the original's PCM in every run, and each of the 1,711 words and 4 bookmarks came at the sample where the original reported it.
 
+The scheduler, the output stage and the synthesizer were checked again with the Go parameter generator, from what the stages before it wrote, in 228 recorded runs ([parameters.md](parameters.md)): all 110,544 steps, and the audio, were the original's.
+
 ## 1. The state
 
 What the stages share:
@@ -268,7 +270,7 @@ A new speaking thread **initializes** the pipeline:
 2. Reset the nodes and the cursors (section 2.2): every cursor gets the escape parser's settings.
 3. Reset the frame ring ([synthesizer.md](synthesizer.md) §5.1), and the synthesizer's converter and renderer at its sample rate ([synthesizer.md](synthesizer.md) §3.1, §4.2).
 4. The track levels become the escape parser's track levels.
-5. Reset the escape parser, the input stage and the stages with cursors; their specs will say how. The parameter generator's reset sets the ring's lookahead to 2.
+5. Reset the escape parser, the input stage and the stages with cursors: the parameter generator as [parameters.md](parameters.md) §7 says; the other specs will say how. Each touches only its own stage's state, so their order doesn't matter.
 
 The synthesizer's mute flag, gain and output-filter voice, and the attributes, keep their values.
 
@@ -333,7 +335,7 @@ The thread ends when it isn't busy, the current text is all fed, the scheduler i
 - The reset requests: `x` at the output stage, bookmarks and words with flag bit 5. The escape parser's own reset command, and `x`, make the original drop the rest of the text without reporting it done, so a recorded run never ends. A reset during a text therefore isn't checked; the reset at a thread's start is.
 - The command `n` (section 4).
 - The free-node limits (section 6 steps 5 and 7): at least 477 nodes were free in every step. Texts of 500 words without punctuation, 200-letter words, long numbers and long stretches with the synthesizer held leave at least 354 free, because the output stage keeps up with the synthesizer.
-- The ring without room after a wait (section 6 step 3): the parameter generator waited 38 times, and the next step always found room.
+- The ring without room after a wait (section 6 step 3): the parameter generator waited 38 times, and 39 times in the runs of [parameters.md](parameters.md), and the next step always found room. It waits only while writing a generated segment, of at most 53 frames a step, and the synthesizer's loop plays more than that in the same step. Only a held synthesizer could leave no room, and the original never finished speaking a text that held it that long.
 - An idle step with samples in the buffer (section 6 step 6): the buffer was always empty when the scheduler was out of input.
 - The output stage's run at the start of a step (section 6 step 2) never changes anything: its window only grows in a parameter generator's step, which ends with a run of the output stage, and the markers only grow in the synthesizer's loop of that step.
 - The constructed gain and sample rate (section 8.1): the start always replaces them, because the engine's gain is 1 to 3 and its sample rate 11025 or 8000 Hz.

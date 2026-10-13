@@ -365,12 +365,13 @@ func loadTestData(t *testing.T) *testData {
 // load returns a generator with the thread state's values when the call started.
 func (data *testData) load(call *call) *Generator {
 	generator := New(data.parameters, data.vowels, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
-	loadInto(generator, call.before, call.base)
+	loadInto(generator, call.before, call.base, nil)
 	return generator
 }
 
-// loadInto gives the generator, its pipeline's nodes and cursor and the ring the thread state's values.
-func loadInto(generator *Generator, state []byte, base uint32) {
+// loadInto gives the generator, its pipeline's nodes and cursor and the ring the thread state's values. text
+// returns the text a node's text pointer stands for; without it, a node with a text gets a new one.
+func loadInto(generator *Generator, state []byte, base uint32, text func(pointer uint32) *pipeline.Text) {
 	dwords, bools, bytes := generatorFields(generator, false)
 	for _, field := range dwords {
 		*field.value = int32(dword(state, field.offset))
@@ -395,7 +396,9 @@ func loadInto(generator *Generator, state []byte, base uint32) {
 		target.Next, target.Previous = nodeAt(pipelineState, dword(state, offset), base), nodeAt(pipelineState, dword(state, offset+4), base)
 		copy(target.Data[:], state[offset+nodeData:])
 		target.Text = nil
-		if dword(state, offset+nodeText) != 0 {
+		if pointer := dword(state, offset+nodeText); pointer != 0 && text != nil {
+			target.Text = text(pointer)
+		} else if pointer != 0 {
 			target.Text = &pipeline.Text{}
 		}
 	}
@@ -576,18 +579,23 @@ func describe(offset int) string {
 func difference(generator *Generator, image, expected []byte, base uint32) error {
 	state := slices.Clone(image)
 	store(generator, state, base)
-	var differences []string
+	return differences(state, expected)
+}
+
+// differences reports where a state differs from the expected one.
+func differences(state, expected []byte) error {
+	var found []string
 	for offset := range state {
 		if state[offset] != expected[offset] {
-			if len(differences) == 8 {
-				differences = append(differences, "...")
+			if len(found) == 8 {
+				found = append(found, "...")
 				break
 			}
-			differences = append(differences, fmt.Sprintf("%s is %d, expected %d", describe(offset), state[offset], expected[offset]))
+			found = append(found, fmt.Sprintf("%s is %d, expected %d", describe(offset), state[offset], expected[offset]))
 		}
 	}
-	if differences != nil {
-		return fmt.Errorf("%s", strings.Join(differences, "; "))
+	if found != nil {
+		return fmt.Errorf("%s", strings.Join(found, "; "))
 	}
 	return nil
 }
