@@ -43,7 +43,7 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 	case 'N':
 		cursor.Flags = second<<8 | value
 	case 'P':
-		cursor.Flush = int32(second<<8 + value)
+		cursor.Phrase = int32(second<<8 + value)
 	case 'V':
 		cursor.Voice = int32(value)
 		cursor.Pitch = pipeline.tables.Voices[cursor.Voice].Pitch

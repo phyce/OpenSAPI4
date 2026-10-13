@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), and the prosody stage's pitch ranges ([prosody.md](prosody.md) §4.3). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -12,6 +12,7 @@ synthesizer.json
 pipeline.json
 parameters.json
 vowels.json
+prosody.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -85,7 +86,7 @@ A **rate** (§4.2, §4.3) has:
 |---|---|---|
 | `shapes` | 31 lists | The transition shapes ([parameters.md](parameters.md) §2.5): shape `i` is at most `i` weights, 1 to 255, the first 255. Shape 0 is empty, and shapes 23 to 30 have one weight fewer than their number |
 | `phonemes` | 59 objects | The phonemes in their order ([parameters.md](parameters.md) §3.1), below |
-| `classes` | 6 lists of 128 bytes | The class bytes of the symbols 0 to 127 ([parameters.md](parameters.md) §3.2): `classes[p][s]` is symbol `s`'s byte `p` |
+| `classes` | 6 lists of 128 bytes | The class bytes of the symbols 0 to 127 ([parameters.md](parameters.md) §3.2): `classes[p][s]` is symbol `s`'s byte `p`. The prosody stage tests them too ([prosody.md](prosody.md) §2.1) |
 | `voices` | 10 objects | Per voice: `tracks`, the targets of tracks 18 to 20, and `fourthFormantLimit`, the highest F4 target in Hz ([parameters.md](parameters.md) §4.1 and §6) |
 | `categoryWeights` | 4 lists of 4 | The weight, Q15, for a phoneme's category after the previous one's: `categoryWeights[previous][current]` ([parameters.md](parameters.md) §4.1) |
 | `defaultShapes` | 22 numbers, 0 to 30 | Each track's forward shape before the rules ([parameters.md](parameters.md) §4.1) |
@@ -143,3 +144,9 @@ A vowel:
 | `records` | lists of numbers | The records, ordered by left context, then right context. Each starts with its left and right context, 0 to 33. For `@` and `\|` it goes on with F1 to F4 start, middle and end bytes, the four timings (0 to 15) and the B1 to B3 end bytes: 21 numbers. For the others it goes on with F1 to F4 start and end bytes, an entry of each formant's trajectory table, and the B1 to B3 starts, middles and ends in Hz: 23 numbers |
 | `trajectories` | 4 lists | Not for `@` and `\|`: F1 to F4's trajectory tables, whose entries are four point bytes and four timings (0 to 15) |
 | `alternatives` | objects | Only some vowels: `{"record": i, "neighbour": n, "symbol": s, "values": v}`, an alternative of record `i`, used when the node before the previous phoneme (`n` is `beforePrevious`) or after the next one (`afterNext`) has symbol `s`. `v` is a record without its contexts |
+
+## 7. `prosody.json`
+
+| Field | Values | Meaning |
+|---|---|---|
+| `pitchRanges` | 10 numbers, 0 to 32767 | Each voice's pitch range, the Q15 share of the excursion its pitch moves by ([prosody.md](prosody.md) §4.3); 32766 for every voice |

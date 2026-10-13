@@ -1178,7 +1178,7 @@ It tests one more class:
 6. **Room.** If there is a current node, wanted becomes its frames.
    1. Without room for them (section 2.7), release the synthesizer, finish the cursor ([pipeline.md](pipeline.md) §3.3) and report working if it handed nodes on, else waiting.
    2. If the stage is more than 64 frames ahead of the synthesizer, release it and clear prosody's flag that ends a phrase sooner.
-   3. If the cursor's flush setting (the `P` command) is 0, release the synthesizer.
+   3. If the cursor's phrase setting (the `P` command) is 0, release the synthesizer.
 7. **Look ahead** (section 17.3). If it returns no node, go to step 16. The node it returns becomes the next one.
 8. **The phoneme after the next** becomes the symbol of the first segment after the next node, past nodes of type 3 (word marks and punctuation), or a space if a node of another type comes first. If the window ends first, it stays as it was.
 9. If the current phoneme isn't the pause, start 0 becomes 4 and start 1 becomes 2.

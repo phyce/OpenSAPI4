@@ -373,3 +373,28 @@ func TestChangedVowels(t *testing.T) {
 		}
 	}
 }
+
+func TestProsody(t *testing.T) {
+	prosody, err := conformance.Pack(t).LoadProsody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for voice, pitchRange := range prosody.PitchRanges {
+		if pitchRange != 32766 {
+			t.Errorf("voice %d has pitch range %d", voice, pitchRange)
+		}
+	}
+}
+
+func TestChangedProsody(t *testing.T) {
+	tests := []struct{ content, message string }{
+		{`{"pitchRanges":[1,2]}`, "pitchRanges has 2 values"},
+		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,40000]}`, "pitchRanges[9] is 40000"},
+		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,-1]}`, "pitchRanges[9] is -1"},
+	}
+	for _, test := range tests {
+		if _, err := writePack(t, "prosody.json", []byte(test.content)).LoadProsody(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
+		}
+	}
+}

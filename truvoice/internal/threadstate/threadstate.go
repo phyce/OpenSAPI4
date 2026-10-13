@@ -306,7 +306,7 @@ func cursorPointers(cursor *pipeline.Cursor) []**pipeline.Node {
 
 // cursorValues are a cursor's settings and types, in their order in the thread state.
 func cursorValues(cursor *pipeline.Cursor) []any {
-	return []any{&cursor.PhoneticInput, &cursor.Flush, &cursor.Rate, &cursor.Pitch, &cursor.Attenuation, &cursor.Filter,
+	return []any{&cursor.PhoneticInput, &cursor.Phrase, &cursor.Rate, &cursor.Pitch, &cursor.Attenuation, &cursor.Filter,
 		&cursor.Flags, &cursor.InputFlags, &cursor.Types, &cursor.Voice}
 }
 

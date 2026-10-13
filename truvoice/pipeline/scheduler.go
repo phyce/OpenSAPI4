@@ -100,7 +100,7 @@ func (pipeline *Pipeline) Step() int {
 }
 
 // defaultSettings are the escape parser's settings on a new speaking thread.
-var defaultSettings = Settings{Flush: 1, Rate: 13, Pitch: 85, Flags: 0x17c0, InputFlags: 0x41}
+var defaultSettings = Settings{Phrase: 1, Rate: 13, Pitch: 85, Flags: 0x17c0, InputFlags: 0x41}
 
 const defaultSpeed = 150
 

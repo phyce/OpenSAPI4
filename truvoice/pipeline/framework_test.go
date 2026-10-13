@@ -168,7 +168,7 @@ func (replay *replay) setCursor(cursor *Cursor, fields []int64) {
 	cursor.Start, cursor.Done, cursor.Scan = replay.node(fields[0]), replay.node(fields[1]), replay.node(fields[2])
 	cursor.First, cursor.End = replay.node(fields[3]), replay.node(fields[4])
 	cursor.Working = [2]*Node{replay.node(fields[5]), replay.node(fields[6])}
-	cursor.Settings = Settings{PhoneticInput: int32(fields[7]), Flush: int32(fields[8]), Rate: int32(fields[9]),
+	cursor.Settings = Settings{PhoneticInput: int32(fields[7]), Phrase: int32(fields[8]), Rate: int32(fields[9]),
 		Pitch: int32(fields[10]), Attenuation: int32(fields[11]), Filter: int32(fields[12]), Flags: uint32(fields[13]),
 		InputFlags: uint32(fields[14]), Voice: int32(fields[16])}
 	cursor.Types = uint32(fields[15])
@@ -193,7 +193,7 @@ func (replay *replay) setTypes(cursor *Cursor, types string) error {
 func cursorFields(cursor *Cursor) []int64 {
 	return []int64{reference(cursor.Start), reference(cursor.Done), reference(cursor.Scan), reference(cursor.First),
 		reference(cursor.End), reference(cursor.Working[0]), reference(cursor.Working[1]), int64(cursor.PhoneticInput),
-		int64(cursor.Flush), int64(cursor.Rate), int64(cursor.Pitch), int64(cursor.Attenuation), int64(cursor.Filter),
+		int64(cursor.Phrase), int64(cursor.Rate), int64(cursor.Pitch), int64(cursor.Attenuation), int64(cursor.Filter),
 		int64(cursor.Flags), int64(cursor.InputFlags), int64(cursor.Types), int64(cursor.Voice)}
 }
 

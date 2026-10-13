@@ -96,6 +96,10 @@ func (node *Node) Character() byte {
 	return node.Data[characterOffset]
 }
 
+func (node *Node) SetCharacter(character byte) {
+	node.Data[characterOffset] = character
+}
+
 func (node *Node) unlink() {
 	if node.Previous != nil {
 		node.Previous.Next = node.Next

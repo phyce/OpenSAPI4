@@ -21,7 +21,7 @@ var stageTypes = [StageCount]uint32{0x17, 6, 0x1c, 0x28, 0x3f}
 // own copy, so that a stage applies a command when its nodes reach it (pipeline.md §3.1).
 type Settings struct {
 	PhoneticInput int32  // I
-	Flush         int32  // P
+	Phrase        int32  // P
 	Rate          int32  // r, v: the rate index
 	Pitch         int32  // p: Hz
 	Attenuation   int32  // a: dB

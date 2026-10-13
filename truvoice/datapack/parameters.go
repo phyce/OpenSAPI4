@@ -161,6 +161,9 @@ type Rule struct {
 	Actions     []int
 }
 
+// Classes are the symbols' class bytes, which every stage tests: class byte p of symbol s is [p][s].
+type Classes [ClassPlanes][SymbolCount]byte
+
 // Parameters are the parameter generator's tables. Shapes are the transition shapes: shape i has at most i
 // weights, 1 to 255, the first 255. Classes are the symbols' class bytes. CategoryWeights are a weight for
 // each category of a phoneme and of the one before it, DefaultShapes each track's forward shape. RuleMatrix is
@@ -172,7 +175,7 @@ type Rule struct {
 type Parameters struct {
 	Shapes            [ShapeCount][]byte
 	Phonemes          [PhonemeCount]Phoneme
-	Classes           [ClassPlanes][SymbolCount]byte
+	Classes           Classes
 	Voices            [VoiceCount]VoiceTracks
 	CategoryWeights   [CategoryCount][CategoryCount]int32
 	DefaultShapes     [TrackCount]int32

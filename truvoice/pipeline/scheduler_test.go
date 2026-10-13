@@ -103,7 +103,7 @@ func (replay *replay) setEngine(attributes *goldenEngine) {
 func (replay *replay) settingFields() []int32 {
 	pipeline := replay.pipeline
 	settings := pipeline.Settings
-	return []int32{settings.PhoneticInput, settings.Flush, settings.Rate, pipeline.SettingsSpeed, settings.Pitch,
+	return []int32{settings.PhoneticInput, settings.Phrase, settings.Rate, pipeline.SettingsSpeed, settings.Pitch,
 		settings.Attenuation, settings.Filter, int32(settings.Flags), int32(settings.InputFlags), settings.Voice}
 }
 

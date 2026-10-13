@@ -126,7 +126,7 @@ A stage makes its cursor **current** while it works. The input stage appends its
 | Setting | Command | Default |
 |---|---|---|
 | Phonetic input | `I` | 0 |
-| Flush | `P` | 1 |
+| Phrase | `P` | 1 |
 | Rate index | `r`, `v` | 13 |
 | Pitch, Hz | `p` | 85 |
 | Attenuation, dB | `a` | 0 |
@@ -135,7 +135,7 @@ A stage makes its cursor **current** while it works. The input stage appends its
 | Input flags | `A`, `D` | 0x41 |
 | Voice | `V` | 0 |
 
-The escape parser keeps the current settings as it reads the text. Every cursor has its own copy, which the commands change as the stage reaches them (section 4). While flush is 0, the parameter generator leaves the end of speech unmarked.
+The escape parser keeps the current settings as it reads the text. Every cursor has its own copy, which the commands change as the stage reaches them (section 4). The phrase setting is the kind of phrase the prosody stage is in ([prosody.md](prosody.md) §3); while it is 0, the parameter generator leaves the end of speech unmarked.
 
 ### 3.2 Beginning
 
@@ -173,7 +173,7 @@ Running the current cursor's `scan` node:
 | `C` | | Normalizer: take a node of type 3, symbol `]`, before it |
 | `I` | phonetic input = value | |
 | `N` | flags = second · 256 + value | |
-| `P` | flush = second · 256 + value | |
+| `P` | phrase = second · 256 + value | |
 | `V` | voice = value; pitch and rate index = the voice's own | Parameter generator: the attribute voice (and so the output-filter voice) = value; the attribute speed = the voice's own; the attribute pitch = the cursor's pitch. With an engine, the engine's voice (and so its mode information), pitch and speed become the same |
 | `a` | attenuation = value | Parameter generator: value 16 makes the attribute volume 0 and the cursor's attenuation 100; any other value makes the attribute volume `volumes[value]` (section 4.2) and clears the mute flag. The engine's volume becomes the same, and a volume message is posted |
 | `c` | | Prosody, with an engine: the attribute character and the engine's = value |

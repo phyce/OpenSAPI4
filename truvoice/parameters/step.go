@@ -111,7 +111,7 @@ func (generator *Generator) Step() int {
 			generator.release()
 			stage.ShortPhrase = false
 		}
-		if cursor.Flush == 0 {
+		if cursor.Phrase == 0 {
 			generator.release()
 		}
 	}
