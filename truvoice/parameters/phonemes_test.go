@@ -109,6 +109,7 @@ func TestPhonemes(t *testing.T) {
 			}
 			return compare(generator, call)
 		},
+		"Parameters::ConsonantTargetsAndF0": plain((*Generator).ConsonantTargetsAndPitch),
 		"Parameters::FinishPhoneme": func(call *call) error {
 			return data.withActions(call, (*Generator).FinishPhoneme)
 		},

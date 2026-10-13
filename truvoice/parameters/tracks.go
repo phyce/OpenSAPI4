@@ -69,7 +69,7 @@ func (ring Ring) Set(position int32, value byte) {
 }
 
 // weights returns a shape's weights. The original has 31 shapes and reads outside its table for the others
-// (parameters.md §15); the port gives them none.
+// (parameters.md §16); the port gives them none.
 func (ring Ring) weights(shape int32) []byte {
 	if shape < 0 || int(shape) >= len(ring.shapes) {
 		return nil

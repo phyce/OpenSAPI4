@@ -5,18 +5,15 @@ import "strings"
 // The class only action 10 tests (parameters.md §13.1): of class byte 2.
 const velarClass = 0x80
 
-// The actions action 10 runs that the port doesn't have yet (parameters.md §5.4).
-const (
-	consonantTargetsAction = 13
-	sourceBoundariesAction = 14
-)
+// The action action 10 runs that the port doesn't have yet (parameters.md §5.4).
+const sourceBoundariesAction = 14
 
 // FinishPhoneme is action 10, which every rule ends with: it sets the loci, the consonants' targets, the pitch
 // and the source, adjusts some contexts and holds the segments to their limits (parameters.md §13).
 func (generator *Generator) FinishPhoneme() {
 	generator.LocusWeights()
 	generator.SpecialLoci()
-	generator.Actions.Run(generator, consonantTargetsAction)
+	generator.ConsonantTargetsAndPitch()
 	generator.Actions.Run(generator, sourceBoundariesAction)
 	generator.FinalAdjustments()
 	cursor := generator.cursor()
@@ -273,14 +270,7 @@ func (generator *Generator) FinalAdjustments() {
 	symbol, previousSymbol, nextSymbol := current.Symbol(), previous.Symbol(), cursor.First.Symbol()
 	frames, previousFrames := current.Value(), previous.Value()
 	segments := &generator.Segments
-	before := previous.Previous
-	beforeSymbol := symbolOf(before)
-	if generator.has(beforeSymbol, 0, markClass) {
-		beforeSymbol = ' '
-		if before.Previous != nil {
-			beforeSymbol = before.Previous.Symbol()
-		}
-	}
+	beforeSymbol := generator.beforePreviousSymbol()
 	if symbol == 'M' && previousSymbol == 'a' {
 		switch {
 		case generator.has(nextSymbol, 2, labialClass):
