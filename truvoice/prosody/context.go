@@ -17,14 +17,18 @@ const (
 	stop        class = 0x020
 	fricative   class = 0x040
 	phoneme     class = 0x080
+	boundary    class = 0x101
 	affricate   class = 0x108
 	consonant   class = 0x120
 	phraseBreak class = 0x140
 	closure     class = 0x201
 	vowel       class = 0x202
+	lateral     class = 0x240
 	approximant class = 0x301
 	laryngeal   class = 0x302
+	frontEnding class = 0x340
 	high        class = 0x401
+	fortis      class = 0x540
 )
 
 // hasClass reports whether the symbol is in the class. Symbols of 128 and up are in none.

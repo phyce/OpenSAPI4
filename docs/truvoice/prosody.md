@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) gives each phoneme its duration and its pitch. The prosody stage works on the lexical stage's phonemes, the word marks before the words and the punctuation ([pipeline.md](pipeline.md) §3). It finds where its phrases end, puts in the pauses between them, and turns each phoneme into a segment for the parameter generator ([parameters.md](parameters.md)): a node of type 4 whose value is its duration in frames and whose second value is its pitch, in units of 2 Hz.
 
-This spec covers the arithmetic (section 1), the phonemes the stage sees and what it notes about them (section 2), how it finds a phrase, breaks it and chooses its contour (section 3), the pitch (section 4), how it walks the phrase's nodes, with their presets and pauses (section 5), the durations (section 6) and its reset (section 7). The durations of the vowels, fricatives, stops and sonorants will follow.
+This spec covers the arithmetic (section 1), the phonemes the stage sees and what it notes about them (section 2), how it finds a phrase, breaks it and chooses its contour (section 3), the pitch (section 4), how it walks the phrase's nodes, with their presets and pauses (section 5), the durations (section 6), with the vowels' (sections 6.7 and 6.8), and its reset (section 7). The durations of the fricatives, stops and sonorants will follow.
 
 **In short.**
 - The stage scans ahead for a sentence's end, a `C` command, or a limit: 180 phonemes (70 when text comes into an empty pipeline, 15 with `\Pro=0\`) or 240 nodes. Each comma on the way ends a phrase of its own, and the stage hands on the nodes before it as soon as it has timed them.
@@ -10,6 +10,7 @@ This spec covers the arithmetic (section 1), the phonemes the stage sees and wha
 - At each break comes a pause: 39 frames at a sentence's end, 10 at a comma; at a rate of 25 or more, or with `\Pro=0\`, a short one. In slow speech, some function words after a content word get a pause before them, by a 16-step pattern whose position the whole process shares.
 - Phonetic input can preset a phoneme's duration and pitch; the stage puts them back after it times the phoneme.
 - A consonant's duration is its shortest plus a share of the rest, by where it is in its phrase and word and the sounds around it. At rate 7 and up a pair of the same consonant, or of two close ones, becomes one, longer. Stress 3 and emphasis lengthen a word, by 25 to 100 % and 50 % more for a function word, and the rate scales every duration. A duration is 2 to 55 frames.
+- A vowel's duration comes from a grid, by its stress, whether its word is the phrase's last, whether it ends its word, and the sound after it. A glide before it with a nasal after it, approximants around it with a lateral after it, or a break after it shorten it, and so do its function word's rules.
 - A phrase's pitch starts a third of the voice's pitch above it, and comes down over the phrase's phonemes. Phonetic input can place word marks that make it come down to a mark and rise from it instead: the phrase's **contour**.
 - The phrase's **nucleus** is its last stressed vowel before a break. The syllables before it and the stressed ones go up; the nucleus carries the phrase's accent.
 - In the phrase's last syllable the pitch moves as the phrase's kind says: down at a sentence's end, up a little at a comma, up at a question. From there every phoneme is 8 Hz lower than the one before, down to 46 Hz.
@@ -18,7 +19,7 @@ This spec covers the arithmetic (section 1), the phonemes the stage sees and wha
 
 **Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 346 runs: the parameter generator's and the pipeline's runs ([parameters.md](parameters.md), [pipeline.md](pipeline.md)), and 118 more for the phrases and the pitch: questions, exclamations, lists, long sentences without punctuation, emphasis, `\Pro=0\`, pitch, speed, character and voice changes within a text, slow and fast speech, 30 with the word marks phonetic input places (section 3.5), 4 with long runs of consonants in phonetic input, and 47 for the phrase's breaks and pauses (speed, `v`, `r` and `P` commands within a sentence, speed at its end, `\Pro=0\` within a phrase, exclamations without a stressed vowel, the word classes that break a phrase, question words, the Address context, phrases of more nodes and word marks than the scan looks at, a held phrase broken off, word marks of values 6, 7 and 12 at more places, pauses as long as exactly 1 and 50 phonemes, and a pause before any text), and 3 with an engine reset during a text, one while a phrase is held. Each call left the speaking thread's state and the stage's shared state (section 3.1) byte-identical to the original's: the 40,436 runs of the stage (section 5.1) with their 40,436 scans (section 3.2), 2,290 placings of the breaks (section 3.3) with their 186 breaks, 6 of them after a stop, and 81 chances of a slow pause (section 3.4), 51 of which put one in, 64,530 walk steps, 34,349 nodes processed (section 5.2), 58,966 notings and restorings of presets (section 5.3), 2,444 pauses (section 5.4) and 349 resets (section 7); each of the 37,384 contexts (section 2.3), the 34,349 pitch contexts (section 4.2), the 34,349 pitches (section 4.3) and the 1,239 resets of the pitch (section 4.4). In these replays each duration's call started from the state the Go stage had reached, checked against the original's, and its result was the original's; the durations are checked on their own (below).
 
-The durations were replayed the same way in 386 runs: those 346 and 40 more for the durations (pairs of the same consonant across words, after a function word, after a word of one consonant, within a word and at rates 6 and 7, words of stress 3, emphasized words of every kind, phonetic input's pairs and pauses, among them a pause of 100 frames, and phonemes timed by their shortest durations alone). Each call left the speaking thread's state byte-identical to the original's: the 40,089 durations (section 6.1), with 11,429 nodes that aren't phonemes, 195 emphases and 82 phonemes timed by their shortest durations; the 27,840 base durations (section 6.2) and phonemes' durations (section 6.3), with as many tests for a pair, 448 of which merged one, 396 of them geminates (section 6.4), and as many emphasis steps (section 6.5); 16,286 scalings by the rate, and 750 pauses (section 6.6), 64 of them over 50 frames. The durations of the vowels, fricatives, stops and sonorants aren't ported yet: in these replays each of their calls started from the state the Go stage had reached, checked against the original's, and its result was the original's.
+The durations were replayed the same way in 412 runs: those 346 and 66 more for the durations (pairs of the same consonant across words, after a function word, after a word of one consonant, within a word and at rates 6 and 7, words of stress 3, emphasized words of every kind, phonetic input's pairs and pauses, among them a pause of 100 frames, phonemes timed by their shortest durations alone, every vowel after a glide before a nasal and between approximants before a lateral, stressed and not, in the phrase's last word or not, inside its word or at its end, vowels before two pauses, function words within written words the stages split, and function words before and after words of the classes their rules test). Each call left the speaking thread's state byte-identical to the original's: the 43,966 durations (section 6.1), with 12,484 nodes that aren't phonemes, 195 emphases and 82 phonemes timed by their shortest durations; the 30,654 base durations (section 6.2) and phonemes' durations (section 6.3), with as many tests for a pair, 462 of which merged one, 410 of them geminates (section 6.4), and as many emphasis steps (section 6.5); 16,538 scalings by the rate; 1,145 pauses (section 6.6), 64 of them over 50 frames; the 11,986 vowels' durations (section 6.7), 210 of them before a nasal after a glide and 147 before a lateral between approximants, and the 4,136 function words' vowels (section 6.8), 620 of which lost frames by 60 of the 101 rules. The durations of the fricatives, stops and sonorants aren't ported yet: in these replays each of their calls started from the state the Go stage had reached, checked against the original's, and its result was the original's.
 
 ## 1. Arithmetic
 
@@ -44,14 +45,18 @@ The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2):
 | (0, 0x20) | stop | `B P D T J C G K q` |
 | (0, 0x40) | fricative | `V F x X Z S z s` |
 | (0, 0x80) | phoneme | every phoneme and the pause, a space |
+| (1, 0x01) | boundary | `! , . ? \ ]` |
 | (1, 0x08) | affricate | `C J` |
 | (1, 0x20) | consonant | every phoneme but the vowels, `p`, `Y`, `l`, `m`, `n` and the pause |
 | (1, 0x40) | break | `! ) , . ? \ ]` |
 | (2, 0x01) | closure | `B P D T t J C G K Q q` and the nasals |
 | (2, 0x02) | vowel | the vowels and `p` |
+| (2, 0x40) | lateral | `L j l` |
 | (3, 0x01) | approximant | `L R W Y h j l` |
 | (3, 0x02) | laryngeal | the pause, `H Q d` |
+| (3, 0x40) | front-ending | `5 A E I y` |
 | (4, 0x01) | high | `4 E U W Y b c h i u \|` |
+| (5, 0x40) | fortis | `C F H K P S T Y s` |
 
 A class can also be **negated**: the symbols not in it. A missing node is in no class, negated or not.
 
@@ -294,7 +299,7 @@ A pause is a segment `' '` (type 4) whose value is its frames and whose second v
 
 A phoneme's duration is in frames. The data pack gives each symbol an **inherent** and a **shortest** duration (`durations`), and each rate a **duration percent** (`durationPercents`, 344 at rate 0 to 65 at rate 25, 117 at rate 13). The stage keeps for the current node its inherent and shortest durations times 10, four **percents**, the **emphasis** of its word, and whether it is a **geminate** (section 6.4).
 
-The durations of the vowels, fricatives, stops and sonorants (section 6.3, step 2) will follow.
+The durations of the fricatives, stops and sonorants (section 6.3, step 2) will follow.
 
 ### 6.1 A node's duration
 
@@ -321,7 +326,7 @@ A syllabic phoneme's base duration is 0, and a phoneme whose inherent and shorte
 From the node's value, its base duration `d`:
 1. The phoneme may merge with the consonant before it (section 6.4). If it does, the context is noted again (section 2.3) and `d` becomes the merged node's value.
 2. By the phoneme's class:
-   - a vowel (class vowel): the vowel's duration;
+   - a vowel (class vowel): its duration (section 6.7);
    - a stop but `q`: the stop's duration, plus a geminate's frames (below);
    - a fricative, `H` or `d`: the fricative's duration, plus a geminate's frames;
    - a sonorant but `h`: the sonorant's duration;
@@ -359,6 +364,91 @@ A phoneme of stress 3 gets `d · 130 / 100`. In a word with an emphasis, a sylla
 
 Phonetic input gives pauses of type 3. A pause's duration `D` is `(p / 4) · d / 100 · 4`, `p` the rate's pause percent (data pack `pausePercents`), and at least 4. When `D` is above 50, a pause node of 50 frames (section 5.4) goes before it and `D` loses 50, until `D` is 50 or less or fewer than 4 nodes are free. The pause's value becomes `D`, at most 50, and its second value 50, unless the node after it in the list is a `&`. The context is noted again (section 2.3), and the duration is `D`.
 
+### 6.7 A vowel's duration
+
+A vowel's duration starts from its **grid** in the data pack: 8 rows of 20 columns, row `r` and column `c` at position `20 · r + c`. Grid `g`'s position `k` is byte `gridOffsets[g] + k` of `durationGrids`, and a byte before the first is 0. The vowels `E i A e a o w O u b v I f U y g k c r 3 4 5 @ |` have grids 0 to 23, in that order.
+
+The steps use the symbols the context noted (section 2.3): the next, the following, the after following, the preceding and the before preceding; and the **one after next**, the symbol of the next node's next phoneme, 0 when there is none.
+1. **Flaps.** A following flap `t` becomes `T` when the list's node after the vowel's has byte 0x18 `T`, and an after following `t` when the node two after the vowel's has.
+2. **`p`.** The vowel `p` gets 3 frames after `B`, 4 after `D`, `M`, `N` and `P`, 5 after `G`, 8 after `K`, after `T` 4 when the before preceding is a nasal and 6 otherwise, 6 after `~`, and 7 after anything else. The other steps don't apply to it.
+3. **Inside its word.** The vowel is inside its word unless the next is a word mark or in class boundary, or the following is `p`, a space or a comma.
+4. **The last word.** The vowel's word is the phrase's last if a scan forward of 16 phonemes finds a break before a word mark.
+5. **No following sound.** If the following is a space, it becomes the after following, and the after following becomes the symbol of the after following node's next sound, 0 if there is none.
+6. In the last word, a vowel inside its word whose next is neither a vowel nor `l`, `m` or `n` stays inside it only if, from the next node's next phoneme on, the list's nodes of any type before a `&`, `%`, `.`, `?` or `!` include a vowel other than `p`, or an `l`, `m` or `n`.
+7. A vowel before a flap `t` (the following) is inside its word, and `y` before `l` (the next) with a word mark or a break one after next isn't.
+8. **The row** is 0 for a stressed vowel and 4 for an unstressed one, plus 2 in the last word and 1 inside the word.
+9. **The column**, by the sounds around the vowel:
+   - after `R`, `L`, `W`, `Y` or `j` (the preceding), before a fricative or a closure (the following): 16, or 18 when the following is voiced, plus 1 when it isn't a closure;
+   - otherwise: 1 when the preceding and the before preceding are spaces and the following is in class boundary; else 0 when the following isn't a phoneme; else 2 when the preceding and the following are both approximants; else 13 before a vowel;
+   - otherwise by the following: 3 for `C K P T q`, 4 for `F H S X s`, 5 for `B D G J t`, 6 for `V Z d x z`, 14 for `R` and 15 for `W Y`. For `L j l`: 11 when the after following isn't a stop or the one after next is a word mark, else 7 when the after following isn't voiced or is `q`, else 8. For the nasals `M N m n ~` the same with 12, 9 and 10;
+   - −1 for any other following: the pause, `Q` or `h`. It reads the byte before the row's first: the row before's last, and in row 0 the byte before the grid in `durationGrids`.
+10. The duration `d` is the grid's byte at the row and column.
+11. **A nasal after a glide.** In column 18, when the next is a nasal and the one after next a closure in class fortis or `q`, `d` loses the frames of the table below for a nasal.
+12. **A lateral between approximants.** In column 2, when the next is a lateral and the one after next a closure in class fortis or `q`, `d` loses the frames of the table below for a lateral.
+13. A front-ending vowel gains 3 before a vowel (the next).
+14. A vowel other than `i`, `v`, `|` and `@` after `R L W Y j`, before a vowel (the following), loses 2 when it is stressed and in the last word, and 1 when it is only one of the two.
+15. **No duration.** If `d` is now 0, it becomes the grid's byte in column 15 of row 1 for a stressed vowel and of row 5 for an unstressed one; if that is 0 too, the vowel's inherent duration when stressed and its shortest otherwise. At stress 1 it loses 2. The vowel's duration is `d`, at least 3, and the steps below don't apply.
+16. At stress 1, `d` loses 2.
+17. A stressed `i`, `v`, `|` or `@` after `R L W Y j`, before a vowel or `R L W Y j` (the following), loses 1.
+18. In its word's first syllable (its node's byte 0x17 is 1), a vowel other than `i`, `v`, `|` and `@` whose previous symbol is `R L W Y j` loses 1, or 2 in the last word, when the list's node two before it is a closure in class consonant and the node three before it `S`, as in a word starting with "spr".
+19. **Before a break.** After `R L W Y j`, before a break (the next), it loses byte `g` of `breakReductions` when unstressed and byte `g + 23` when stressed, `g` its grid. The two rows overlap: grid 23's unstressed byte is grid 0's stressed one.
+20. **A function word's vowel.** A vowel whose node's byte 0x19, its word's class (section 2.1), isn't 0 loses the frames of its class's rules (section 6.8), and then:
+    - of class 15, `k` after `x` ("though"), when the list's node after it is a break, in the last word and stressed: 10 when the first word mark before the list's node three before it, up to 16 phonemes back, has class 2, 8, 9, 11 or 12;
+    - of class 1, `v` before `S`: 3 when the first word mark before the node two before it, up to 16 phonemes back, has class 3, 4, 10 or 12;
+    - of class 5, `a` after `x` ("that"), not in the last word nor at its phrase's start (section 6.8), when there is a word mark up to 16 phonemes before the node two before it: 4 when that mark has class 7, unless the two nodes after it are `w j` ("all") or the nodes five, four and three before the vowel are `E`, `x` and `3` ("either"), or when the node two after the vowel has class 1 or 5, class 2 unless the three nodes after it are `K a N` ("can"), or class 13 unless the four nodes after it are `W i C s` ("which"). The text has a word command before each written word, so that node is a word mark only in a written word the stages before split, as `know-that-he`;
+    - of class 1, `E`: 3 after anything but `W` before `j`, `D` or `t`, and 3 after `W` before a consonant other than `R L W Y j`.
+21. A `u` of class 10 gets at most 6 frames, and 3 before `P`, `T` or `K`, or before `S` with the after following one of `P T K B D G`.
+22. A `v` with a `&` before it and an `N` after it in the list gets at least 8.
+23. The vowel's duration is `d`, at least 3.
+
+The frames a vowel loses before a nasal (step 11) and before a lateral (step 12), stressed or not: not in the last word, in the last word inside the word, and in the last word at the word's end. Not in the last word, a vowel before a nasal or a lateral is always inside its word.
+
+| Vowel | Nasal: stressed, not in the last word | stressed, inside | stressed, at the end | unstressed, not in the last word | unstressed, inside | unstressed, at the end | Lateral: stressed, not in the last word | stressed, inside | stressed, at the end | unstressed, not in the last word | unstressed, inside | unstressed, at the end |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `E` | 3 | 3 | 10 | 2 | 3 | 6 | 2 | 3 | 3 | 1 | 1 | 2 |
+| `i` | 3 | 3 | 7 | 1 | 2 | 4 | 1 | 1 | 2 | 1 | 1 | 2 |
+| `A` | 3 | 3 | 10 | 2 | 3 | 6 | 2 | 2 | 3 | 1 | 1 | 2 |
+| `e` | 3 | 4 | 10 | 1 | 2 | 4 | 0 | 0 | 2 | 1 | 1 | 2 |
+| `a` | 3 | 4 | 10 | 1 | 2 | 4 | 2 | 3 | 3 | 1 | 1 | 2 |
+| `o` | 4 | 4 | 10 | 2 | 3 | 6 | 2 | 3 | 3 | 1 | 1 | 2 |
+| `w` | 4 | 4 | 10 | 2 | 3 | 6 | 2 | 3 | 2 | 1 | 1 | 2 |
+| `O` | 3 | 4 | 10 | 2 | 3 | 6 | 2 | 2 | 3 | 1 | 1 | 2 |
+| `u` | 3 | 3 | 7 | 1 | 2 | 4 | 1 | 1 | 2 | 0 | 0 | 2 |
+| `b` | 3 | 4 | 10 | 2 | 3 | 6 | 1 | 1 | 2 | 1 | 1 | 2 |
+| `v` | 1 | 4 | 7 | 1 | 2 | 4 | 1 | 1 | 2 | 1 | 1 | 2 |
+| `I` | 3 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `f` | 3 | 2 | 10 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `U` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `y` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `g` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `k` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `c` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `r` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `3` | 1 | 1 | 10 | 1 | 2 | 4 | 2 | 2 | 3 | 3 | 3 | 4 |
+| `4` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `5` | 2 | 2 | 12 | 3 | 4 | 7 | 3 | 4 | 4 | 3 | 3 | 4 |
+| `@` | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+| `\|` | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+
+### 6.8 A function word's vowel
+
+The data pack's `functionWordRules` has a list of rules for each word class from 0 to 15. With the following symbol as section 6.7 left it after its step 5, the vowel loses no frames when the following is an approximant and the vowel is `k` of class 13, `3` of class 12 or `b` of class 7, or, when the list's node before the vowel is a word mark and the node before that an approximant, `r` of class 12, `g` of class 14, or a vowel of class 7 with a `j` after it in the list. A class of 16 or more has no rules.
+
+What the rules test about the vowel:
+- it is at its phrase's **start** when the first word mark before it, up to 16 phonemes back, comes right after a `P` command or a comma in the list;
+- its word is the phrase's last, as in section 6.7;
+- its phrase ends in a question when the first break after it, up to 16 phonemes forward, is `?`;
+- it is stressed.
+
+A rule has `back`, `symbols`, `conditions`, `tests` and `frames`. The vowel loses the frames of the first rule of its class that it passes, and none if it passes none. It passes a rule when:
+1. the list's nodes from the one `back` nodes before the vowel's have the rule's `symbols`, and another node comes after them;
+2. it meets each condition whose bit is set: 1 at its phrase's start, 2 in the last word, 4 not at its phrase's start, 8 not in the last word, 16 the phrase doesn't end in a question, 32 unstressed and 64 stressed;
+3. it passes the tests. Each test looks at a node: with `direction` 1, the vowel's `steps`-th next phoneme (section 2.2), and the rule fails when there is none; with `direction` 0, the node the test before looked at, or after the first the node after the symbols. By its `kind`, the test passes when:
+   - 0: the node is in class `(value >> 8, value & 0xFF)`;
+   - 1: the node's second value, a word mark's class, is `value`. A rule's tests of kind 1 make one test, which passes when one of them does;
+   - 2: the node's second value isn't `value`;
+   - 3: the following is in class `(value >> 8, value & 0xFF)`; 4: it isn't; 5: the following isn't the symbol `value`.
+
 ## 7. The reset
 
 At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1, −1, −1 and 0 and the scan's result 3, so that the next scan starts a sentence; no phrasing, slow speech, prosody off, the short phrase flag and lowered are cleared; the phrase limit becomes 180; the phonemes since the last mark, the padding, the presets' bits and the previous bits become 0, and the emphasis none (section 6.1). The cursor's types are 0, 3 and 4 (the pipeline sets them). The shared state (section 3.1) isn't reset.
@@ -377,6 +467,15 @@ At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1,
 - For `P`, `T` and `K` geminates after a vowel before a sound that isn't one (section 6.3), the original also tests whether the vowel is a nasal (8 frames for `P`, 5 for `T`, 9 for `K`) or a consonant (9). No symbol is both, so the port leaves the test out.
 - The walk back for a function word's mark (section 6.3) reaching the list's start: every word has a mark.
 - Dead code left out of the port (section 6.4): the original also takes `D` then `T` for a geminate, a pair that never merges, and makes a merged phoneme stressed when its context says it is, which it already is.
+- A front-ending vowel before a vowel (section 6.7, step 13): the lexical stage puts a `Y` between them.
+- An unstressed `i` before a nasal or a lateral (section 6.7, steps 11 and 12): the lexical stage writes phonetic input's unstressed `i` as `|`, and no word gave one.
+- A `u` of class 10 before `S` and `P`, `T` or `K` (section 6.7, step 21): the lexical stage writes `S P`, `S T` and `S K` as `S B`, `S D` and `S G`. Nor did a class 1 `E` come before a flap (step 20): no word starts with one.
+- A word mark right after a comma (section 6.8): the stage puts the `P` command of the phrase the break starts between them (section 3.3), and a word command comes between a comma of the text and the word after it.
+- A grid's byte of 0 where section 6.7, step 15 looks, so a vowel's inherent or shortest duration: the vowels' grids have no 0. Their step 15 is reached only by a 0 from step 10, in column −1, or from steps 11 to 14.
+- A vowel with no grid (section 6.7): every symbol in class vowel has one; the port takes grid 0.
+- The search for another syllable (section 6.7, step 6) with no next phoneme after the next node, a vowel of a word class of 16 or more, and rules whose nodes run out at the list's start or the window's end (section 6.8): the port takes them as no syllable, no rules and a failed rule.
+- A phrase without a break up to 16 phonemes after a function word's vowel (section 6.8): the original then tests a byte it never set for `?`; in the 142 tests of a recorded rule's condition 16 it wasn't, and the port takes such a phrase as not a question.
+- Dead code left out of the port (sections 6.7 and 6.8): the original also takes a flap whose byte 0x18 is `E` as `D`, but nothing writes `E` there (the lexical stage writes `T` and `D`); and it steps back for a test of direction −1, but tests the direction as a byte against −1 as a 32-bit number, which never matches, so such a test would look at the vowel's node. No rule has one; the data pack's tests have directions 0 and 1.
 - Pairs of `C`, `J` or `q` (section 6.4): the lexical stage writes `C` and `J` as `C s` and `J z`, and no recorded `q` pair merged. Nor did a pair of `h` or `Q`: with `q`, the only consonants whose duration is the merged node's value (section 6.3, step 2).
 - Durations at which a percent one higher would give another result: emphasis's 125 % from 27 frames, 150 % from 51 and 200 % from 100 (section 6.5), and the stressed `q`'s halving at 59 tenths of a frame (section 6.2, step 7). The recorded durations were all below.
 - Running short of free nodes: the scheduler runs the stage with 106 free ([pipeline.md](pipeline.md) §6), and no phrase's `\` commands, breaks, slow pauses or pauses used them up (sections 3.2 to 3.4, 5.4 and 6.6).

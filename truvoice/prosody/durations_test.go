@@ -2,8 +2,8 @@ package prosody
 
 import "testing"
 
-// TestDurations replays every recorded call of the durations and their parts, with the class durations the
-// original gave.
+// TestDurations replays every recorded call of the durations and their parts, with the fricatives', stops' and
+// sonorants' durations the original gave.
 func TestDurations(t *testing.T) {
 	data := loadTestData(t)
 	withClasses := func(run func(stage *Stage, call *call) error) replayer {
@@ -52,6 +52,12 @@ func TestDurations(t *testing.T) {
 		}),
 		"Prosody::RateScale": result(func(stage *Stage, call *call) int32 {
 			return stage.RateScale(call.Argument(0))
+		}),
+		"Prosody::VowelDuration": result(func(stage *Stage, call *call) int32 {
+			return stage.VowelDuration()
+		}),
+		"Prosody::FunctionWordVowelRule": result(func(stage *Stage, call *call) int32 {
+			return stage.FunctionWordVowelRule(byte(call.Argument(0)), call.Argument(1) != 0, byte(call.Argument(2)) != 0)
 		}),
 	})
 	if counts["Prosody::AssignDuration"] == 0 {

@@ -46,8 +46,7 @@ const (
 
 // The class durations, given by classDuration until they are ported.
 const (
-	vowelDuration = iota
-	fricativeDuration
+	fricativeDuration = iota
 	stopDuration
 	sonorantDuration
 )
@@ -208,7 +207,7 @@ func (stage *Stage) SegmentDuration() int32 {
 	afterFunctionMark := symbolOf(node.Previous) == '%'
 	switch {
 	case stage.hasClass(symbol, vowel):
-		duration = stage.classDuration(vowelDuration)
+		duration = stage.VowelDuration()
 	case stage.hasClass(symbol, stop) && symbol != 'q':
 		extra := int32(0)
 		if stage.Geminate && !afterFunctionMark && !inFunctionWord {

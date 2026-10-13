@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -396,6 +397,21 @@ func TestProsody(t *testing.T) {
 	if prosody.DurationPercents[0] != 344 || prosody.DurationPercents[13] != 117 || prosody.DurationPercents[datapack.RateCount-1] != 65 {
 		t.Errorf("duration percents %v", prosody.DurationPercents)
 	}
+	if len(prosody.DurationGrids) != 6240 || prosody.DurationGrids[0] != 18 || prosody.GridOffsets[21] != 3680 || prosody.GridOffsets[22] != 3360 {
+		t.Errorf("%d grid bytes, first %d, grid 21 at %d, 22 at %d", len(prosody.DurationGrids), prosody.DurationGrids[0], prosody.GridOffsets[21], prosody.GridOffsets[22])
+	}
+	if prosody.BreakReductions[0] != 2 || prosody.BreakReductions[23] != 4 {
+		t.Errorf("break reductions %v", prosody.BreakReductions)
+	}
+	rules := 0
+	for _, rulesOfClass := range prosody.FunctionWordRules {
+		rules += len(rulesOfClass)
+	}
+	want := datapack.FunctionWordRule{Back: 1, Symbols: "xk", Conditions: 8, Frames: 4,
+		Tests: []datapack.FunctionWordTest{{Kind: datapack.NodeInClass, Direction: 1, Steps: 1, Value: 8}}}
+	if rules != 101 || len(prosody.FunctionWordRules[0]) != 0 || !reflect.DeepEqual(prosody.FunctionWordRules[1][7], want) {
+		t.Errorf("%d function word rules, class 1 rule 7 %+v", rules, prosody.FunctionWordRules[1][7])
+	}
 }
 
 func TestChangedProsody(t *testing.T) {
@@ -404,6 +420,13 @@ func TestChangedProsody(t *testing.T) {
 	}
 	valid := `{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[` + repeated("30", datapack.RateCount) +
 		`],"slowPausePatterns":[` + repeated("1", datapack.SlowRateCount) + `]`
+	tables := valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[` + repeated("100", datapack.RateCount) + `]`
+	grids := tables + `,"durationGrids":[` + repeated("1", datapack.GridSize) + `]`
+	reductions := grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount) + `],"breakReductions":[` +
+		repeated("1", datapack.BreakReductionCount) + `]`
+	withRule := func(rule string) string {
+		return reductions + `,"functionWordRules":[` + repeated("[]", datapack.WordClassCount-1) + `,[` + rule + `]]}`
+	}
 	tests := []struct{ content, message string }{
 		{`{"pitchRanges":[1,2]}`, "pitchRanges has 2 values"},
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,40000]}`, "pitchRanges[9] is 40000"},
@@ -417,6 +440,22 @@ func TestChangedProsody(t *testing.T) {
 		{valid + `,"durations":[` + repeated("[1,2]", 127) + `,[1,256]]}`, "durations[127][1] is 256"},
 		{valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[1]}`, "durationPercents has 1 values"},
 		{valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[` + repeated("100", datapack.RateCount-1) + `,1001]}`, "durationPercents[25] is 1001"},
+		{tables + `,"durationGrids":[1]}`, "durationGrids has 1 values, expected at least 160"},
+		{tables + `,"durationGrids":[` + repeated("1", datapack.GridSize-1) + `,256]}`, "durationGrids[159] is 256"},
+		{grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount-1) + `,1]}`, "gridOffsets[37] is 1, outside 0 to 0"},
+		{grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount) + `],"breakReductions":[1]}`, "breakReductions has 1 values"},
+		{reductions + `,"functionWordRules":[[]]}`, "functionWordRules has 1 classes, expected 16"},
+		{withRule(`{"symbols":"xk","conditions":8,"tests":[],"frames":4}`), "functionWordRules[15][0].back is missing"},
+		{withRule(`{"back":1,"symbols":"","conditions":8,"tests":[],"frames":4}`), "functionWordRules[15][0].symbols has 0 symbols"},
+		{withRule(`{"back":1,"symbols":"x\u00e9","conditions":8,"tests":[],"frames":4}`), "functionWordRules[15][0].symbols[1] is 195"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":128,"tests":[],"frames":4}`), "functionWordRules[15][0].conditions is 128"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[],"frames":256}`), "functionWordRules[15][0].frames is 256"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[{"kind":6,"direction":1,"steps":1,"value":8}],"frames":4}`), "tests[0].kind is 6"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[{"kind":0,"direction":-1,"steps":1,"value":8}],"frames":4}`), "tests[0].direction is -1"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[{"kind":0,"direction":0,"steps":1,"value":8}],"frames":4}`), "tests[0].steps is 1, outside 0 to 0"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[{"kind":0,"direction":1,"steps":1,"value":1536}],"frames":4}`), "tests[0].value is 1536"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[{"kind":5,"direction":1,"steps":0,"value":128}],"frames":4}`), "tests[0].value is 128"},
+		{withRule(`{"back":1,"symbols":"xk","conditions":8,"tests":[{"kind":1,"direction":1,"steps":2,"value":256}],"frames":4}`), "tests[0].value is 256"},
 	}
 	for _, test := range tests {
 		if _, err := writePack(t, "prosody.json", []byte(test.content)).LoadProsody(); err == nil || !strings.Contains(err.Error(), test.message) {
