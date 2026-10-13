@@ -57,7 +57,7 @@ func TestWalk(t *testing.T) {
 			stage := data.load(call)
 			recorded := takeDurations(stage, call)
 			resultError := run(stage, call)
-			if err := recorded.check(stage, call); err != nil {
+			if err := recorded.check(stage); err != nil {
 				return err
 			}
 			return resultError

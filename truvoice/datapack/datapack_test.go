@@ -390,9 +390,20 @@ func TestProsody(t *testing.T) {
 	if prosody.SlowPausePatterns[0] != 0xbf7f || prosody.SlowPausePatterns[datapack.SlowRateCount-1] != 0x284a {
 		t.Errorf("slow pause patterns %x", prosody.SlowPausePatterns)
 	}
+	if prosody.Durations[' '] != (datapack.Duration{Inherent: 10, Shortest: 3}) {
+		t.Errorf("the pause's durations are %v", prosody.Durations[' '])
+	}
+	if prosody.DurationPercents[0] != 344 || prosody.DurationPercents[13] != 117 || prosody.DurationPercents[datapack.RateCount-1] != 65 {
+		t.Errorf("duration percents %v", prosody.DurationPercents)
+	}
 }
 
 func TestChangedProsody(t *testing.T) {
+	repeated := func(value string, count int) string {
+		return strings.TrimSuffix(strings.Repeat(value+",", count), ",")
+	}
+	valid := `{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[` + repeated("30", datapack.RateCount) +
+		`],"slowPausePatterns":[` + repeated("1", datapack.SlowRateCount) + `]`
 	tests := []struct{ content, message string }{
 		{`{"pitchRanges":[1,2]}`, "pitchRanges has 2 values"},
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,40000]}`, "pitchRanges[9] is 40000"},
@@ -401,6 +412,11 @@ func TestChangedProsody(t *testing.T) {
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,-1]}`, "pausePercents[25] is -1"},
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,1],"slowPausePatterns":[1,1,1,1,1,1,1,1]}`, "slowPausePatterns has 8 values"},
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,1],"slowPausePatterns":[1,1,1,1,1,1,1,1,65536]}`, "slowPausePatterns[8] is 65536"},
+		{valid + `,"durations":[[1,2]]}`, "durations has 1 values"},
+		{valid + `,"durations":[` + repeated("[1,2]", 127) + `,[1]]}`, "durations[127] has 1 values"},
+		{valid + `,"durations":[` + repeated("[1,2]", 127) + `,[1,256]]}`, "durations[127][1] is 256"},
+		{valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[1]}`, "durationPercents has 1 values"},
+		{valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[` + repeated("100", datapack.RateCount-1) + `,1001]}`, "durationPercents[25] is 1001"},
 	}
 	for _, test := range tests {
 		if _, err := writePack(t, "prosody.json", []byte(test.content)).LoadProsody(); err == nil || !strings.Contains(err.Error(), test.message) {

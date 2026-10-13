@@ -1,7 +1,6 @@
 package prosody
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -17,8 +16,9 @@ import (
 // The prosody stage's golden data (golden/truvoice/prosody.jsonl.gz) records calls of the original's functions
 // with the changes of the speaking thread's state and of the stage's global variables around them. The replay
 // rebuilds both at every call and return (internal/threadstate), so that a Go function can start from the state
-// the original's started from and leave what it left. The durations aren't ported yet: a replayed call takes
-// them from the original's calls within it.
+// the original's started from and leave what it left. The durations' golden data (durations.jsonl.gz) records
+// the same runs' durations and their parts. Not all the durations are ported yet: a replayed call takes the
+// rest from the original's calls within it.
 
 type (
 	call     = threadstate.Call
@@ -27,9 +27,17 @@ type (
 
 const durationFunction = "Prosody::AssignDuration"
 
+var classFunctions = [...]string{vowelDuration: "Prosody::VowelDuration", fricativeDuration: "Prosody::FricativeDuration",
+	stopDuration: "Prosody::StopDuration", sonorantDuration: "Prosody::SonorantDuration"}
+
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
 	return threadstate.Replay(t, "prosody.jsonl.gz", replayers, durationFunction)
+}
+
+func replayDurations(t *testing.T, replayers map[string]replayer) map[string]int {
+	t.Helper()
+	return threadstate.Replay(t, "durations.jsonl.gz", replayers, classFunctions[:]...)
 }
 
 // stageFields lists the stage's values with their places in the thread state, and the synthesizer's the walk
@@ -63,11 +71,16 @@ func stageFields(stage *Stage) []threadstate.Field {
 		at(0x1d58, "countdown", &stage.Countdown), at(0x1d5c, "phrase limit", &stage.PhraseLimit),
 		at(0x1d64, "sentence phonemes", &stage.SentencePhonemes), at(0x1d68, "padding", &stage.Padding),
 		at(0x1d6c, "scan result", &stage.ScanResult), flag(0x1d70, "no phrasing", &stage.NoPhrasing, 1),
-		at(0x1d88, "since mark", &stage.SinceMark), at(0x1e1c, "emphasis", &stage.Emphasis),
+		at(0x1d88, "since mark", &stage.SinceMark), at(0x1dd8, "inherent", &stage.Inherent),
+		at(0x1ddc, "shortest", &stage.Shortest), at(0x1e1c, "emphasis", &stage.Emphasis),
+		flag(0x1e20, "geminate", &stage.Geminate, 1),
 		at(0x4, "synthesizer position", &ring.Position), at(0xc, "written", &ring.Written),
 		at(0x1fe0, "lookahead", &ring.Lookahead)}
 	for index, name := range []string{"first mark", "second mark", "third mark", "fourth mark"} {
 		fields = append(fields, at(0x1d78+4*index, name, &stage.Marks[index]))
+	}
+	for index := range stage.Percents {
+		fields = append(fields, at(0x1de0+4*index, fmt.Sprintf("percent %d", index), &stage.Percents[index]))
 	}
 	for index := range stage.WordMarks {
 		fields = append(fields, at(0x1c7c+4*index, fmt.Sprintf("word mark %d", index), &stage.WordMarks[index]))
@@ -121,7 +134,7 @@ func loadTestData(t *testing.T) *testData {
 // load returns a stage, with its own shared state, with the thread state's and global variables' values when
 // the call started.
 func (data *testData) load(call *call) *Stage {
-	stage := New(data.prosody, &data.parameters.Classes, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
+	stage := New(data.prosody, data.parameters, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
 	stage.Shared = new(Shared)
 	loadState(stage, call.Base, call.Before, call.GlobalsBefore)
 	return stage
@@ -174,48 +187,68 @@ func compareFrom(stage *Stage, base uint32, state, globals, after, globalsAfter 
 	return threadstate.Differences(globals, padded(globalsAfter), describeGlobal)
 }
 
-// durations gives a stage the durations of the original's calls within a replayed call: before each it checks the
-// stage's state against the original's, and after it gives the stage the original's.
-type durations struct {
-	calls          []*call
+// recordedCalls gives a stage the original's calls within a replayed call that the stage doesn't port: before
+// each it checks the stage's state against the original's, and after it gives the stage the original's.
+type recordedCalls struct {
+	outer          *call
 	state, globals []byte
 	taken          int
 	err            error
 }
 
-func takeDurations(stage *Stage, outer *call) *durations {
-	recorded := &durations{state: outer.Before, globals: outer.GlobalsBefore}
-	for _, inner := range outer.Inner {
-		if inner.Record.Function == durationFunction {
-			recorded.calls = append(recorded.calls, inner)
+func takeRecorded(outer *call) *recordedCalls {
+	return &recordedCalls{outer: outer, state: outer.Before, globals: outer.GlobalsBefore}
+}
+
+// take runs the next recorded call, which must be of the function, and returns its result.
+func (recorded *recordedCalls) take(stage *Stage, function string) uint32 {
+	outer := recorded.outer
+	if recorded.taken == len(outer.Inner) {
+		if recorded.err == nil {
+			recorded.err = fmt.Errorf("%s called after the original's calls", function)
 		}
+		return 0
 	}
+	inner := outer.Inner[recorded.taken]
+	recorded.taken++
+	if inner.Record.Function != function && recorded.err == nil {
+		recorded.err = fmt.Errorf("call %d is %s, expected %s", recorded.taken, function, inner.Record.Function)
+	}
+	if err := compareFrom(stage, outer.Base, recorded.state, recorded.globals, inner.Before, inner.GlobalsBefore); err != nil && recorded.err == nil {
+		recorded.err = fmt.Errorf("before call %d, %s: %v", recorded.taken, function, err)
+	}
+	loadState(stage, outer.Base, inner.After, inner.GlobalsAfter)
+	recorded.state, recorded.globals = inner.After, inner.GlobalsAfter
+	return inner.Result.EAX
+}
+
+// takeDurations gives the stage the original's durations within a replayed call.
+func takeDurations(stage *Stage, outer *call) *recordedCalls {
+	recorded := takeRecorded(outer)
 	stage.duration = func() {
-		if recorded.taken == len(recorded.calls) {
-			if recorded.err == nil {
-				recorded.err = errors.New("more durations than the original's")
-			}
-			return
-		}
-		inner := recorded.calls[recorded.taken]
-		recorded.taken++
-		if err := compareFrom(stage, outer.Base, recorded.state, recorded.globals, inner.Before, inner.GlobalsBefore); err != nil && recorded.err == nil {
-			recorded.err = fmt.Errorf("before duration %d: %v", recorded.taken, err)
-		}
-		loadState(stage, outer.Base, inner.After, inner.GlobalsAfter)
-		recorded.state, recorded.globals = inner.After, inner.GlobalsAfter
+		recorded.take(stage, durationFunction)
 	}
 	return recorded
 }
 
-// check reports the first difference the durations found, or where the stage's state differs from the
+// takeClassDurations gives the stage the original's class durations within a replayed call.
+func takeClassDurations(stage *Stage, outer *call) *recordedCalls {
+	recorded := takeRecorded(outer)
+	stage.classDuration = func(kind int) int32 {
+		return int32(recorded.take(stage, classFunctions[kind]))
+	}
+	return recorded
+}
+
+// check reports the first difference the recorded calls found, or where the stage's state differs from the
 // original's at the call's end.
-func (recorded *durations) check(stage *Stage, outer *call) error {
+func (recorded *recordedCalls) check(stage *Stage) error {
 	if recorded.err != nil {
 		return recorded.err
 	}
-	if recorded.taken != len(recorded.calls) {
-		return fmt.Errorf("%d durations, expected %d", recorded.taken, len(recorded.calls))
+	outer := recorded.outer
+	if recorded.taken != len(outer.Inner) {
+		return fmt.Errorf("%d calls, expected %d", recorded.taken, len(outer.Inner))
 	}
 	return compareFrom(stage, outer.Base, recorded.state, recorded.globals, outer.After, outer.GlobalsAfter)
 }

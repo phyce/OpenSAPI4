@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), and the prosody stage's pitch ranges ([prosody.md](prosody.md) §4.3). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), and the prosody stage's pitch ranges, pauses and durations ([prosody.md](prosody.md) §3.4, §4.3 and §6). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -152,3 +152,5 @@ A vowel:
 | `pitchRanges` | 10 numbers, 0 to 32767 | Each voice's pitch range, the Q15 share of the excursion its pitch moves by ([prosody.md](prosody.md) §4.3); 32766 for every voice |
 | `pausePercents` | 26 numbers, 0 to 10000 | By rate, 0 to 25: the percent of a pause's length the durations give it, from 2200 at rate 0 to 30 at 19 and up. The slow pauses read the last ones after an `r` command ([prosody.md](prosody.md) §3.4) |
 | `slowPausePatterns` | 9 numbers, 0 to 65535 | By rate, 0 to 8: the 16 slots of slow speech's pauses between words, a bit each ([prosody.md](prosody.md) §3.4) |
+| `durations` | 128 pairs of numbers, 0 to 255 | By symbol: its inherent and shortest durations in frames ([prosody.md](prosody.md) §6). Below the space the pairs are bytes of other tables, which no phoneme reads |
+| `durationPercents` | 26 numbers, 0 to 1000 | By rate, 0 to 25: the percent the durations scale by, from 344 at rate 0 to 65 at 25 ([prosody.md](prosody.md) §6.2 and §6.3) |

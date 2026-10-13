@@ -2,20 +2,23 @@
 
 How L&H TruVoice (`tv_enua.dll`) gives each phoneme its duration and its pitch. The prosody stage works on the lexical stage's phonemes, the word marks before the words and the punctuation ([pipeline.md](pipeline.md) §3). It finds where its phrases end, puts in the pauses between them, and turns each phoneme into a segment for the parameter generator ([parameters.md](parameters.md)): a node of type 4 whose value is its duration in frames and whose second value is its pitch, in units of 2 Hz.
 
-This spec covers the arithmetic (section 1), the phonemes the stage sees and what it notes about them (section 2), how it finds a phrase, breaks it and chooses its contour (section 3), the pitch (section 4), how it walks the phrase's nodes, with their presets and pauses (section 5), and its reset (section 6). The durations will follow.
+This spec covers the arithmetic (section 1), the phonemes the stage sees and what it notes about them (section 2), how it finds a phrase, breaks it and chooses its contour (section 3), the pitch (section 4), how it walks the phrase's nodes, with their presets and pauses (section 5), the durations (section 6) and its reset (section 7). The durations of the vowels, fricatives, stops and sonorants will follow.
 
 **In short.**
 - The stage scans ahead for a sentence's end, a `C` command, or a limit: 180 phonemes (70 when text comes into an empty pipeline, 15 with `\Pro=0\`) or 240 nodes. Each comma on the way ends a phrase of its own, and the stage hands on the nodes before it as soon as it has timed them.
 - Within a phrase it puts in breaks between words where the words' dictionary classes say, and a `P` command at each phrase's start that tells the pitch the phrase's kind: falling, rising, a comma's, or without an end of its own.
 - At each break comes a pause: 39 frames at a sentence's end, 10 at a comma; at a rate of 25 or more, or with `\Pro=0\`, a short one. In slow speech, some function words after a content word get a pause before them, by a 16-step pattern whose position the whole process shares.
 - Phonetic input can preset a phoneme's duration and pitch; the stage puts them back after it times the phoneme.
+- A consonant's duration is its shortest plus a share of the rest, by where it is in its phrase and word and the sounds around it. At rate 7 and up a pair of the same consonant, or of two close ones, becomes one, longer. Stress 3 and emphasis lengthen a word, by 25 to 100 % and 50 % more for a function word, and the rate scales every duration. A duration is 2 to 55 frames.
 - A phrase's pitch starts a third of the voice's pitch above it, and comes down over the phrase's phonemes. Phonetic input can place word marks that make it come down to a mark and rise from it instead: the phrase's **contour**.
 - The phrase's **nucleus** is its last stressed vowel before a break. The syllables before it and the stressed ones go up; the nucleus carries the phrase's accent.
 - In the phrase's last syllable the pitch moves as the phrase's kind says: down at a sentence's end, up a little at a comma, up at a question. From there every phoneme is 8 Hz lower than the one before, down to 46 Hz.
 - Small changes for the sounds: a voiceless stop starting a word before a vowel is 20 Hz higher, an unstressed voiced sound before a consonant 3 Hz lower (8 if it isn't a sonorant), a high vowel or glide 3 Hz higher, and an `N` before a `T` or a glottal stop at a word's end 55 Hz lower.
 - A whispered phoneme gets pitch 0, a monotone one the voice's pitch. Otherwise the pitch stays between 50 and 500 Hz.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 346 runs: the parameter generator's and the pipeline's runs ([parameters.md](parameters.md), [pipeline.md](pipeline.md)), and 118 more for the phrases and the pitch: questions, exclamations, lists, long sentences without punctuation, emphasis, `\Pro=0\`, pitch, speed, character and voice changes within a text, slow and fast speech, 30 with the word marks phonetic input places (section 3.5), 4 with long runs of consonants in phonetic input, and 47 for the phrase's breaks and pauses (speed, `v`, `r` and `P` commands within a sentence, speed at its end, `\Pro=0\` within a phrase, exclamations without a stressed vowel, the word classes that break a phrase, question words, the Address context, phrases of more nodes and word marks than the scan looks at, a held phrase broken off, word marks of values 6, 7 and 12 at more places, pauses as long as exactly 1 and 50 phonemes, and a pause before any text), and 3 with an engine reset during a text, one while a phrase is held. Each call left the speaking thread's state and the stage's shared state (section 3.1) byte-identical to the original's: the 40,436 runs of the stage (section 5.1) with their 40,436 scans (section 3.2), 2,290 placings of the breaks (section 3.3) with their 186 breaks, 6 of them after a stop, and 81 chances of a slow pause (section 3.4), 51 of which put one in, 64,530 walk steps, 34,349 nodes processed (section 5.2), 58,966 notings and restorings of presets (section 5.3), 2,444 pauses (section 5.4) and 349 resets (section 6); each of the 37,384 contexts (section 2.3), the 34,349 pitch contexts (section 4.2), the 34,349 pitches (section 4.3) and the 1,239 resets of the pitch (section 4.4). The durations aren't ported yet: in these replays each duration's call started from the state the Go stage had reached, checked against the original's, and its result was the original's.
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 346 runs: the parameter generator's and the pipeline's runs ([parameters.md](parameters.md), [pipeline.md](pipeline.md)), and 118 more for the phrases and the pitch: questions, exclamations, lists, long sentences without punctuation, emphasis, `\Pro=0\`, pitch, speed, character and voice changes within a text, slow and fast speech, 30 with the word marks phonetic input places (section 3.5), 4 with long runs of consonants in phonetic input, and 47 for the phrase's breaks and pauses (speed, `v`, `r` and `P` commands within a sentence, speed at its end, `\Pro=0\` within a phrase, exclamations without a stressed vowel, the word classes that break a phrase, question words, the Address context, phrases of more nodes and word marks than the scan looks at, a held phrase broken off, word marks of values 6, 7 and 12 at more places, pauses as long as exactly 1 and 50 phonemes, and a pause before any text), and 3 with an engine reset during a text, one while a phrase is held. Each call left the speaking thread's state and the stage's shared state (section 3.1) byte-identical to the original's: the 40,436 runs of the stage (section 5.1) with their 40,436 scans (section 3.2), 2,290 placings of the breaks (section 3.3) with their 186 breaks, 6 of them after a stop, and 81 chances of a slow pause (section 3.4), 51 of which put one in, 64,530 walk steps, 34,349 nodes processed (section 5.2), 58,966 notings and restorings of presets (section 5.3), 2,444 pauses (section 5.4) and 349 resets (section 7); each of the 37,384 contexts (section 2.3), the 34,349 pitch contexts (section 4.2), the 34,349 pitches (section 4.3) and the 1,239 resets of the pitch (section 4.4). In these replays each duration's call started from the state the Go stage had reached, checked against the original's, and its result was the original's; the durations are checked on their own (below).
+
+The durations were replayed the same way in 386 runs: those 346 and 40 more for the durations (pairs of the same consonant across words, after a function word, after a word of one consonant, within a word and at rates 6 and 7, words of stress 3, emphasized words of every kind, phonetic input's pairs and pauses, among them a pause of 100 frames, and phonemes timed by their shortest durations alone). Each call left the speaking thread's state byte-identical to the original's: the 40,089 durations (section 6.1), with 11,429 nodes that aren't phonemes, 195 emphases and 82 phonemes timed by their shortest durations; the 27,840 base durations (section 6.2) and phonemes' durations (section 6.3), with as many tests for a pair, 448 of which merged one, 396 of them geminates (section 6.4), and as many emphasis steps (section 6.5); 16,286 scalings by the rate, and 750 pauses (section 6.6), 64 of them over 50 frames. The durations of the vowels, fricatives, stops and sonorants aren't ported yet: in these replays each of their calls started from the state the Go stage had reached, checked against the original's, and its result was the original's.
 
 ## 1. Arithmetic
 
@@ -47,6 +50,7 @@ The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2):
 | (2, 0x01) | closure | `B P D T t J C G K Q q` and the nasals |
 | (2, 0x02) | vowel | the vowels and `p` |
 | (3, 0x01) | approximant | `L R W Y h j l` |
+| (3, 0x02) | laryngeal | the pause, `H Q d` |
 | (4, 0x01) | high | `4 E U W Y b c h i u \|` |
 
 A class can also be **negated**: the symbols not in it. A missing node is in no class, negated or not.
@@ -257,7 +261,7 @@ The scheduler runs the stage ([pipeline.md](pipeline.md) §6). A run, holding th
 ### 5.2 A node
 
 The stage processes a node of type 3:
-1. It notes the node's context (section 2.3) and its presets (section 5.3), gives it its pitch (sections 4.2 and 4.3) and its duration (to follow).
+1. It notes the node's context (section 2.3) and its presets (section 5.3), gives it its pitch (sections 4.2 and 4.3) and its duration (section 6).
 2. At a word mark (class word mark) of value 12, it puts in a pause as long as the phonemes since the last mark (section 5.4), and they become 0.
 3. At a break (class break), it puts in a pause of the break (section 5.4), unless the break is a `]` whose nodes before are, back to the list's start, a bookmark (`i`) and a generated pause (`s`, type 5).
 4. A node in class phoneme becomes a segment (type 4), counts as a phoneme since the last mark, and gets its presets back (section 5.3).
@@ -286,11 +290,80 @@ The stage puts in pauses before the current node, for a break or as long as `L` 
 
 A pause is a segment `' '` (type 4) whose value is its frames and whose second value is 50, a pitch of 100 Hz.
 
-## 6. The reset
+## 6. Durations
 
-At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1, −1, −1 and 0 and the scan's result 3, so that the next scan starts a sentence; no phrasing, slow speech, prosody off, the short phrase flag and lowered are cleared; the phrase limit becomes 180; the phonemes since the last mark, the padding, the presets' bits and the previous bits become 0, and so does a value of the durations (to follow). The cursor's types are 0, 3 and 4 (the pipeline sets them). The shared state (section 3.1) isn't reset.
+A phoneme's duration is in frames. The data pack gives each symbol an **inherent** and a **shortest** duration (`durations`), and each rate a **duration percent** (`durationPercents`, 344 at rate 0 to 65 at rate 25, 117 at rate 13). The stage keeps for the current node its inherent and shortest durations times 10, four **percents**, the **emphasis** of its word, and whether it is a **geminate** (section 6.4).
 
-## 7. What the recorded runs don't reach
+The durations of the vowels, fricatives, stops and sonorants (section 6.3, step 2) will follow.
+
+### 6.1 A node's duration
+
+The stage times the current node:
+1. Its inherent and shortest durations become the symbol's, times 10, and the first percent 100.
+2. A node not in class phoneme: a word mark (class word mark) sets the emphasis. A mark of value 10 (phonetic input's `[:]`, section 3.5) gives a **content word's** emphasis when its word's class (its second value) is 0 or 6, and a **function word's** otherwise; any other value gives none. Any other node's value becomes 0.
+3. A phoneme with a preset duration (section 5.3) gets the preset.
+4. With input flag 0x10 (`ESC[5A`) a phoneme is timed by its shortest duration `S` alone: the pause gets `S / 4`, at least 4 frames; another phoneme `S · 17 / 20`, halved unless it is stressed, at least 2. With the data pack's durations the pause always gets 4 frames and an unstressed phoneme 2.
+5. Otherwise its value becomes its base duration (section 6.2), and then its duration (section 6.3).
+
+### 6.2 The base duration
+
+A syllabic phoneme's base duration is 0, and a phoneme whose inherent and shortest durations are the same gets its inherent one. For any other, with `I` and `S` its inherent and shortest durations times 10:
+1. Unless prosody off is set, if a scan forward of 6 phonemes (section 2.2) finds a break before a syllabic phoneme, the phoneme is in its phrase's last syllable: the next percent is 160, 150 for `q`.
+2. If a scan back of 7 finds a syllabic phoneme before a word mark, the phoneme isn't in its word's first syllable: the next percent is 85.
+3. If `I` is at most `S`, the base duration is `I / 10`.
+4. The context's percent `c` is 100. If the phoneme isn't laryngeal and the preceding sound is neither syllabic, nor an affricate, nor laryngeal: `c` is 90, 60 for an approximant. Unless the phoneme is stressed, `c` then loses 20, and becomes 40 for a closure after a closure of the same articulator ([parameters.md](parameters.md) §9.2), and the next step is skipped.
+5. Unless the phoneme is a sonorant or an affricate, or has no following sound: if the following sound is neither syllabic nor laryngeal and the preceding sound isn't `S`, `c` becomes 70, and 30 for a fricative before a closure, or before a fricative unless after an affricate.
+6. `c` is the next percent. Their product `P` starts at 100 and becomes `P · p / 100` for each percent `p`, from the last to the first. At rate 13 it becomes `(P / 2) · R / 100 · 2`, `R` the rate's duration percent. It becomes the first percent.
+7. The base duration is `(I − S) · P / 100 + S`, halved for a stressed `q` after `S` before `L` or `R`, and divided by 10.
+
+### 6.3 A phoneme's duration
+
+From the node's value, its base duration `d`:
+1. The phoneme may merge with the consonant before it (section 6.4). If it does, the context is noted again (section 2.3) and `d` becomes the merged node's value.
+2. By the phoneme's class:
+   - a vowel (class vowel): the vowel's duration;
+   - a stop but `q`: the stop's duration, plus a geminate's frames (below);
+   - a fricative, `H` or `d`: the fricative's duration, plus a geminate's frames;
+   - a sonorant but `h`: the sonorant's duration;
+   - the pause: section 6.6;
+   - `q`: 7 before a nasal, and `d` otherwise; the flap `t`: 3; any other: `d`.
+3. After a `P`, `T` or `K` (the preceding sound), the duration gains the preceding node's byte 0x10, its release frames, which the stop's duration sets.
+4. Emphasis (section 6.5).
+5. With contour 19 (section 3.5), when the sentence's word marks before the phrase (section 3.1) are 1 the duration becomes `d · 144 / 100`, and when they are 2 `d · 123 / 100`.
+6. At any rate but 13: `R · (91 · d / 100) / 100`, `R` the rate's duration percent, but at least the shortest duration (`S / 10`) and at most 55.
+7. It is held between 2 and 55 frames.
+
+**A geminate's frames.** A geminate gets frames for the pair, unless the node before it in the list is a function word's mark (`%`). A fricative gets 8 for `F`, 6 for `x`, 6 for `S` between vowels (its preceding and following sounds), 5 for any other `S`, and 4 for the rest. A stop gets them only outside a function word. With `B` and `A` the sounds before and after the pair as the context noted them before the merge:
+- `P`, `T` or `K`: 6 unless `B` is a vowel; else, before a glide (`R L W Y`), 9 for `K` and 6 for `P` and `T`; 6 before a sound that isn't a vowel, and for `T`; 10 for `P` and 7 for `K` before a vowel that isn't high; 8 for `P` and 6 for `K` before a high vowel.
+- `D` between vowels: 7; any other `D` or `G`: 6.
+- `B`: 8 when `B` is a vowel or a glide and `A` a high vowel; else 6 unless `B` is a vowel; else 8 before a vowel, 5 before a glide, and 6 otherwise.
+- `C` and `J` are never geminates.
+
+The phoneme is **in a function word** when, from the phoneme before the previous one (section 2.2), or with none from the symbol before the preceding one noted before the merge, a `%` comes before any `&` going back through the list's nodes.
+
+### 6.4 Merging a pair
+
+At rate 7 and up, a consonant (class consonant) merges with its previous sound (section 2.2) when the two are:
+- the same symbol, unless the phoneme has flag bit 0x40 (section 3.3);
+- `S` or `Z` then `s`, `Z` then `S`, `V` then `F`, `L` then `j`, or `B` then `P`;
+
+but not `S` then `S` when the phoneme's previous phoneme is a word mark and its next one a consonant. The phoneme is a **geminate** when the two are the same symbol, `B` then `P` or `Z` then `S`, and it is a sonorant, a fricative or a stop but `C`, `J` and `q`.
+
+The phoneme's node takes the pair: its value becomes the two values' sum, less 4 for `V` then `F`, and 55 at the most; its byte 0x18 becomes 1, a merged phoneme ([parameters.md](parameters.md) §10.1); and its second value, its pitch, becomes the sound before's. The sound before's node is freed, going back ([pipeline.md](pipeline.md) §2.3).
+
+### 6.5 Emphasis
+
+A phoneme of stress 3 gets `d · 130 / 100`. In a word with an emphasis, a syllabic phoneme then gets `d · 200 / 100` when stressed and `d · 125 / 100` otherwise; another sonorant `d · 150 / 100` when stressed and `d · 125 / 100` otherwise; a fricative `d · 125 / 100`. A function word's emphasis then gives `d · 150 / 100`.
+
+### 6.6 A pause's duration
+
+Phonetic input gives pauses of type 3. A pause's duration `D` is `(p / 4) · d / 100 · 4`, `p` the rate's pause percent (data pack `pausePercents`), and at least 4. When `D` is above 50, a pause node of 50 frames (section 5.4) goes before it and `D` loses 50, until `D` is 50 or less or fewer than 4 nodes are free. The pause's value becomes `D`, at most 50, and its second value 50, unless the node after it in the list is a `&`. The context is noted again (section 2.3), and the duration is `D`.
+
+## 7. The reset
+
+At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1, −1, −1 and 0 and the scan's result 3, so that the next scan starts a sentence; no phrasing, slow speech, prosody off, the short phrase flag and lowered are cleared; the phrase limit becomes 180; the phonemes since the last mark, the padding, the presets' bits and the previous bits become 0, and the emphasis none (section 6.1). The cursor's types are 0, 3 and 4 (the pipeline sets them). The shared state (section 3.1) isn't reset.
+
+## 8. What the recorded runs don't reach
 
 - A division by zero in step 5 of section 4.3: the original faults; the port gives 0.
 - A reset of the pitch (section 4.4) with the fall, the nucleus or the flags it clears still set: a sentence starts after a break, whose pitch context already cleared them (section 4.2, step 2). Only a reset of the stages within a phrase would leave them set.
@@ -299,15 +372,21 @@ At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1,
 - Contexts where the steps' details make no difference: at `p = m7` with contour 19 the declination cancels the excursion, so 4 or 6 times it gives the same pitch (section 4.3, steps 4 and 5); the contours' quotients agree where they meet at a mark; and the phoneme before a nucleus of stress 3 (step 8) was always at the 500 Hz limit.
 - The nucleus search running past the window's end before the phrase's end (section 4.2, step 4).
 - A phrase of 0 phonemes at a phoneme's pitch, and contour 6 with `m6` 0 (the scan doesn't choose contour 6 then); a contour other than those of section 4.3.
-- A symbol of 128 or more: the port gives it no classes.
-- Running short of free nodes: the scheduler runs the stage with 106 free ([pipeline.md](pipeline.md) §6), and no phrase's `\` commands, breaks, slow pauses or pauses used them up (sections 3.2 to 3.4 and 5.4).
+- A symbol of 128 or more: the port gives it no classes and no durations.
+- A phoneme whose inherent duration is below its shortest (section 6.2, step 3): no symbol's is.
+- For `P`, `T` and `K` geminates after a vowel before a sound that isn't one (section 6.3), the original also tests whether the vowel is a nasal (8 frames for `P`, 5 for `T`, 9 for `K`) or a consonant (9). No symbol is both, so the port leaves the test out.
+- The walk back for a function word's mark (section 6.3) reaching the list's start: every word has a mark.
+- Dead code left out of the port (section 6.4): the original also takes `D` then `T` for a geminate, a pair that never merges, and makes a merged phoneme stressed when its context says it is, which it already is.
+- Pairs of `C`, `J` or `q` (section 6.4): the lexical stage writes `C` and `J` as `C s` and `J z`, and no recorded `q` pair merged. Nor did a pair of `h` or `Q`: with `q`, the only consonants whose duration is the merged node's value (section 6.3, step 2).
+- Durations at which a percent one higher would give another result: emphasis's 125 % from 27 frames, 150 % from 51 and 200 % from 100 (section 6.5), and the stressed `q`'s halving at 59 tenths of a frame (section 6.2, step 7). The recorded durations were all below.
+- Running short of free nodes: the scheduler runs the stage with 106 free ([pipeline.md](pipeline.md) §6), and no phrase's `\` commands, breaks, slow pauses or pauses used them up (sections 3.2 to 3.4, 5.4 and 6.6).
 - A vowel after a break while the cursor's pitch is 0 (section 3.3): the pitch is 50 Hz at least.
 - Contour 0 with both `m6` and `m7` at 0: the marks of a sentence's first word have one value.
 - Contour 0 for `m6` at 0 without `m7` replacing another contour (section 3.5): the contour is chosen at every scan, and a scan before a sentence's first word had always chosen 0 already.
 - The walk running past the window's end (section 5.1, step 6): only a phrase broken off by a scan that started at the window's start and found no node but phonemes; a word that long leaves too few nodes free for the stage to run.
 - Breaks placed at `!`, where the scan places none, and at a `C` command (section 3.2): at each of the 372 recorded ones the phrase had no words yet, the text's last phrase having ended before it.
-- Relative, negative and pause presets, and a preset pitch of 1 (section 5.3): the recorded presets are the lexical stage's durations of a few phonemes and pauses, and one pitch. Phonetic input writes presets in a syntax of the normalizer's rules, which will follow.
+- Relative, negative and pause presets, and a preset pitch of 1 (section 5.3), so a preset duration other than the node's value (section 6.1, step 3): the recorded presets are the lexical stage's durations of a few phonemes and pauses, and one pitch. Phonetic input writes presets in a syntax of the normalizer's rules, which will follow.
 - Pauses with stress bits when the walk clears them (section 5.1, steps 2 and 3): no recorded pause has any.
 - The synthesizer exactly 33 frames ahead (section 5.1, step 4): once the countdown had run out it was 0 frames ahead at 19,892 of 19,984 steps, and never between 24 and 38.
-- A reset of a stage that has run (section 6): the recorded resets are of a new speaking thread's state, whose values are all 0. A reset within a session drops the rest of the text, so a recorded run never ends ([pipeline.md](pipeline.md) §9).
+- A reset of a stage that has run (section 7): the recorded resets are of a new speaking thread's state, whose values are all 0. A reset within a session drops the rest of the text, so a recorded run never ends ([pipeline.md](pipeline.md) §9).
 - The last symbol of a scan that looked at no node (section 3.5): in the original it is the low byte of the stage's state's address, which is never `!`.

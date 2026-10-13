@@ -63,19 +63,31 @@ type Stage struct {
 	Raised             bool
 	Lowered            bool
 
-	// Emphasis belongs to the durations.
+	// The durations (prosody.md §6): the current phoneme's inherent and shortest durations in tenths of a frame,
+	// the percents of the difference its base duration takes and their product, the emphasis of the word, and
+	// whether the phoneme was merged from a pair of the same sound.
+	Inherent int32
+	Shortest int32
+	Percents [4]int32
 	Emphasis int32
+	Geminate bool
 
 	Context Context
 
-	tables   *datapack.Prosody
-	classes  *datapack.Classes
-	duration func()
+	tables        *datapack.Prosody
+	parameters    *datapack.Parameters
+	classes       *datapack.Classes
+	duration      func()
+	classDuration func(kind int) int32
 }
 
 // New returns the stage for the pipeline, with the process's shared state.
-func New(tables *datapack.Prosody, classes *datapack.Classes, pipeline *pipeline.Pipeline) *Stage {
-	return &Stage{Pipeline: pipeline, Shared: &processShared, tables: tables, classes: classes}
+func New(tables *datapack.Prosody, parameters *datapack.Parameters, pipeline *pipeline.Pipeline) *Stage {
+	stage := &Stage{Pipeline: pipeline, Shared: &processShared, tables: tables, parameters: parameters}
+	if parameters != nil {
+		stage.classes = &parameters.Classes
+	}
+	return stage
 }
 
 func (stage *Stage) cursor() *pipeline.Cursor {
@@ -125,7 +137,7 @@ const (
 	slowRates = datapack.SlowRateCount
 )
 
-// Reset starts the stage afresh, as the pipeline's reset does (prosody.md §6).
+// Reset starts the stage afresh, as the pipeline's reset does (prosody.md §7).
 func (stage *Stage) Reset() {
 	stage.Marks = [4]int32{-1, -1, -1, 0}
 	stage.ScanResult = sentenceEnd

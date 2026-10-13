@@ -23,6 +23,7 @@ const (
 	closure     class = 0x201
 	vowel       class = 0x202
 	approximant class = 0x301
+	laryngeal   class = 0x302
 	high        class = 0x401
 )
 
