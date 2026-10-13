@@ -12,6 +12,7 @@ import (
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/truvoice/internal/conformance"
+	"github.com/phyce/OpenSAPI4/truvoice/internal/threadstate"
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
@@ -26,7 +27,6 @@ const (
 	stateHold          = 0x19ac
 	stateReady         = 0x19ad
 	stateGain          = 0x2104
-	stateCharacter     = 0x2108
 	stateOutOfInput    = 0x2112
 	stateHasWork       = 0x2113
 	stateWaiting       = 0x2117
@@ -36,11 +36,11 @@ const (
 )
 
 type stageCase struct {
-	Name    string       `json:"name"`
-	Format  [2]int       `json:"format"`
-	Digest  string       `json:"digest"`
-	Events  [][]any      `json:"events"`
-	Records []callRecord `json:"records"`
+	Name    string               `json:"name"`
+	Format  [2]int               `json:"format"`
+	Digest  string               `json:"digest"`
+	Events  [][]any              `json:"events"`
+	Records []threadstate.Record `json:"records"`
 }
 
 // stageReplay runs the Go scheduler, parameter generator, output stage and synthesizer on one recorded run, and
@@ -48,7 +48,7 @@ type stageCase struct {
 type stageReplay struct {
 	data              *testData
 	synthesizerTables *datapack.Synthesizer
-	records           []callRecord
+	records           []threadstate.Record
 	position          int
 	state             []byte
 	base              uint32
@@ -83,7 +83,7 @@ func (replay *stageReplay) fail(format string, arguments ...any) {
 }
 
 // next returns the next call or return record, with the state brought to it, or nil at the end.
-func (replay *stageReplay) next() *callRecord {
+func (replay *stageReplay) next() *threadstate.Record {
 	for replay.position < len(replay.records) {
 		record := &replay.records[replay.position]
 		replay.position++
@@ -95,14 +95,14 @@ func (replay *stageReplay) next() *callRecord {
 			clear(replay.state)
 		}
 		for _, run := range record.Diff {
-			copy(replay.state[run.offset:], run.data)
+			copy(replay.state[run.Offset:], run.Data)
 		}
 		return record
 	}
 	return nil
 }
 
-func named(record *callRecord) string {
+func named(record *threadstate.Record) string {
 	if record == nil {
 		return "the end of the records"
 	}
@@ -122,16 +122,16 @@ func (replay *stageReplay) text(pointer uint32) *pipeline.Text {
 func (replay *stageReplay) start() error {
 	state := replay.state
 	halfWord := func(offset int) uint16 { return binary.LittleEndian.Uint16(state[offset:]) }
-	engine := &pipeline.Engine{SampleRate: int(halfWord(stateSampleRate)), Gain: uint32(halfWord(stateGain)),
-		Pitch: uint16(dword(state, statePitch)), Speed: dword(state, stateSpeed), Volume: dword(state, stateVolume),
-		Character: dword(state, stateCharacter), Voice: int32(int16(halfWord(stateOutputVoice)))}
+	engine := &pipeline.Engine{SampleRate: int(halfWord(threadstate.SampleRate)), Gain: uint32(halfWord(stateGain)),
+		Pitch: uint16(threadstate.Dword(state, threadstate.Pitch)), Speed: threadstate.Dword(state, threadstate.Speed), Volume: threadstate.Dword(state, threadstate.Volume),
+		Character: threadstate.Dword(state, threadstate.Character), Voice: int32(int16(halfWord(threadstate.OutputVoice)))}
 	replay.pipeline = pipeline.New(replay.data.pipeline, synthesizer.New(replay.synthesizerTables, engine.SampleRate), replay, engine)
 	replay.generator = New(replay.data.parameters, replay.data.vowels, replay.pipeline)
 	replay.pipeline.Generator = countedGenerator{replay.generator, replay.counts}
 	replay.pipeline.Start()
 	replay.pipeline.ApplyAttributes()
 	replay.pipeline.OutOfInput = state[stateOutOfInput] != 0
-	replay.pipeline.ShortPhrase = state[stateShortPhrase] != 0
+	replay.pipeline.ShortPhrase = state[threadstate.ShortPhrase] != 0
 	if err := replay.compare(); err != nil {
 		return fmt.Errorf("after the start: %v", err)
 	}
@@ -149,10 +149,10 @@ func (replay *stageReplay) load() {
 		stages.HasWork[stage] = state[stateHasWork+stage] != 0
 	}
 	stages.WaitingForRoom = state[stateWaiting] != 0
-	stages.Retired = int(int32(dword(state, stateRetired)))
-	stages.Character = dword(state, stateCharacter)
+	stages.Retired = int(int32(threadstate.Dword(state, stateRetired)))
+	stages.Character = threadstate.Dword(state, threadstate.Character)
 	ring.Hold, ring.Ready = state[stateHold] != 0, state[stateReady] != 0
-	ring.MarkersPassed = int32(dword(state, stateMarkersPassed))
+	ring.MarkersPassed = int32(threadstate.Dword(state, stateMarkersPassed))
 	ring.Gain = binary.LittleEndian.Uint16(state[stateGain:])
 	ring.Rendering = binary.LittleEndian.Uint16(state[stateRendering:]) != 0
 }
@@ -177,7 +177,7 @@ func (replay *stageReplay) compare() error {
 	flag(stateHold, ring.Hold)
 	flag(stateReady, ring.Ready)
 	binary.LittleEndian.PutUint32(state[stateRetired:], uint32(stages.Retired))
-	binary.LittleEndian.PutUint32(state[stateCharacter:], stages.Character)
+	binary.LittleEndian.PutUint32(state[threadstate.Character:], stages.Character)
 	binary.LittleEndian.PutUint32(state[stateMarkersPassed:], uint32(ring.MarkersPassed))
 	binary.LittleEndian.PutUint32(state[stateBytes:], uint32(2*len(ring.Samples)))
 	binary.LittleEndian.PutUint16(state[stateGain:], ring.Gain)
@@ -188,9 +188,9 @@ func (replay *stageReplay) compare() error {
 	if err := differences(state, replay.state); err != nil {
 		return err
 	}
-	for index, offset := range nodeOffsets() {
+	for index, offset := range threadstate.NodeOffsets() {
 		node := stages.Node(index)
-		if pointer := dword(replay.state, offset+nodeText); pointer != 0 && node.Text != replay.text(pointer) {
+		if pointer := threadstate.Dword(replay.state, offset+threadstate.NodeText); pointer != 0 && node.Text != replay.text(pointer) {
 			return fmt.Errorf("node %d has text %v, expected %d", index, node.Text, replay.text(pointer).Number)
 		}
 	}
@@ -241,8 +241,8 @@ func (replay *stageReplay) step() error {
 			return err
 		}
 	}
-	if bytes := 2 * len(replay.pipeline.Synthesizer.Samples); uint32(bytes) != dword(replay.state, stateBytes) {
-		return fmt.Errorf("%d bytes of samples before the step, expected %d", bytes, dword(replay.state, stateBytes))
+	if bytes := 2 * len(replay.pipeline.Synthesizer.Samples); uint32(bytes) != threadstate.Dword(replay.state, stateBytes) {
+		return fmt.Errorf("%d bytes of samples before the step, expected %d", bytes, threadstate.Dword(replay.state, stateBytes))
 	}
 	replay.load()
 	replay.ran = nil
@@ -351,7 +351,7 @@ func TestStage(t *testing.T) {
 		workers.Go(func() {
 			for golden := range cases {
 				replay := &stageReplay{data: data, synthesizerTables: synthesizerTables, records: golden.Records,
-					state: make([]byte, stateSize), texts: map[uint32]*pipeline.Text{}, counts: map[string]int{}}
+					state: make([]byte, threadstate.Size), texts: map[uint32]*pipeline.Text{}, counts: map[string]int{}}
 				err := replay.run(golden)
 				lock.Lock()
 				runs++

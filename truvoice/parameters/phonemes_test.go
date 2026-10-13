@@ -53,7 +53,7 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::Reset": func(call *call) error {
 			generator := data.load(call)
 			generator.Reset()
-			copy(generator.Pipeline.Levels[:], call.before[stateSettings:])
+			copy(generator.Pipeline.Levels[:], call.Before[stateSettings:])
 			generator.cursor().Types = 0x28
 			return compare(generator, call)
 		},
@@ -89,15 +89,15 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::FinalAdjustments":        plain((*Generator).FinalAdjustments),
 		"Parameters::ConsonantLociFromDatabase": func(call *call) error {
 			generator := data.load(call)
-			found := generator.lociFromDatabase(int(call.argument(0)))
-			if expected := call.result.EAX&0xff != 0; found != expected {
+			found := generator.lociFromDatabase(int(call.Argument(0)))
+			if expected := call.Result.EAX&0xff != 0; found != expected {
 				return fmt.Errorf("found a record: %t, expected %t", found, expected)
 			}
 			return compare(generator, call)
 		},
 		"Parameters::LiquidCluster": func(call *call) error {
 			generator := data.load(call)
-			if call.argument(0)&0xff != 0 {
+			if call.Argument(0)&0xff != 0 {
 				generator.targetsBeforeLiquid()
 			} else {
 				generator.liquidTrajectories()
@@ -113,7 +113,7 @@ func TestPhonemes(t *testing.T) {
 			symbol, next := cursor.Scan.Symbol(), cursor.First.Symbol()
 			path := "with an offglide"
 			switch {
-			case call.after[stateCoarticulation] == 1:
+			case call.After[stateCoarticulation] == 1:
 				path = "from the database"
 			case generator.has(symbol, 1, reducedClass):
 				path = "reduced " + string(symbol)
