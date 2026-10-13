@@ -7,15 +7,43 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
+// MaximumWords is how many word marks the scan keeps for a phrase.
+const MaximumWords = 50
+
 // A Stage is the prosody stage's state.
 type Stage struct {
 	Pipeline *pipeline.Pipeline
+	Shared   *Shared
 
-	// Phonemes is how many phonemes the phrase has, Contour its pitch contour and Marks the positions of its
-	// first word marks of values 6, 7, 8 and 17 (prosody.md §3).
-	Phonemes int32
-	Contour  int32
-	Marks    [4]int32
+	// The phrase's scan (prosody.md §3): what ended the last one, its word marks and the sentence's before it,
+	// and the phonemes: the phrase's, the sentence's up to its end, and the padding added to a phrase without an
+	// end of its own. The phrase ends at PhraseLimit phonemes. SlowSpeech, NoPhrasing and ProsodyOff are the
+	// commands' settings, and FirstPhrase is set until the sentence's first P command is put in.
+	ScanResult       int32
+	Words            int32
+	SentenceWords    int32
+	WordMarks        [MaximumWords]*pipeline.Node
+	Phonemes         int32
+	SentencePhonemes int32
+	Padding          int32
+	PhraseLimit      int32
+	SlowSpeech       bool
+	NoPhrasing       bool
+	ProsodyOff       bool
+	FirstPhrase      bool
+
+	// Contour is the phrase's pitch contour and Marks the positions of its word marks of values 6, 7, 8 and 17
+	// (prosody.md §3.5).
+	Contour int32
+	Marks   [4]int32
+
+	// The walk (prosody.md §5): the nodes it may take before it lets the synthesizer catch up, the phonemes
+	// since the last word mark of value 12, and the current node's presets (§5.3).
+	Countdown       int32
+	SinceMark       int32
+	Presets         uint32
+	PreviousPresets uint32
+	PresetDuration  int32
 
 	// The pitch (prosody.md §4): Position is the phrase's phonemes given a pitch so far, Fall the pitch of the
 	// phrase's final fall once it has started, Nucleus the phrase's last stressed vowel before a break, and
@@ -35,15 +63,19 @@ type Stage struct {
 	Raised             bool
 	Lowered            bool
 
+	// Emphasis belongs to the durations.
+	Emphasis int32
+
 	Context Context
 
-	tables  *datapack.Prosody
-	classes *datapack.Classes
+	tables   *datapack.Prosody
+	classes  *datapack.Classes
+	duration func()
 }
 
-// New returns the stage for the pipeline.
+// New returns the stage for the pipeline, with the process's shared state.
 func New(tables *datapack.Prosody, classes *datapack.Classes, pipeline *pipeline.Pipeline) *Stage {
-	return &Stage{Pipeline: pipeline, tables: tables, classes: classes}
+	return &Stage{Pipeline: pipeline, Shared: &processShared, tables: tables, classes: classes}
 }
 
 func (stage *Stage) cursor() *pipeline.Cursor {
@@ -65,4 +97,91 @@ func stress(node *pipeline.Node) uint32 {
 
 func multiply(first, second int32) int32 {
 	return first * second / 0x7fff
+}
+
+// The scan's results (prosody.md §3.2): what ended the phrase, or scanning while the window has run out first,
+// or walking while the stage walks the phrase.
+const (
+	scanning = iota
+	continued
+	walking
+	sentenceEnd
+	brokenOff
+	commaEnd
+)
+
+// The phrase's limits: the phonemes by default, without prosody and while the parameter generator is short of
+// work, and the nodes a scan looks at.
+const (
+	phraseLimit      = 180
+	flatPhraseLimit  = 15
+	shortPhraseLimit = 70
+	scanLimit        = 240
+)
+
+// Rates of fastRate and up are fast speech, below slowRates slow speech.
+const (
+	fastRate  = 25
+	slowRates = datapack.SlowRateCount
+)
+
+// Reset starts the stage afresh, as the pipeline's reset does (prosody.md §6).
+func (stage *Stage) Reset() {
+	stage.Marks = [4]int32{-1, -1, -1, 0}
+	stage.ScanResult = sentenceEnd
+	stage.NoPhrasing = false
+	stage.SlowSpeech = false
+	stage.PhraseLimit = phraseLimit
+	stage.ProsodyOff = false
+	stage.Pipeline.ShortPhrase = false
+	stage.SinceMark = 0
+	stage.Lowered = false
+	stage.Emphasis = 0
+	stage.Padding = 0
+	stage.PreviousPresets = 0
+	stage.Presets = 0
+}
+
+// Run is one run of the stage: it scans the next phrase unless it is walking one, and walks the phrase's nodes
+// until the phrase or the window ends, or the synthesizer needs the stages after it. It reports whether it handed
+// nodes on or stopped for the synthesizer (prosody.md §5.1).
+func (stage *Stage) Run() bool {
+	stage.Shared.Lock()
+	defer stage.Shared.Unlock()
+	cursor := stage.cursor()
+	stage.Pipeline.Begin(cursor)
+	stage.Countdown = walkCountdown
+	if !stage.ProsodyOff && stage.Pipeline.ShortPhrase && cursor.Rate < fastRate {
+		stage.PhraseLimit = shortPhraseLimit
+	}
+	result := stage.ScanPhrase()
+	switch result {
+	case continued, brokenOff:
+		stage.Padding = stage.Phonemes>>2 + 4
+		stage.Phonemes += stage.Padding
+		fallthrough
+	case sentenceEnd, commaEnd:
+		cursor.Scan = cursor.Done
+		fallthrough
+	case walking:
+		if !stage.ProsodyOff {
+			stage.Pipeline.ShortPhrase = false
+		}
+	}
+	yielded := false
+walk:
+	for result != scanning {
+		switch stage.NextNode() {
+		case controlNode:
+			stage.Pipeline.ExecuteControl()
+		case phonemeNode:
+			stage.ProcessPhoneme()
+		case yieldNode:
+			yielded = true
+			break walk
+		case phraseDone:
+			break walk
+		}
+	}
+	return stage.Pipeline.Finish() || yielded
 }

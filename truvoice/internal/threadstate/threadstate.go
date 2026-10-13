@@ -129,12 +129,13 @@ func (state *State) Apply(record *Record) {
 }
 
 // A Call is a recorded call of one of the original's functions, with its return and the thread state and global
-// variables at both.
+// variables at both. Inner are the calls of the kept functions (see Replay) it made, at any depth, in order.
 type Call struct {
 	Record, Result              *Record
 	Before, After               []byte
 	GlobalsBefore, GlobalsAfter []byte
 	Base                        uint32
+	Inner                       []*Call
 }
 
 func (call *Call) Argument(index int) int32 {
@@ -144,9 +145,9 @@ func (call *Call) Argument(index int) int32 {
 type Replayer func(call *Call) error
 
 // Replay hands each recorded call of the functions given, in the golden file named, to their replayer, reports
-// the calls that differ (a few per function) and returns how many calls each replayed. The cases are replayed in
-// parallel.
-func Replay(t *testing.T, file string, replayers map[string]Replayer) map[string]int {
+// the calls that differ (a few per function) and returns how many calls each replayed. The calls of the kept
+// functions within them are in their Inner. The cases are replayed in parallel.
+func Replay(t *testing.T, file string, replayers map[string]Replayer, kept ...string) map[string]int {
 	t.Helper()
 	var lock sync.Mutex
 	counts := map[string]int{}
@@ -156,7 +157,7 @@ func Replay(t *testing.T, file string, replayers map[string]Replayer) map[string
 	for range runtime.GOMAXPROCS(0) {
 		workers.Go(func() {
 			for golden := range cases {
-				caseCounts, caseFailures, messages := replayCase(golden, replayers)
+				caseCounts, caseFailures, messages := replayCase(golden, replayers, kept)
 				lock.Lock()
 				for function, count := range caseCounts {
 					counts[function] += count
@@ -183,14 +184,17 @@ func Replay(t *testing.T, file string, replayers map[string]Replayer) map[string
 	return counts
 }
 
-func replayCase(golden Case, replayers map[string]Replayer) (map[string]int, map[string]int, map[string][]string) {
+func replayCase(golden Case, replayers map[string]Replayer, kept []string) (map[string]int, map[string]int, map[string][]string) {
 	counts := map[string]int{}
 	failures := map[string]int{}
 	messages := map[string][]string{}
 	state := NewState()
 	type open struct {
-		call     *Call
-		replayed bool
+		call           *Call
+		replayed, kept bool
+	}
+	withinReplayed := func(entries []open) bool {
+		return slices.ContainsFunc(entries, func(entry open) bool { return entry.replayed })
 	}
 	var stack []open
 	for index := range golden.Records {
@@ -200,8 +204,9 @@ func replayCase(golden Case, replayers map[string]Replayer) (map[string]int, map
 		}
 		state.Apply(record)
 		if record.Kind == "call" {
-			entry := open{call: &Call{Record: record, Base: state.Base}, replayed: replayers[record.Function] != nil}
-			if entry.replayed {
+			entry := open{call: &Call{Record: record, Base: state.Base}, replayed: replayers[record.Function] != nil,
+				kept: slices.Contains(kept, record.Function) && withinReplayed(stack)}
+			if entry.replayed || entry.kept {
 				entry.call.Before = slices.Clone(state.Bytes)
 				entry.call.GlobalsBefore = slices.Clone(state.Globals)
 			}
@@ -216,12 +221,21 @@ func replayCase(golden Case, replayers map[string]Replayer) (map[string]int, map
 		entry := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		entry.call.Result = record
+		if entry.replayed || entry.kept {
+			entry.call.After = slices.Clone(state.Bytes)
+			entry.call.GlobalsAfter = slices.Clone(state.Globals)
+		}
+		if entry.kept {
+			for _, outer := range stack {
+				if outer.replayed {
+					outer.call.Inner = append(outer.call.Inner, entry.call)
+				}
+			}
+		}
 		if !entry.replayed {
 			continue
 		}
 		counts[record.Function]++
-		entry.call.After = slices.Clone(state.Bytes)
-		entry.call.GlobalsAfter = slices.Clone(state.Globals)
 		if err := replayers[record.Function](entry.call); err != nil {
 			failures[record.Function]++
 			if len(messages[record.Function]) < 5 {
@@ -361,8 +375,8 @@ func (mapping Mapping) LoadPipeline(state []byte) {
 	}
 }
 
-// StorePipeline writes the pipeline's nodes, cursors, free count and shared values into the thread state. It
-// writes a pointer only where it points elsewhere than the state's.
+// StorePipeline writes the pipeline's nodes, cursors, current cursor, free count and shared values into the
+// thread state. It writes a node pointer only where it points elsewhere than the state's.
 func (mapping Mapping) StorePipeline(state []byte) {
 	source := mapping.Pipeline
 	for index, offset := range NodeOffsets() {
@@ -384,6 +398,13 @@ func (mapping Mapping) StorePipeline(state []byte) {
 		}
 	}
 	binary.LittleEndian.PutUint32(state[Free:], uint32(source.Free))
+	current := uint32(0)
+	for stage := range source.Cursors {
+		if source.Current == &source.Cursors[stage] {
+			current = mapping.Base + uint32(Cursors+CursorSize*stage)
+		}
+	}
+	binary.LittleEndian.PutUint32(state[Current:], current)
 	mapping.StoreFields(PipelineFields(source), state)
 	binary.LittleEndian.PutUint16(state[OutputVoice:], uint16(source.Synthesizer.OutputVoice))
 	binary.LittleEndian.PutUint16(state[PostedSpace:], 0)
@@ -411,6 +432,10 @@ func FlagAt(offset int, name string, value *bool, trueValue byte) Field {
 	return Field{Offset: offset, Name: name, Value: value, True: trueValue}
 }
 
+// elsewhere is the node a field gets for a pointer to no node of the thread state, as one into the thread state an
+// engine reset replaced. Storing it leaves the pointer.
+var elsewhere = new(pipeline.Node)
+
 // LoadFields gives the fields the thread state's values.
 func (mapping Mapping) LoadFields(fields []Field, state []byte) {
 	for _, field := range fields {
@@ -424,7 +449,10 @@ func (mapping Mapping) LoadFields(fields []Field, state []byte) {
 		case *bool:
 			*value = state[field.Offset] != 0
 		case **pipeline.Node:
-			*value = mapping.NodeAt(Dword(state, field.Offset))
+			pointer := Dword(state, field.Offset)
+			if *value = mapping.NodeAt(pointer); *value == nil && pointer != 0 {
+				*value = elsewhere
+			}
 		}
 	}
 }
@@ -445,7 +473,13 @@ func (mapping Mapping) StoreFields(fields []Field, state []byte) {
 				state[field.Offset] = max(field.True, 1)
 			}
 		case **pipeline.Node:
-			mapping.storePointer(state, field.Offset, *value)
+			switch *value {
+			case elsewhere:
+			case nil:
+				binary.LittleEndian.PutUint32(state[field.Offset:], 0)
+			default:
+				mapping.storePointer(state, field.Offset, *value)
+			}
 		}
 	}
 }

@@ -384,6 +384,12 @@ func TestProsody(t *testing.T) {
 			t.Errorf("voice %d has pitch range %d", voice, pitchRange)
 		}
 	}
+	if prosody.PausePercents[0] != 2200 || prosody.PausePercents[datapack.RateCount-1] != 30 {
+		t.Errorf("pause percents %v", prosody.PausePercents)
+	}
+	if prosody.SlowPausePatterns[0] != 0xbf7f || prosody.SlowPausePatterns[datapack.SlowRateCount-1] != 0x284a {
+		t.Errorf("slow pause patterns %x", prosody.SlowPausePatterns)
+	}
 }
 
 func TestChangedProsody(t *testing.T) {
@@ -391,6 +397,10 @@ func TestChangedProsody(t *testing.T) {
 		{`{"pitchRanges":[1,2]}`, "pitchRanges has 2 values"},
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,40000]}`, "pitchRanges[9] is 40000"},
 		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,-1]}`, "pitchRanges[9] is -1"},
+		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[1]}`, "pausePercents has 1 values"},
+		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,-1]}`, "pausePercents[25] is -1"},
+		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,1],"slowPausePatterns":[1,1,1,1,1,1,1,1]}`, "slowPausePatterns has 8 values"},
+		{`{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,1],"slowPausePatterns":[1,1,1,1,1,1,1,1,65536]}`, "slowPausePatterns[8] is 65536"},
 	}
 	for _, test := range tests {
 		if _, err := writePack(t, "prosody.json", []byte(test.content)).LoadProsody(); err == nil || !strings.Contains(err.Error(), test.message) {

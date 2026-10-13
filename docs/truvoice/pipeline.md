@@ -33,6 +33,7 @@ What the stages share:
 - the **attributes** the speaking thread last applied: pitch in Hz, speed in words a minute, volume, character, and the voice, which is also the synthesizer's output-filter voice. Some commands change them too (section 4);
 - the **saved rate**, which the filter command keeps, the **track levels**, 22 bytes, and the synthesizer's **sample rate**;
 - a **reset request** and its value;
+- the **short phrase** flag, which makes the prosody stage's next phrase shorter ([prosody.md](prosody.md) §3.2);
 - the **engine**: its attributes (pitch, speed, volume, character, voice), which its interface sets and reads, its sample rate and output gain, a **queue** that carries the audio and the events to the destination, in order, and the **messages** the pipeline posts to the engine's window. The engine is absent when it only converts text to phonemes.
 
 ## 2. Nodes
@@ -135,7 +136,7 @@ A stage makes its cursor **current** while it works. The input stage appends its
 | Input flags | `A`, `D` | 0x41 |
 | Voice | `V` | 0 |
 
-The escape parser keeps the current settings as it reads the text. Every cursor has its own copy, which the commands change as the stage reaches them (section 4). The phrase setting is the kind of phrase the prosody stage is in ([prosody.md](prosody.md) §3); while it is 0, the parameter generator leaves the end of speech unmarked.
+The escape parser keeps the current settings as it reads the text. Every cursor has its own copy, which the commands change as the stage reaches them (section 4). The phrase setting is the kind of phrase the prosody stage is in ([prosody.md](prosody.md) §3.5); while it is 0, the parameter generator leaves the end of speech unmarked.
 
 ### 3.2 Beginning
 

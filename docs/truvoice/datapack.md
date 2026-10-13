@@ -150,3 +150,5 @@ A vowel:
 | Field | Values | Meaning |
 |---|---|---|
 | `pitchRanges` | 10 numbers, 0 to 32767 | Each voice's pitch range, the Q15 share of the excursion its pitch moves by ([prosody.md](prosody.md) §4.3); 32766 for every voice |
+| `pausePercents` | 26 numbers, 0 to 10000 | By rate, 0 to 25: the percent of a pause's length the durations give it, from 2200 at rate 0 to 30 at 19 and up. The slow pauses read the last ones after an `r` command ([prosody.md](prosody.md) §3.4) |
+| `slowPausePatterns` | 9 numbers, 0 to 65535 | By rate, 0 to 8: the 16 slots of slow speech's pauses between words, a bit each ([prosody.md](prosody.md) §3.4) |
