@@ -116,6 +116,7 @@ func (pipeline *Pipeline) ResetStages() {
 	pipeline.WaitingForRoom = false
 	pipeline.Retired = RetireDone
 	pipeline.ResetRequested = false
+	pipeline.ParsedReset = false
 	pipeline.ResetNodes()
 	initial := synthesizer.Frame(pipeline.tables.InitialFrame)
 	pipeline.Synthesizer.ResetFrames(&initial)

@@ -244,7 +244,7 @@ The speaking thread runs the pipeline one **step** at a time. Besides the stages
 A step:
 1. If a reset is requested, reset the stages (section 7).
 2. If the output stage's last result isn't **done**, run the output stage and keep its result.
-3. If waiting for room and the ring has room, stop waiting. The ring has room when `margin + furthest − position + frames < 256` ([parameters.md](parameters.md) §2.7): the synthesizer's position ([synthesizer.md](synthesizer.md) §5.1), and the parameter generator's margin, furthest frame written and the frames it waits to write (its spec will say how it sets the margin and the frames).
+3. If waiting for room and the ring has room, stop waiting. The ring has room when `margin + furthest − position + frames < 256` ([parameters.md](parameters.md) §2.7): the synthesizer's position ([synthesizer.md](synthesizer.md) §5.1), and the parameter generator's margin, furthest frame written and the frames it waits to write ([parameters.md](parameters.md) §17).
 4. If the parameter generator has work and isn't waiting for room:
    1. Run the parameter generator's step. It reports **finished**, **waiting** or **working**. If finished, it no longer has work; if waiting, wait for room.
    2. Run the synthesizer's loop ([synthesizer.md](synthesizer.md) §5.3). Each time the loop runs the output stage, keep its result.

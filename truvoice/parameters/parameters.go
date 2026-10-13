@@ -54,15 +54,26 @@ type Generator struct {
 	VowelFrames int32
 	AfterNext   byte
 
-	// The stage's own state, which its reset sets (parameters.md §7).
+	// The stage's own state, which its reset sets (parameters.md §7 and §17). Ahead is what the stage found after
+	// the current phoneme, Start how far it is in starting the synthesizer after a reset, and AtReset whether it
+	// has stopped at the pause before a reset. Wanted are the frames it waits for room for.
 	TransitionLimit int32
-	PauseState      int32
-	EndState        int32
-	EndReached      bool
+	Ahead           int32
+	Start           int32
+	AtReset         bool
+	Wanted          int32
 	GeneratedDone   bool
 	Coarticulation  byte
 	DatabaseLoci    bool
 	BeforePrevious  byte
+
+	// The generated segment the stage writes (parameters.md §17.5): its symbol, the frames still to write,
+	// whether it has written none yet, its frame, and a tone's frequency in 10 Hz units.
+	SegmentSymbol   byte
+	SegmentLeft     int32
+	SegmentStarting bool
+	SegmentFrame    [datapack.TrackCount]byte
+	ToneFrequency   int32
 
 	Pipeline    *pipeline.Pipeline
 	Synthesizer *synthesizer.Synthesizer

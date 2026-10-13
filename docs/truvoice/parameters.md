@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) turns timed phonemes into frames for its synthesizer. For each phoneme or pause the parameter generator works out what each of the 22 tracks of a frame should do ([synthesizer.md](synthesizer.md) §4.1), and writes the phoneme's frames into the synthesizer's ring ([synthesizer.md](synthesizer.md) §5.1), rewriting the end of the previous phoneme's where the two blend.
 
-This spec covers the tracks and how the generator writes them (section 2), the phonemes (section 3), the targets a phoneme starts from (section 4), the rules that change them (section 5), how a phoneme is rendered (section 6), the stage's resets (section 7), the per-phoneme rules, action 16 (section 8), the actions that set the onsets and shapes, actions 1, 2, 3, 5, 6, 8 and 15 (section 9), those that set the fricatives' amplitudes and the stops' closures, actions 7 and 9 (section 10), and action 4, which sets the vowels' formants: from the vowel database (section 11), and without a record by its own steps (section 12), action 10, which finishes every phoneme: its loci, special loci, final adjustments and limits (section 13), action 13's helpers: a consonant's loci from the vowel database, and the formants through the liquids (section 14), action 13 itself, which sets the consonants' targets and transitions and the pitch's small movements (section 15), and action 14, which sets how the sources go from one phoneme into the next and into a pause (section 16). The stage's driver is still to come.
+This spec covers the tracks and how the generator writes them (section 2), the phonemes (section 3), the targets a phoneme starts from (section 4), the rules that change them (section 5), how a phoneme is rendered (section 6), the stage's resets (section 7), the per-phoneme rules, action 16 (section 8), the actions that set the onsets and shapes, actions 1, 2, 3, 5, 6, 8 and 15 (section 9), those that set the fricatives' amplitudes and the stops' closures, actions 7 and 9 (section 10), and action 4, which sets the vowels' formants: from the vowel database (section 11), and without a record by its own steps (section 12), action 10, which finishes every phoneme: its loci, special loci, final adjustments and limits (section 13), action 13's helpers: a consonant's loci from the vowel database, and the formants through the liquids (section 14), action 13 itself, which sets the consonants' targets and transitions and the pitch's small movements (section 15), action 14, which sets how the sources go from one phoneme into the next and into a pause (section 16), and the stage's step, which finds the next phoneme, puts in pauses and writes the generated segments (section 17).
 
 **In short.**
 - The generator works track by track. For each phoneme it fills in a **segment** for each track: a mode, how many frames, an onset and a target, two shapes, and a value to pull the previous phoneme's last frames toward. Rendering the segment writes the phoneme's frames of that track.
@@ -15,8 +15,9 @@ This spec covers the tracks and how the generator writes them (section 2), the p
 - A consonant before a vowel takes its formant targets from the start of the vowel database's record for that vowel. `R`, `L` and `Y` follow trajectories from tables, chosen by the phonemes around them.
 - Action 13 also holds the transitions to their limits, starts the formants of most consonants from where the previous phoneme left them, and writes the pitch's small movements: a dip at a glottal stop, and a rise and fall on a stressed vowel before a pause.
 - Action 14 starts the sources' amplitudes between their last values and their targets, shapes the voicing at the boundary, ends the voicing of a voiced fricative before a pause, and lets the voicing and the pitch fall into a pause.
+- The stage's step renders one phoneme at a time. It looks past the next phoneme for a text's end, a reset or a generated segment and puts in pauses before them, and holds the synthesizer at the end of a text until more comes. A generated segment, a tone or a fixed frame, it writes as the ring has room.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its track functions recorded in 197 runs (the ten voices, both rates, every speed range, pitch and volume tags, whisper, monotone, emphasis, tones and generated segments, texts spoken one after another in one session, long texts with a long pause, 44 sentences chosen for their sounds, 11 for their clusters of consonants and 46 for the contexts of the per-phoneme rules and the actions, two of these with the input flags changed and seven spoken as phonemes (section 12)): each of the 347,121 segments rendered (section 2.4), the stage's 173,478 direct writes into the ring (section 2.5), 15,631 advances (section 2.6) and 40,694 room checks and rebases (section 2.7) left the speaking thread's state byte-identical to the original's. So did the 15,631 phonemes rendered (section 6), with their target loading, their rules and all their actions: the per-phoneme rules (section 8; 7,798 runs of action 16, 770 groupings of the previous phoneme), the actions of section 9 (2,573 runs of action 1, 3,363 of action 2, 8,158 of action 3, 3,016 of action 5, 4,634 of action 6, 3,871 of action 8 and 2,018 of action 15), those of section 10 (2,270 runs of action 7 and 2,332 of action 9), action 4 (sections 11 and 12: 5,142 runs, 4,638 with a record of the vowel database, 219 of a vowel with an offglide without one, 22 of a vowel without an offglide, 15 of `@` and `|` and 248 of `p`), action 10 (section 13: 15,631 runs, its loci, special loci and final adjustments also each on their own), action 13 (sections 14 and 15: 15,631 runs, with 3,060 lookups of a consonant's loci in the vowel database and 740 runs of the liquids also on their own) and action 14 (section 16: 15,631 runs, also on its own); and so did the stage's 197 resets and 240 context resets (section 7).
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 204 runs (the ten voices, both rates, every speed range, pitch and volume tags, whisper, monotone, emphasis, tones and generated segments, texts spoken one after another in one session, long texts with a long pause, 44 sentences chosen for their sounds, 11 for their clusters of consonants and 53 for the contexts of the per-phoneme rules, the actions and the stage's step, two of these with the input flags changed and seven spoken as phonemes (section 12)): each of the 351,468 segments rendered (section 2.4), the stage's 175,467 direct writes into the ring (section 2.5), 15,828 advances (section 2.6) and 41,201 room checks and rebases (section 2.7) left the speaking thread's state byte-identical to the original's. So did the 15,828 phonemes rendered (section 6), with their target loading, their rules and all their actions: the per-phoneme rules (section 8; 7,888 runs of action 16, 777 groupings of the previous phoneme), the actions of section 9 (2,604 runs of action 1, 3,393 of action 2, 8,256 of action 3, 3,054 of action 5, 4,684 of action 6, 3,913 of action 8 and 2,045 of action 15), those of section 10 (2,297 runs of action 7 and 2,355 of action 9), action 4 (sections 11 and 12: 5,202 runs, 4,693 with a record of the vowel database, 219 of a vowel with an offglide without one, 22 of a vowel without an offglide, 15 of `@` and `|` and 253 of `p`), action 10 (section 13: 15,828 runs, its loci, special loci and final adjustments also each on their own), action 13 (sections 14 and 15: 15,828 runs, with 3,089 lookups of a consonant's loci in the vowel database and 743 runs of the liquids also on their own) and action 14 (section 16: 15,828 runs, also on its own). So did the stage's 204 resets and 255 context resets (section 7), and its 28,659 steps (section 17): their 25,351 lookaheads, with 237 lead-in pauses and 222 pairs of pauses (220 before an end command, two after ten nodes without a phoneme), and 69 runs of writing a generated segment, with 63 fills, for 27 tones, the nine other kinds of `t` that the escape sequences give, seven silences and one segment of the track levels; each also on its own.
 
 ## 1. Arithmetic
 
@@ -292,14 +293,14 @@ To render the current phoneme, the generator:
 3. **Voicing.** For a phoneme not in class voiced: the unvoiced pitch becomes track 17's target, which becomes 0, and the 2 is taken out of track 17's mode (6 becomes 4). For a node whose second value is 0: track 2's target becomes track 0's plus 5; track 0's target, onset and back target become 0; the 2 is taken out of track 17's mode. When the previous phoneme isn't in class voiced or its node's second value is 0, the 1, the pull back, is taken out of track 17's mode;
 4. **Attenuation.** With the cursor's attenuation `a` in dB: the targets, onsets and back targets of tracks 0, 1 and 2 go down by `a`, to 0 at the lowest;
 5. **Voice.** With a voice other than 0: track 12's target goes down to the voice's `fourthFormantLimit` at the most. Track 21's target gets `voice << 4` and track 20's `a << 4`, both by a bitwise or;
-6. if the flag to keep the earlier frames is set (the stage's driver sets it), every track's earliest frame becomes its next, and the flag is cleared;
+6. if the flag to keep the earlier frames is set (the stage's step sets it after a generated segment, section 17.5), every track's earliest frame becomes its next, and the flag is cleared;
 7. **Visual event.** If the visual events are on ([pipeline.md](pipeline.md) §8.1) and the phoneme isn't `p`, and the pipeline speaks for an engine, the generator queues a visual event with the phoneme's symbol, sign-extended, for the destination. A pause is queued only if the last visual event wasn't one;
 8. renders the 22 segments, tracks 0 to 21 (section 2.4).
 
 ## 7. Resets
 
 **The stage's reset**, with the pipeline's ([pipeline.md](pipeline.md) §7):
-1. The stage's own state: its pause and end states 0 and 1, the end and keep-earlier flags off, the generated-segment flag on, two bytes the actions use 0, the unvoiced pitch 0, the transition limit 4. Its cursor's types are 4 and 5, and the track levels the escape parser's (the pipeline does both).
+1. The stage's own state: ahead 0 and start 1 (section 17.1), at reset and the keep-earlier flag off, the last generated segment written, two bytes the actions use 0, the unvoiced pitch 0, the transition limit 4, and wanted 0 (in the original the ring's reset clears it). Its cursor's types are 4 and 5, and the track levels the escape parser's (the pipeline does both).
 2. The ring's lookahead becomes 2 and the margin 3.
 3. The context is reset.
 
@@ -493,7 +494,7 @@ To give the **formant shapes** `s`: tracks 9 to 16 get `forward` `s`, then track
    1. `v = 2` if the cursor's input flags (the `A` command, [pipeline.md](pipeline.md) §4) have bit 0x10.
    2. A rhotic after an alveolar: `a` goes up by 9.
    3. After `P`, `T` or `K`: `a = L2` for `y` after `P`, `L2 − 6` for `p`, `L2 − 2` for the others; 0 at the lowest.
-   4. A `p` after a stop other than `P`, `T` and `K` (only `C` can come here): track 1 gets `v` frames of an undefined value (section 17) and moves on by `v`.
+   4. A `p` after a stop other than `P`, `T` and `K` (only `C` can come here): track 1 gets `v` frames of an undefined value (section 18) and moves on by `v`.
    5. With `m` the current node's frames minus 3: if `v > m`, comparing both as unsigned 32-bit numbers, `v` becomes `m`, or 1 if `m` is 0.
    6. **Burst.** If the previous node is stressed and the current phoneme is syllabic or of place 4, or for `r`, `g` or `c` after `K`: track 1 gets `Repeat(next, v, b)` and moves on by `v`. `b` is 60 after a stop other than `P`, `T` and `K`, and else `L1 − 2`, 0 at the lowest, except 0 for a vowel whose node is stressed after `P` or `T`, and `L1` for `i b u U L` and 55 for `O` after `K`. Then the pitch's silence `s` is `v` after `K`, `v − 3` for `L` after `P`, `v − 1` otherwise; if that is below 0, `v − 1`, 0 at the lowest; and at most track 17's frames − 1. Track 17 gets `Repeat(next, s, 0)` and moves on by `s`, and `L17` becomes the unvoiced pitch (section 6).
    7. Track 2's earliest frame becomes its next.
@@ -657,7 +658,7 @@ A vowel's records are found by a left and a right context. The records of `@` an
 5. Each formant's track and bandwidth are written from the record (sections 11.5 and 11.6), and their segments set (section 11.7), F1 first.
 6. The coarticulation flag becomes 1 and the voice onset 127, and action 4 ends.
 
-The **phoneme after the next** is a symbol the stage's driver keeps: that of the first phoneme after the next one, past word marks and punctuation, or a space if another node comes first.
+The **phoneme after the next** is a symbol the stage's step keeps (section 17.2, step 8): that of the first phoneme after the next one, past word marks and punctuation, or a space if another node comes first.
 
 ### 11.3 The contexts
 
@@ -883,7 +884,7 @@ Action 10 tests the classes of sections 3.2, 8.1, 9.1, 10.1 and 12.1, the reduce
 
 ## 14. Consonants before a vowel or a liquid: action 13's helpers
 
-Action 13 (section 15) sets the consonants' targets and the pitch's small movements. It calls two helpers, which this section covers: the **loci from the vowel database**, which take a consonant's formant targets from the vowel after it, and the **liquids**, which write the formants through `R` and `L` and through `Y` after a vowel, and set the targets of a consonant before `R` or `L`. The notation is that of sections 8 to 13. `f` is the current node's frames and `w` the previous node's. The **phoneme before the previous one** is a symbol the stage's driver keeps.
+Action 13 (section 15) sets the consonants' targets and the pitch's small movements. It calls two helpers, which this section covers: the **loci from the vowel database**, which take a consonant's formant targets from the vowel after it, and the **liquids**, which write the formants through `R` and `L` and through `Y` after a vowel, and set the targets of a consonant before `R` or `L`. The notation is that of sections 8 to 13. `f` is the current node's frames and `w` the previous node's. The **phoneme before the previous one** is a symbol the stage's step keeps (section 17.2, step 13).
 
 ### 14.1 The loci from the vowel database
 
@@ -1144,14 +1145,101 @@ For the pause:
 8. `Z` after a nasal before a phoneme in class vowel: track 0 gets mode 4 and `T0 = 53`, track 1 `forward` 2 and `T1 = 64`, and `T2 = 0`, `T4 = 0`, `T5..7 = 74, 74, 74`, `T18, T19 = 10, 14`, `T10, T11 = 1844, 2496` and `T13 = 70`.
 9. `F` after `Z`, with the node before `Z` being `E` and the node after `F` being `k`: `T1 = 55`.
 
-## 17. What the recorded runs don't reach
+## 17. The stage's step
+
+The scheduler runs the stage's step ([pipeline.md](pipeline.md) §6). A step renders the phoneme at the cursor, or writes the next frames of a generated segment, and reports **finished** (it had nothing to do), **waiting** (for room in the ring) or **working**. Before it renders a phoneme, it finds the next one and puts in the pauses that what comes next asks for. The previous, current and next phonemes are the cursor's done, scan and first nodes (section 3.4), and a node's **frames** are its value.
+
+### 17.1 State and classes
+
+Besides the state of section 7, the step keeps:
+- **ahead**, what it found after the current phoneme (section 17.3): 0 a phoneme, 1 an end command, 2 a reset, 3 a generated segment, 4 nothing;
+- **start**, how far it is in starting the synthesizer after a reset: 1 after the reset, 2 once it has rendered a phoneme other than the pause, 3 once it has let the synthesizer go on (section 17.2, step 12), and 5 after a generated segment. The original's code also has 0, which no reset leaves, and 4, which only follows 0;
+- **at reset**, set when it stops at the pause before a reset;
+- **wanted**, the frames it waits for room for. The scheduler checks the room for them ([pipeline.md](pipeline.md) §6);
+- the **generated segment** it writes (section 17.5): its symbol, the frames still to write, whether it has written none yet, its frame of 22 bytes, and a tone's frequency in 10 Hz units.
+
+The step **releases** the synthesizer: it sets the ring's `end` to −1 and clears its `done` ([synthesizer.md](synthesizer.md) §5.1), and start 4 becomes 5. The stage is `written − position − lookahead` frames **ahead** of the synthesizer, with the ring's counters.
+
+It tests one more class:
+
+| Class | Name here | Symbols |
+|---|---|---|
+| (4, 0x08) | punctuation | `! , . ? \ ]` |
+
+### 17.2 The step
+
+1. Begin the cursor ([pipeline.md](pipeline.md) §3.2). If its done, scan and first are all empty, go to step 16.
+2. **Speed.** If the cursor's flags (the `N` command) haven't bit 0x2000 and its rate index is below 25, the transition limit becomes 30, the margin 15 and the ring's `lookahead` 12; otherwise 4, 3 and 2.
+3. If `end` isn't −1, the stage is 8 frames ahead of the synthesizer at most, and start is 0, start becomes 1.
+4. If ahead is 2 and the current node is a final pause (section 17.4), set at reset and go to step 16: the stage stops there until the reset.
+5. **A generated segment.** If there is a current node and either ahead is 3 or the node isn't a segment: ahead becomes 3, and if the node isn't a segment, or is a final pause, write the generated segment (section 17.5) and stop.
+6. **Room.** If there is a current node, wanted becomes its frames.
+   1. Without room for them (section 2.7), release the synthesizer, finish the cursor ([pipeline.md](pipeline.md) §3.3) and report working if it handed nodes on, else waiting.
+   2. If the stage is more than 64 frames ahead of the synthesizer, release it and clear prosody's flag that ends a phrase sooner.
+   3. If the cursor's flush setting (the `P` command) is 0, release the synthesizer.
+7. **Look ahead** (section 17.3). If it returns no node, go to step 16. The node it returns becomes the next one.
+8. **The phoneme after the next** becomes the symbol of the first segment after the next node, past nodes of type 3 (word marks and punctuation), or a space if a node of another type comes first. If the window ends first, it stays as it was.
+9. If the current phoneme isn't the pause, start 0 becomes 4 and start 1 becomes 2.
+10. Render the current phoneme (section 6) and advance (section 2.6). For a phoneme not in class voiced, track 17's last value `L17` becomes the unvoiced pitch. For a whispered node (its character, byte 0x1a, which prosody sets, is 1), both the unvoiced pitch and `L17` become 100.
+11. If the previous node is a lead-in pause (section 17.4), free it, going forward ([pipeline.md](pipeline.md) §2.3).
+12. If start is 2 and the stage is more than 8 frames ahead of the synthesizer, `end` becomes −1, `done` is cleared and start becomes 3.
+13. **Move on.** The phoneme before the previous one becomes the previous node's symbol, the previous node becomes the current one, the current node the one after it, and the next node the one after it.
+14. **The end.** If the new current node is a final pause, `end` becomes `written − lookahead` and `done` is cleared: the synthesizer stops before the frames the stage may still change. Then if neither a segment nor a generated segment comes after the pause in the window, free the pause, going back, empty the cursor's done, scan and first, clear the ring's marker bit before `written` and set the one before `end`.
+15. Rebase (section 2.7).
+16. Finish the cursor, and report working if it handed nodes on or step 11 freed a pause, else finished.
+
+### 17.3 Looking ahead
+
+1. **A lead-in pause.** If there is a current node, and the previous node is the current one (as at a window's first segment) or isn't a segment, put a lead-in pause before the current node (section 17.4). It becomes the previous node.
+2. Go through the nodes after the current one, counting those that aren't segments:
+   - a **segment**: if ahead is 3 and the segment is a final pause, return it, ahead unchanged. Otherwise ahead becomes 0, and the search ends;
+   - an **end command** `C`, which ends every text, after its last bookmark: ahead becomes 1, and the search ends;
+   - a **reset**: the `x` command, or a bookmark `i` once the escape parser has parsed a reset. The node gets flag bit 0x20, so that it resets the stages when the output stage reaches it ([pipeline.md](pipeline.md) §4.1). Ahead becomes 2, and the search ends;
+   - a **generated segment**: ahead becomes 3, and the search ends;
+   - a node of type 3 in class punctuation, other than `]`: release the synthesizer.
+3. If 10 nodes or more were counted, ahead becomes 4.
+4. Return:
+   - with ahead 0, or without a node where the search ended and ahead other than 4: that node, or none. `end` becomes −1;
+   - with ahead 1 or 2: the first of a pair of pauses put after the node where the search ended (section 17.4);
+   - with ahead 4: the first of a pair of pauses put after the window's last node;
+   - with ahead 3: the generated segment.
+
+### 17.4 Pauses
+
+The step puts in pauses: segment nodes taken from the free list ([pipeline.md](pipeline.md) §2.3) with the pause's symbol, and flag bits 3 and 4 for their kind. A pause's second value, its pitch, is the current node's, or 50 without one.
+
+- A **lead-in** pause (bits 3 and 4 = 1) has 4 frames. It is the previous phoneme of the phoneme after it: it is never rendered, and step 11 of section 17.2 frees it.
+- A **pair** of pauses goes after a node. The first, a **break** (2), has 4 frames before an end command, and `lookahead + margin + 10` otherwise, so that the synthesizer speaks every frame before it. The second, the **final** pause (3), has 4 frames: when the stage gets to it, the synthesizer stops (section 17.2, step 14). Without a current node, the break becomes the current node and the final pause is returned. Putting in a pair sets `end` to −1 and clears `done`.
+
+### 17.5 Generated segments
+
+A **generated segment** is a node of type 5 ([pipeline.md](pipeline.md) §2.1): one frame for a number of frames, the low byte of its value. Its symbol says which frame: `g` the track levels, which the `l` command sets ([pipeline.md](pipeline.md) §4), `s` the initial frame (silence), and `t` the data pack's `segmentFrames` of the **kind** in flag bits 3 to 6 of its node: `(bits 3–4) + 4 · (bit 5) + 8 · (bit 6)`. The original's table has 10 kinds; kinds 10 to 15 read the bytes after it, which the data pack keeps.
+
+**Writing it.** The step:
+1. If the last generated segment is written: if the current node is a segment (a final pause), free it, going forward, and take the node after it. Note the node's symbol and frames, reset the context (section 7), set ahead to 3 and note that none of the segment's frames is written.
+2. With frames left and `room = position − margin − furthest + 256` other than 0: **fill** (below) and keep the frames left. On the segment's first fill, `end` becomes −1 and `done` is cleared.
+3. With no frames left, the segment is written.
+4. Rebase (section 2.7), and set the flag that makes the next phoneme keep the earlier frames (section 6). Wanted becomes 1, or 0 when no frames are left.
+5. With no frames left, the previous node becomes the current one, and the current and next nodes the one after it. Ahead becomes 0.
+6. Start becomes 5. Finish the cursor, and report working if it handed nodes on, else waiting.
+
+**Filling.** On the segment's first fill, the tone's frequency becomes 0 and the frame is made: for `g` the track levels, for `s` the initial frame ([pipeline.md](pipeline.md) §7), and for `t` the bytes of its kind, in which 255 is filled in, track by track:
+- if byte 9 of the kind is 255, the segment is a **tone**: its frequency is the node's second value, and tracks 13 to 15 become 45 while the **wide** flag is set, which starts set;
+- a 255 on tracks 9 to 11 becomes the tone's frequency, and the wide flag becomes whether the frequency is above 180;
+- a 255 on track 17 becomes the node's second value;
+- a 255 on tracks 0 and 1 becomes `60 − a`, with the cursor's attenuation `a`, less `toneLevels[f >> 4]` if the tone's frequency `f` isn't 0, and 1 at the least;
+- the other bytes stay as they are, 255 too.
+
+Then from `written` on, for as many frames as are left, `room` and 53 allow, each slot gets the frame, and while the tone's frequency isn't 0, the slot before it gets its tone bit. Every track's next frame becomes the frame after the last one written and its earliest frame that less `lookahead`, and `written` and `furthest` become it too. The fill returns the frames still left.
+
+## 18. What the recorded runs don't reach
 
 These follow the original's code, but no recorded run gets there:
 - Segments of modes 2, 9, 17, 21 or above 21. Mode 3 came up 4 times.
 - A negative `frames`, `back target`, `onset` or `target` in a segment.
 - A Q15 product where dividing by 32767 instead of 32768 changes the result, as for `151 · 217 · 128`.
 - `AddBack` taking a frame other than the first below 0, or a first frame plus `change` of exactly −1.
-- A ring without room: the generator was at most 115 frames ahead of the synthesizer, margin included, because the synthesizer renders after every step of the generator.
+- A ring without room, so step 6.1 of section 17.2: the generator was at most 115 frames ahead of the synthesizer, margin included, because the synthesizer renders after every step of the generator and is released once the generator is more than 64 frames ahead. Only a held synthesizer ([synthesizer.md](synthesizer.md) §5.2) could leave no room, and the original never finished speaking a text that held it that long.
 - 112 of the 468 rules: 356 applied. No rule of set 43 (`z` after a closure) applied; set 53 is empty and the matrix never gives it.
 - A stop burst's exceptions: `t`, `J` or `C` before a pause (the stages before split `J` and `C` into `J z` and `C s`), `K` before `t` or `Q` (section 4.2).
 - An F4 target above the voice's limit (section 6): no target in the data pack is.
@@ -1179,6 +1267,10 @@ These follow the original's code, but no recorded run gets there:
 - Values that make a step of action 14 change nothing: track 0's mode already had the 2 after `B` (section 16.4, step 2), and already was 6 for `z` after `J` with the pause before it (step 4) and for every phoneme after `P` in step 1, so that `L` keeping its mode there changes nothing; the pause's `T0` already was 0 in step 1.2 of section 16.8; and for `n` before the pause, tracks 0 and 10 already had the 1 in their mode (section 16.8, step 2).
 - Steps of action 14 no text reaches: track 1's values for `s` before the pause (section 16.5), as `s` there comes before a phoneme in class vowel or `@`.
 - Steps of action 14 that change nothing whatever the text: the original's test for the pause in step 1 of section 16.4, as the pause isn't in class voiced, and its test there that a previous stop is in class silence, as no stop is; `p` left out in step 4 of section 16.3, as section 16.5 sets `p`'s `onset` after `G` again; the test for a phoneme in class vowel with the node after the next one stressed in step 3 of section 16.9, as every phoneme in class vowel is in class sonorant; the test that the pause is in class mark (section 16.6), as it isn't; `Z`'s mode 4 and `T0 = 0` after `B`, `D` or `G` before the pause (section 16.6), as step 2 gives `Z` mode 0 and `T0` becomes 0 anyway; and track 1's mode 4 after `p` in step 1.4 of section 16.8, which step 2 gives it again.
+- Contexts of the stage's step (section 17) that no recorded run had: a reset ahead, and so the stop at its final pause (section 17.2, step 4, and section 17.3, step 2): a reset makes the original drop the rest of the text without reporting it done ([pipeline.md](pipeline.md) §9); a segment or a generated segment after a final pause in the window (section 17.2, step 14), so that no step began at a final pause: each pair of pauses went after the end command at a text's end, or after the window's last node; a pair of pauses without a current node, which the lookahead puts in only with ahead 4 left from the step before, and so the pause pitch of 50 (section 17.4); and the kinds 10 to 15 of a generated segment `t` (section 17.5): the escape sequences `ESC[10t` to `ESC[15t` gave none.
+- Values that make a step of the stage's step change nothing: wherever the step released the synthesizer, `end` already was −1 (section 17.1), and in step 6.3 of section 17.2 `done` was clear too; in step 12 the lookahead had already set `end` to −1, and at a final pause (step 14) `done` was clear; prosody's flag that ends a phrase sooner was always clear when the stage was more than 64 frames ahead (step 6.2); the first phoneme rendered after a reset never was the pause (step 9); in step 1, a cursor without a done node never had a current or a next one; a lookahead that found nothing always began with ahead 0 (section 17.3, step 4); a `]` ahead (section 17.3, step 2) only came right before the end command, whose pair of pauses sets `end` and clears `done` anyway; no rebase was due while a generated segment was written (the recorded runs rebase once); and the room at a fill (section 17.5) was always 179 frames or more.
+- Steps of the stage's step no text reaches: start 0 and 4 (section 17.1), as every thread resets the stage before its first step; and ahead 3 at a segment, so the final pause the lookahead returns at once (section 17.3, step 2) and the final pause a generated segment frees (section 17.5, step 1): ahead is 3 only from a lookahead that found a generated segment before any segment until that segment is written, and the current node then is that segment.
+- Steps of the stage's step that change nothing whatever the text: ahead becomes 3 both in step 5 of section 17.2 and when a generated segment starts (section 17.5, step 1), where either would do; and a 255 on track 12 of a segment `t`'s frame would stay 255, but no kind of the data pack has one there.
 - A node of fewer than 2 frames: the shortest phonemes were 2 frames long, and 3 without the input flag 0x10 (the escape sequence `ESC[5A` sets it). The pitch's silence never reached track 17's frames (section 9.5).
 - Action 15 on a phoneme in class closure: the rules run it only on the pause, and action 1 only on a phoneme not in class closure. Its check that the aspiration shift is at most track 2's next frame, and action 1's that track 1's next frame is 2 or more: the next frames are always larger.
 

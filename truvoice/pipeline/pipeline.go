@@ -40,9 +40,15 @@ type Pipeline struct {
 	Levels     [datapack.TrackCount]byte
 	SampleRate int
 
-	// ResetRequested makes the next step reset the stages; ResetValue is what the request carries.
+	// ResetRequested makes the next step reset the stages; ResetValue is what the request carries. ParsedReset is
+	// set when the escape parser parses a reset: the parameter generator then makes the bookmarks ahead reset too.
 	ResetRequested bool
 	ResetValue     uint32
+	ParsedReset    bool
+
+	// ShortPhrase makes the prosody stage end a phrase sooner. The parameter generator clears it once it is far
+	// enough ahead of the synthesizer.
+	ShortPhrase bool
 
 	// VisualEvents is whether the parameter generator queues a visual event for each phoneme, PostedSpace
 	// whether the last one it queued was a pause.

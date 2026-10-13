@@ -263,7 +263,7 @@ The ring holds 256 frames. Each **slot** holds a frame (section 4.1), a **marker
 
 The synthesizer also keeps three flags, `done`, `hold` and `ready` (a converted block waits to be rendered), and `passed`, a count of the marker bits it has met.
 
-The parameter generator writes the frames and their bits, sets `written` and a marker bit after each phoneme or pause ([parameters.md](parameters.md) §2.6), and sets `end`, `lookahead` and `done`; its own spec will say when. Two operations on the ring are shared:
+The parameter generator writes the frames and their bits, sets `written` and a marker bit after each phoneme or pause ([parameters.md](parameters.md) §2.6), and sets `end`, `lookahead` and `done` ([parameters.md](parameters.md) §17). Two operations on the ring are shared:
 
 - **Reset**, when the engine resets its pipeline: clear every marker and tone bit; fill slots 0 to 11 with the parameter generator's initial frame; `position = 0`, `written = 12`, `end = 10`, `passed = 0`, `done` cleared. The parameter generator's own reset sets `lookahead = 2`. A session therefore starts with 10 copies of the initial frame, 100 ms.
 - **Rebase**, when the parameter generator asks for it: if `position > 2048`, subtract 2048 from `position`, `written` and `end` (unless it is −1). The slots stay where they are. The parameter generator moves its own positions back by the same amount ([parameters.md](parameters.md) §2.7). The recorded runs contain one rebase, at position 2056; the limit of 2048 comes from the code.
@@ -309,7 +309,7 @@ The parameter generator marks one frame for each phoneme and pause. The **output
 **Volume.** Whenever the volume has changed, the engine applies it before it runs its scheduler again ([pipeline.md](pipeline.md) §8.3):
 
 - A volume below 80 sets the mute flag, which mutes every frame converted from then on (section 4.3, step 5). The attenuation stays as it was.
-- Any other volume clears the mute flag and sets the attenuation to `min(15, trunc(−10 · log10(volume / 65535)))` dB. The parameter generator subtracts the attenuation from its amplitudes (its spec will say how).
+- Any other volume clears the mute flag and sets the attenuation to `min(15, trunc(−10 · log10(volume / 65535)))` dB. The parameter generator subtracts the attenuation from its amplitudes ([parameters.md](parameters.md) §6).
 
 The original computes the logarithm with x87 floating point. For every volume, at 24-, 53- and 64-bit x87 precision and in 64-bit floating point, the attenuation is the same. The value closest to an integer is 2.8·10⁻⁶ away from it. The thresholds are:
 

@@ -181,6 +181,9 @@ func TestParameters(t *testing.T) {
 	if len(parameters.RuleSets) != 54 || rules != 468 || parameters.Classes[0]['B'] != 0xa4 || parameters.Voices[1].Tracks != [3]int32{17, 8, 5} || parameters.CategoryWeights[3][0] != 21320 {
 		t.Errorf("%d rule sets, %d rules, class %#x, voice %+v, weight %d", len(parameters.RuleSets), rules, parameters.Classes[0]['B'], parameters.Voices[1], parameters.CategoryWeights[3][0])
 	}
+	if frame := parameters.SegmentFrames[0]; frame[0] != 255 || frame[12] != 225 || parameters.SegmentFrames[11][6] != 15 || parameters.ToneLevels[15] != 58 {
+		t.Errorf("segment frames %v %v, tone levels %v", frame, parameters.SegmentFrames[11], parameters.ToneLevels)
+	}
 	if parameters.NeutralFormants != [3]int32{490, 1450, 2500} || parameters.ReductionWeights[0] != 28864 || parameters.ReductionWeights[15] != 528 {
 		t.Errorf("neutral formants %v, reduction weights %v", parameters.NeutralFormants, parameters.ReductionWeights)
 	}
@@ -238,6 +241,9 @@ func TestChangedParameters(t *testing.T) {
 		{func(content map[string]any) { content["neutralFormants"] = []any{490, 1450} }, "neutralFormants has 2"},
 		{func(content map[string]any) { content["reductionWeights"].([]any)[2] = -1 }, "reductionWeights[2] is -1"},
 		{func(content map[string]any) { content["ruleMatrix"].([]any)[2].([]any)[5] = 54 }, "ruleMatrix[2][5] is 54, outside 0 to 53"},
+		{func(content map[string]any) { content["segmentFrames"] = content["segmentFrames"].([]any)[:10] }, "segmentFrames has 10 entries"},
+		{func(content map[string]any) { content["segmentFrames"].([]any)[4].([]any)[21] = 256 }, "segmentFrames[4][21] is 256"},
+		{func(content map[string]any) { content["toneLevels"] = content["toneLevels"].([]any)[:15] }, "toneLevels has 15 values"},
 		{func(content map[string]any) { liquids(content)["L"] = liquids(content)["L"].([]any)[:3] }, "liquids.L has 3 tracks"},
 		{func(content map[string]any) {
 			track := liquids(content)["R"].([]any)[2].(map[string]any)

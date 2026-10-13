@@ -128,7 +128,7 @@ func (generator *Generator) coarticulateWithoutOffglide() {
 
 // coarticulateWithOffglide is action 4's step for the vowels with an offglide without a record: each formant
 // and bandwidth moves from its target to its offglide (parameters.md §12.5). The original divides by the node's
-// frames, and faults for a node of none; the port leaves the vowel transition as it is (parameters.md §17).
+// frames, and faults for a node of none; the port leaves the vowel transition as it is (parameters.md §18).
 func (generator *Generator) coarticulateWithOffglide() {
 	cursor := generator.cursor()
 	current, previous := cursor.Scan, cursor.Done

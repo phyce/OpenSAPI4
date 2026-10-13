@@ -298,15 +298,16 @@ func (generator *Generator) InitModes() {
 func (generator *Generator) Reset() {
 	generator.Coarticulation = 0
 	generator.DatabaseLoci = false
-	generator.PauseState = 0
-	generator.EndReached = false
+	generator.Ahead = AheadPhoneme
+	generator.AtReset = false
+	generator.Wanted = 0
 	generator.KeepEarlier = false
 	generator.UnvoicedPitch = 0
 	generator.TransitionLimit = 4
 	generator.Margin = 3
 	generator.Synthesizer.Lookahead = 2
 	generator.GeneratedDone = true
-	generator.EndState = 1
+	generator.Start = StartWaiting
 	generator.ResetContext()
 }
 

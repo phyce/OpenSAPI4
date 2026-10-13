@@ -26,11 +26,12 @@ const (
 )
 
 const (
-	typeBits     = 7
-	valueOffset  = 4
-	secondOffset = 13
-	symbolOffset = 14
-	lowFlags     = 0xff
+	typeBits        = 7
+	valueOffset     = 4
+	secondOffset    = 13
+	symbolOffset    = 14
+	characterOffset = 18
+	lowFlags        = 0xff
 )
 
 // A Node is one of the pool's 32-byte records: Data is its bytes from offset 8 (the flags) to 0x1b, Text the
@@ -88,6 +89,11 @@ func (node *Node) Symbol() byte {
 
 func (node *Node) SetSymbol(symbol byte) {
 	node.Data[symbolOffset] = symbol
+}
+
+// Character is the character the prosody stage gives a segment: 0 normal, 1 whisper, 2 monotone.
+func (node *Node) Character() byte {
+	return node.Data[characterOffset]
 }
 
 func (node *Node) unlink() {

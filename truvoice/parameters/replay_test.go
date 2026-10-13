@@ -27,6 +27,8 @@ const stateSize = 0x9184
 // The thread state's places the replay maps: the ring's, the generator's own, the pipeline's nodes, the
 // parameters cursor and the visual events.
 const (
+	stateDone           = 0x0
+	stateWanted         = 0x38
 	stateMarkers        = 0x14
 	stateSegments       = 0x144
 	segmentSize         = 0x1c
@@ -35,15 +37,26 @@ const (
 	stateCoarticulation = 0x2034
 	stateLevels         = 0x1f98
 	stateSettings       = 0x1a28
+	stateSavedRate      = 0x1ae4
+	stateShortPhrase    = 0x1d54
+	stateMute           = 0x2075
+	stateSegmentFrame   = 0x1ff6
 	stateEngine         = 0x20f4
+	statePitch          = 0x20f8
+	stateSpeed          = 0x20fc
+	stateVolume         = 0x2100
 	stateSampleRate     = 0x210c
+	stateOutputVoice    = 0x210e
+	stateResetRequested = 0x211d
+	stateParsedReset    = 0x211e
+	stateResetValue     = 0x2120
 	stateVisualEvents   = 0x2130
 	statePostedSpace    = 0x2132
+	stateCurrent        = 0x213c
+	stateFree           = 0x2140
+	stateCursors        = 0x2144
+	cursorSize          = 0x44
 	stateCursor         = 0x2210
-	stateAttenuation    = 0x223c
-	stateInputFlags     = 0x2248
-	stateTypes          = 0x224c
-	stateVoice          = 0x2250
 	stateListLast       = 0x22a0
 	stateListFirst      = 0x22c0
 	stateFreeLast       = 0x22e8
@@ -51,6 +64,7 @@ const (
 	stateNodes          = 0x2328
 	nodeSize            = 0x20
 	nodeData            = 8
+	nodeText            = 0x1c
 )
 
 type diffRun struct {
@@ -237,6 +251,8 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 	ring := generator.Synthesizer
 	dwords := []dwordField{{0x4, "position", &ring.Position}, {0x8, "end", &ring.End}, {0xc, "written", &ring.Written},
 		{0x10, "furthest", &generator.Furthest}, {0x1fe0, "lookahead", &ring.Lookahead}, {0x1fe4, "margin", &generator.Margin},
+		{stateWanted, "wanted", &generator.Wanted}, {0x1ff0, "segment left", &generator.SegmentLeft},
+		{0x200c, "tone frequency", &generator.ToneFrequency}, {stateSavedRate, "saved rate", &generator.Pipeline.SavedRate},
 		{0x1e24, "previous category", &generator.PreviousCategory}, {0x1e28, "category", &generator.Category},
 		{0x1e2c, "previous frontness", &generator.PreviousFrontness}, {0x1e30, "frontness", &generator.Frontness},
 		{0x1e34, "aspiration shift", &generator.AspirationShift}, {0x1e38, "voice onset", &generator.VoiceOnset},
@@ -244,8 +260,8 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 		{0x1e44, "vowel transition", &generator.VowelTransition}, {0x1e48, "vowel offset", &generator.VowelOffset},
 		{0x1e50, "closure frames", &generator.ClosureFrames}, {0x1e54, "fricative aspiration", &generator.FricativeAspiration},
 		{0x1e58, "aspiration", &generator.Aspiration}, {0x1fb8, "unvoiced pitch", &generator.UnvoicedPitch},
-		{0x1fe8, "transition limit", &generator.TransitionLimit}, {0x1fb0, "pause state", &generator.PauseState},
-		{0x1fb4, "end state", &generator.EndState}, {0x2010, "previous group", &generator.PreviousGroup},
+		{0x1fe8, "transition limit", &generator.TransitionLimit}, {0x1fb0, "ahead", &generator.Ahead},
+		{0x1fb4, "start", &generator.Start}, {0x2010, "previous group", &generator.PreviousGroup},
 		{0x2014, "vowel frames", &generator.VowelFrames}}
 	for index := range generator.BurstLevels {
 		dwords = append(dwords, dwordField{0x1e5c + 4*index, label("burst level %d", index), &generator.BurstLevels[index]})
@@ -267,13 +283,21 @@ func generatorFields(generator *Generator, named bool) ([]dwordField, []boolFiel
 			dwords = append(dwords, dwordField{stateSegments + segmentSize*track + 4*index, label("track %d segment %s", track, name), value})
 		}
 	}
-	bools := []boolField{{0x1fdd, "keep earlier", &generator.KeepEarlier}, {0x1fbc, "end reached", &generator.EndReached},
-		{0x1fae, "generated done", &generator.GeneratedDone}, {0x2035, "database loci", &generator.DatabaseLoci}}
+	bools := []boolField{{0x1fdd, "keep earlier", &generator.KeepEarlier}, {0x1fbc, "at reset", &generator.AtReset},
+		{0x1fae, "generated done", &generator.GeneratedDone}, {0x2035, "database loci", &generator.DatabaseLoci},
+		{stateDone, "done", &ring.Done}, {0x1ff5, "segment starting", &generator.SegmentStarting},
+		{stateShortPhrase, "short phrase", &generator.Pipeline.ShortPhrase}, {stateParsedReset, "parsed reset", &generator.Pipeline.ParsedReset},
+		{stateMute, "mute", &ring.Mute}, {stateResetRequested, "reset requested", &generator.Pipeline.ResetRequested}}
 	for flag := range generator.Flags {
 		bools = append(bools, boolField{0x1e68 + flag, label("flag %d", flag), &generator.Flags[flag]})
 	}
 	bytes := []byteField{{stateCoarticulation, "coarticulation", &generator.Coarticulation},
-		{0x1fed, "before previous", &generator.BeforePrevious}, {0x1fec, "after next", &generator.AfterNext}}
+		{0x1fed, "before previous", &generator.BeforePrevious}, {0x1fec, "after next", &generator.AfterNext},
+		{0x1ff4, "segment symbol", &generator.SegmentSymbol}}
+	for track := range datapack.TrackCount {
+		bytes = append(bytes, byteField{stateSegmentFrame + track, label("segment frame %d", track), &generator.SegmentFrame[track]},
+			byteField{stateLevels + track, label("level %d", track), &generator.Pipeline.Levels[track]})
+	}
 	return dwords, bools, bytes
 }
 
@@ -366,22 +390,33 @@ func loadInto(generator *Generator, state []byte, base uint32) {
 		ring.Tones[slot] = bit(state, stateTones, slot)
 	}
 	pipelineState := generator.Pipeline
-	node := func(pointer uint32) *pipeline.Node {
-		if index := nodeIndex(int(pointer) - int(base)); pointer != 0 && index >= 0 {
-			return pipelineState.Node(index)
-		}
-		return nil
-	}
 	for index, offset := range nodeOffsets() {
 		target := pipelineState.Node(index)
-		target.Next, target.Previous = node(dword(state, offset)), node(dword(state, offset+4))
+		target.Next, target.Previous = nodeAt(pipelineState, dword(state, offset), base), nodeAt(pipelineState, dword(state, offset+4), base)
 		copy(target.Data[:], state[offset+nodeData:])
+		target.Text = nil
+		if dword(state, offset+nodeText) != 0 {
+			target.Text = &pipeline.Text{}
+		}
 	}
-	cursor := &pipelineState.Cursors[pipeline.Parameters]
-	cursor.Start, cursor.Done, cursor.Scan = node(dword(state, stateCursor)), node(dword(state, stateCursor+4)), node(dword(state, stateCursor+8))
-	cursor.First, cursor.End = node(dword(state, stateCursor+12)), node(dword(state, stateCursor+16))
-	cursor.Attenuation, cursor.Voice = int32(dword(state, stateAttenuation)), int32(dword(state, stateVoice))
-	cursor.InputFlags = dword(state, stateInputFlags)
+	for stage := range pipelineState.Cursors {
+		offset := stateCursors + cursorSize*stage
+		for index, field := range cursorPointers(&pipelineState.Cursors[stage]) {
+			*field = nodeAt(pipelineState, dword(state, offset+4*index), base)
+		}
+		for index, field := range cursorValues(&pipelineState.Cursors[stage]) {
+			setValue(field, dword(state, offset+cursorValuesOffset+4*index))
+		}
+	}
+	pipelineState.Current = nil
+	if offset := int(dword(state, stateCurrent)) - int(base) - stateCursors; offset >= 0 && offset%cursorSize == 0 && offset/cursorSize < pipeline.StageCount {
+		pipelineState.Current = &pipelineState.Cursors[offset/cursorSize]
+	}
+	pipelineState.Free = int(dword(state, stateFree))
+	for _, field := range attributes(generator) {
+		*field.value = dword(state, field.offset)
+	}
+	ring.OutputVoice = int(int16(binary.LittleEndian.Uint16(state[stateOutputVoice:])))
 	pipelineState.SampleRate = int(binary.LittleEndian.Uint16(state[stateSampleRate:]))
 	pipelineState.VisualEvents = binary.LittleEndian.Uint16(state[stateVisualEvents:]) != 0
 	pipelineState.PostedSpace = binary.LittleEndian.Uint16(state[statePostedSpace:]) != 0
@@ -390,8 +425,61 @@ func loadInto(generator *Generator, state []byte, base uint32) {
 	}
 }
 
-// store writes the generator's values, the pipeline's node contents and the ring into the thread state.
-func store(generator *Generator, state []byte) {
+// nodeAt returns the node a pointer in the thread state points to, or nil.
+func nodeAt(pipelineState *pipeline.Pipeline, pointer, base uint32) *pipeline.Node {
+	if index := nodeIndex(int(pointer) - int(base)); pointer != 0 && index >= 0 {
+		return pipelineState.Node(index)
+	}
+	return nil
+}
+
+// cursorValuesOffset is where a cursor's values start, after its seven pointers.
+const cursorValuesOffset = 0x1c
+
+func cursorPointers(cursor *pipeline.Cursor) []**pipeline.Node {
+	return []**pipeline.Node{&cursor.Start, &cursor.Done, &cursor.Scan, &cursor.First, &cursor.End, &cursor.Working[0], &cursor.Working[1]}
+}
+
+// cursorValues are a cursor's settings and types, in their order in the thread state.
+func cursorValues(cursor *pipeline.Cursor) []any {
+	return []any{&cursor.PhoneticInput, &cursor.Flush, &cursor.Rate, &cursor.Pitch, &cursor.Attenuation, &cursor.Filter,
+		&cursor.Flags, &cursor.InputFlags, &cursor.Types, &cursor.Voice}
+}
+
+func setValue(field any, value uint32) {
+	switch field := field.(type) {
+	case *int32:
+		*field = int32(value)
+	case *uint32:
+		*field = value
+	}
+}
+
+func valueOf(field any) uint32 {
+	switch field := field.(type) {
+	case *int32:
+		return uint32(*field)
+	case *uint32:
+		return *field
+	}
+	return 0
+}
+
+type attributeField struct {
+	offset int
+	value  *uint32
+}
+
+// attributes are the pipeline's attributes the control commands set, with the reset request's value.
+func attributes(generator *Generator) []attributeField {
+	pipelineState := generator.Pipeline
+	return []attributeField{{statePitch, &pipelineState.Pitch}, {stateSpeed, &pipelineState.Speed},
+		{stateVolume, &pipelineState.Volume}, {stateResetValue, &pipelineState.ResetValue}}
+}
+
+// store writes the generator's values, the pipeline's nodes, cursors and attributes and the ring into the thread
+// state. It writes a pointer only where it points elsewhere than the state's.
+func store(generator *Generator, state []byte, base uint32) {
 	dwords, bools, bytes := generatorFields(generator, false)
 	for _, field := range dwords {
 		binary.LittleEndian.PutUint32(state[field.offset:], uint32(*field.value))
@@ -413,12 +501,42 @@ func store(generator *Generator, state []byte) {
 		setBit(state, stateMarkers, slot, ring.Markers[slot])
 		setBit(state, stateTones, slot, ring.Tones[slot])
 	}
-	for index, offset := range nodeOffsets() {
-		node := generator.Pipeline.Node(index)
-		copy(state[offset+nodeData:offset+nodeData+len(node.Data)], node.Data[:])
+	pipelineState := generator.Pipeline
+	pointer := func(offset int, node *pipeline.Node) {
+		if nodeAt(pipelineState, dword(state, offset), base) == node {
+			return
+		}
+		value := uint32(0)
+		if node != nil {
+			value = base + uint32(nodeOffsets()[node.Index()])
+		}
+		binary.LittleEndian.PutUint32(state[offset:], value)
 	}
+	for index, offset := range nodeOffsets() {
+		node := pipelineState.Node(index)
+		pointer(offset, node.Next)
+		pointer(offset+4, node.Previous)
+		copy(state[offset+nodeData:offset+nodeData+len(node.Data)], node.Data[:])
+		if node.Text == nil {
+			binary.LittleEndian.PutUint32(state[offset+nodeText:], 0)
+		}
+	}
+	for stage := range pipelineState.Cursors {
+		offset := stateCursors + cursorSize*stage
+		for index, field := range cursorPointers(&pipelineState.Cursors[stage]) {
+			pointer(offset+4*index, *field)
+		}
+		for index, field := range cursorValues(&pipelineState.Cursors[stage]) {
+			binary.LittleEndian.PutUint32(state[offset+cursorValuesOffset+4*index:], valueOf(field))
+		}
+	}
+	binary.LittleEndian.PutUint32(state[stateFree:], uint32(pipelineState.Free))
+	for _, field := range attributes(generator) {
+		binary.LittleEndian.PutUint32(state[field.offset:], *field.value)
+	}
+	binary.LittleEndian.PutUint16(state[stateOutputVoice:], uint16(ring.OutputVoice))
 	binary.LittleEndian.PutUint16(state[statePostedSpace:], 0)
-	if generator.Pipeline.PostedSpace {
+	if pipelineState.PostedSpace {
 		state[statePostedSpace] = 1
 	}
 }
@@ -455,9 +573,9 @@ func describe(offset int) string {
 }
 
 // difference reports where the state the generator leaves, written over image, differs from expected.
-func difference(generator *Generator, image, expected []byte) error {
+func difference(generator *Generator, image, expected []byte, base uint32) error {
 	state := slices.Clone(image)
-	store(generator, state)
+	store(generator, state, base)
 	var differences []string
 	for offset := range state {
 		if state[offset] != expected[offset] {
@@ -476,5 +594,5 @@ func difference(generator *Generator, image, expected []byte) error {
 
 // compare reports where the state the generator leaves differs from the original's.
 func compare(generator *Generator, call *call) error {
-	return difference(generator, call.before, call.after)
+	return difference(generator, call.before, call.after, call.base)
 }

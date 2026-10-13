@@ -1,14 +1,12 @@
 package parameters
 
 import (
-	"encoding/binary"
 	"fmt"
 	"maps"
 	"slices"
 	"sync"
 	"testing"
 
-	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
@@ -55,10 +53,9 @@ func TestPhonemes(t *testing.T) {
 		"Parameters::Reset": func(call *call) error {
 			generator := data.load(call)
 			generator.Reset()
-			image := slices.Clone(call.before)
-			copy(image[stateLevels:stateLevels+datapack.TrackCount], image[stateSettings:])
-			binary.LittleEndian.PutUint32(image[stateTypes:], 0x28)
-			return difference(generator, image, call.after)
+			copy(generator.Pipeline.Levels[:], call.before[stateSettings:])
+			generator.cursor().Types = 0x28
+			return compare(generator, call)
 		},
 		"Parameters::ResetContext": plain((*Generator).ResetContext),
 		"Parameters::LoadTargets":  plain((*Generator).LoadTargets),

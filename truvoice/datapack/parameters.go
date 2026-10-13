@@ -26,6 +26,10 @@ const (
 	ArticulatorCount = 8
 	// ReductionCount is the number of reduction weights, one for each 1.6 frames of a vowel.
 	ReductionCount = 16
+	// SegmentKinds is the number of frames a generated segment t can have, ToneLevelCount the number of
+	// voicing corrections of a tone.
+	SegmentKinds   = 16
+	ToneLevelCount = 16
 )
 
 // A Phoneme is one of the parameter generator's phonemes (parameters.md §3.1). Formants and Bandwidths are in
@@ -162,7 +166,9 @@ type Rule struct {
 // each category of a phoneme and of the one before it, DefaultShapes each track's forward shape. RuleMatrix is
 // the rule set for each phoneme and the one before it. ArticulatorShapes are a forward shape for each
 // articulator. NeutralFormants are the F1 to F3 that vowels move toward, by a Q15 reduction weight for their
-// frames. Liquids are the formants' trajectories through the liquids.
+// frames. Liquids are the formants' trajectories through the liquids. SegmentFrames are the frames of the generated
+// segments t by kind, 255 where the segment fills a value in, and ToneLevels what a tone's voicing goes down by,
+// by its frequency in 160 Hz steps.
 type Parameters struct {
 	Shapes            [ShapeCount][]byte
 	Phonemes          [PhonemeCount]Phoneme
@@ -176,6 +182,8 @@ type Parameters struct {
 	NeutralFormants   [3]int32
 	ReductionWeights  [ReductionCount]int32
 	Liquids           Liquids
+	SegmentFrames     [SegmentKinds][TrackCount]byte
+	ToneLevels        [ToneLevelCount]byte
 	indexes           [256]int
 }
 
@@ -243,6 +251,8 @@ type parametersDescription struct {
 	NeutralFormants   []int64                  `json:"neutralFormants"`
 	ReductionWeights  []int64                  `json:"reductionWeights"`
 	Liquids           liquidsDescription       `json:"liquids"`
+	SegmentFrames     [][]int64                `json:"segmentFrames"`
+	ToneLevels        []int64                  `json:"toneLevels"`
 }
 
 // The ranges the tables' values must be in.
@@ -325,6 +335,17 @@ func parseParameters(data []byte) (*Parameters, error) {
 		return nil, err
 	}
 	if err := parseLiquids(&parameters.Liquids, description.Liquids); err != nil {
+		return nil, err
+	}
+	if len(description.SegmentFrames) != SegmentKinds {
+		return nil, fmt.Errorf("segmentFrames has %d entries, expected %d", len(description.SegmentFrames), SegmentKinds)
+	}
+	for kind, frame := range description.SegmentFrames {
+		if err := copyValues(parameters.SegmentFrames[kind][:], frame, fmt.Sprintf("segmentFrames[%d]", kind), 0, highestByte); err != nil {
+			return nil, err
+		}
+	}
+	if err := copyValues(parameters.ToneLevels[:], description.ToneLevels, "toneLevels", 0, highestByte); err != nil {
 		return nil, err
 	}
 	return parameters, nil

@@ -77,7 +77,7 @@ A **rate** (§4.2, §4.3) has:
 |---|---|---|
 | `voices` | 10 objects | Each voice's own `pitch` (50 to 400 Hz), `rate` (rate index, 0 to 25) and `speed` (50 to 250 words a minute) ([pipeline.md](pipeline.md) §4) |
 | `initialFrame` | 22 bytes | The frame the synthesizer's ring starts with ([synthesizer.md](synthesizer.md) §5.1), track by track |
-| `generatedFrame` | 22 bytes | The frame a generated segment starts from, track by track |
+| `generatedFrame` | 22 bytes | The track levels the escape parser starts with, track by track: a reset gives them to the parameter generator, whose generated segments `g` are made of them ([parameters.md](parameters.md) §17.5) |
 
 ## 5. `parameters.json`
 
@@ -95,6 +95,8 @@ A **rate** (§4.2, §4.3) has:
 | `neutralFormants` | 3 numbers | The F1 to F3 in Hz that action 4 moves a vowel toward, the more the shorter it is ([parameters.md](parameters.md) §12.2) |
 | `reductionWeights` | 16 numbers, 0 to 32767 | The Q15 weight of that move, by the vowel's frames: entry `min(10f, 255) / 16` |
 | `liquids` | object | The formants' trajectories through the liquids ([parameters.md](parameters.md) §14.3), below |
+| `segmentFrames` | 16 lists of 22 bytes | The frames of the generated segments `t`, by kind, track by track; 255 is filled in ([parameters.md](parameters.md) §17.5). Kinds 10 to 15 are the bytes after the original's table, which it reads for them |
+| `toneLevels` | 16 bytes | What a tone's voicing goes down by, by its frequency in 160 Hz steps |
 
 A phoneme:
 
