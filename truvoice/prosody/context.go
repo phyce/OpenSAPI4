@@ -23,6 +23,7 @@ const (
 	phraseBreak class = 0x140
 	closure     class = 0x201
 	vowel       class = 0x202
+	alveolar    class = 0x204
 	lateral     class = 0x240
 	approximant class = 0x301
 	laryngeal   class = 0x302

@@ -5,7 +5,7 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// A duration's limits in frames, and the shortest duration of a vowel or a sonorant.
+// A duration's limits in frames, and the shortest duration of a vowel, a sonorant or a fricative.
 const (
 	shortestDuration = 2
 	longestDuration  = 55
@@ -47,8 +47,7 @@ const (
 
 // The class durations, given by classDuration until they are ported.
 const (
-	fricativeDuration = iota
-	stopDuration
+	stopDuration = iota
 )
 
 // AssignDuration gives the current node its duration in frames (prosody.md §6.1).
@@ -219,7 +218,7 @@ func (stage *Stage) SegmentDuration() int32 {
 		if stage.Geminate && !afterFunctionMark {
 			extra = stage.geminateFricativeFrames(symbol)
 		}
-		duration = stage.classDuration(fricativeDuration) + extra
+		duration = stage.FricativeDuration() + extra
 	case stage.hasClass(symbol, sonorant) && symbol != 'h':
 		duration = stage.SonorantDuration()
 	case symbol == ' ':

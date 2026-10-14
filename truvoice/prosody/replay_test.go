@@ -27,7 +27,7 @@ type (
 
 const durationFunction = "Prosody::AssignDuration"
 
-var classFunctions = [...]string{fricativeDuration: "Prosody::FricativeDuration", stopDuration: "Prosody::StopDuration"}
+var classFunctions = [...]string{stopDuration: "Prosody::StopDuration"}
 
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()

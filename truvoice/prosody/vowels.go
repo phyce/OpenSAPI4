@@ -141,6 +141,11 @@ func (stage *Stage) gridOrDuration(grid int, index int32, symbol byte, stressed 
 	if duration := stage.gridValue(grid, index); duration != 0 {
 		return duration
 	}
+	return stage.ownDuration(symbol, stressed)
+}
+
+// ownDuration is the symbol's inherent duration if stressed and its shortest one if not.
+func (stage *Stage) ownDuration(symbol byte, stressed bool) int32 {
 	durations := stage.durations(symbol)
 	if stressed {
 		return durations.Inherent
