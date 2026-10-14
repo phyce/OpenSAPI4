@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) gives each phoneme its duration and its pitch. The prosody stage works on the lexical stage's phonemes, the word marks before the words and the punctuation ([pipeline.md](pipeline.md) §3). It finds where its phrases end, puts in the pauses between them, and turns each phoneme into a segment for the parameter generator ([parameters.md](parameters.md)): a node of type 4 whose value is its duration in frames and whose second value is its pitch, in units of 2 Hz.
 
-This spec covers the arithmetic (section 1), the phonemes the stage sees and what it notes about them (section 2), how it finds a phrase, breaks it and chooses its contour (section 3), the pitch (section 4), how it walks the phrase's nodes, with their presets and pauses (section 5), the durations (section 6), with the vowels' (sections 6.7 and 6.8), the sonorants' (section 6.9) and the fricatives' (section 6.10), and its reset (section 7). The stops' durations will follow.
+This spec covers the arithmetic (section 1), the phonemes the stage sees and what it notes about them (section 2), how it finds a phrase, breaks it and chooses its contour (section 3), the pitch (section 4), how it walks the phrase's nodes, with their presets and pauses (section 5), the durations (section 6), with the vowels' (sections 6.7 and 6.8), the sonorants' (section 6.9), the fricatives' (section 6.10) and the stops' (section 6.11), and its reset (section 7).
 
 **In short.**
 - The stage scans ahead for a sentence's end, a `C` command, or a limit: 180 phonemes (70 when text comes into an empty pipeline, 15 with `\Pro=0\`) or 240 nodes. Each comma on the way ends a phrase of its own, and the stage hands on the nodes before it as soon as it has timed them.
@@ -13,6 +13,7 @@ This spec covers the arithmetic (section 1), the phonemes the stage sees and wha
 - A vowel's duration comes from a grid, by its stress, whether its word is the phrase's last, whether it ends its word, and the sound after it. A glide before it with a nasal after it, approximants around it with a lateral after it, or a break after it shorten it, and so do its function word's rules.
 - A sonorant's duration comes from a grid too, by its stress, whether its word is the phrase's last, where it is in its word and the sounds around it. Consonants on both sides take a frame off; a merged nasal before a vowel gets 3 to 8 more.
 - A fricative's duration comes from a grid as well, but `H`, `V`, `d`, `x` and `z` have fixed durations by the same columns and rows, and a few clusters give a fricative a duration of their own.
+- A stop's duration is fixed by the sounds around it, whether its word is the phrase's last and whether it starts its word, less a frame or two in a cluster of consonants; between vowels a `T` usually gets 8 frames and a `D` 6. `P`, `T` and `K` also get release frames, which the next phoneme's duration gains.
 - A phrase's pitch starts a third of the voice's pitch above it, and comes down over the phrase's phonemes. Phonetic input can place word marks that make it come down to a mark and rise from it instead: the phrase's **contour**.
 - The phrase's **nucleus** is its last stressed vowel before a break. The syllables before it and the stressed ones go up; the nucleus carries the phrase's accent.
 - In the phrase's last syllable the pitch moves as the phrase's kind says: down at a sentence's end, up a little at a comma, up at a question. From there every phoneme is 8 Hz lower than the one before, down to 46 Hz.
@@ -21,7 +22,7 @@ This spec covers the arithmetic (section 1), the phonemes the stage sees and wha
 
 **Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 346 runs: the parameter generator's and the pipeline's runs ([parameters.md](parameters.md), [pipeline.md](pipeline.md)), and 118 more for the phrases and the pitch: questions, exclamations, lists, long sentences without punctuation, emphasis, `\Pro=0\`, pitch, speed, character and voice changes within a text, slow and fast speech, 30 with the word marks phonetic input places (section 3.5), 4 with long runs of consonants in phonetic input, and 47 for the phrase's breaks and pauses (speed, `v`, `r` and `P` commands within a sentence, speed at its end, `\Pro=0\` within a phrase, exclamations without a stressed vowel, the word classes that break a phrase, question words, the Address context, phrases of more nodes and word marks than the scan looks at, a held phrase broken off, word marks of values 6, 7 and 12 at more places, pauses as long as exactly 1 and 50 phonemes, and a pause before any text), and 3 with an engine reset during a text, one while a phrase is held. Each call left the speaking thread's state and the stage's shared state (section 3.1) byte-identical to the original's: the 40,436 runs of the stage (section 5.1) with their 40,436 scans (section 3.2), 2,290 placings of the breaks (section 3.3) with their 186 breaks, 6 of them after a stop, and 81 chances of a slow pause (section 3.4), 51 of which put one in, 64,530 walk steps, 34,349 nodes processed (section 5.2), 58,966 notings and restorings of presets (section 5.3), 2,444 pauses (section 5.4) and 349 resets (section 7); each of the 37,384 contexts (section 2.3), the 34,349 pitch contexts (section 4.2), the 34,349 pitches (section 4.3) and the 1,239 resets of the pitch (section 4.4). In these replays each duration's call started from the state the Go stage had reached, checked against the original's, and its result was the original's; the durations are checked on their own (below).
 
-The durations were replayed the same way in 674 runs: those 346 and 328 more for the durations (pairs of the same consonant across words, after a function word, after a word of one consonant, within a word and at rates 6 and 7, words of stress 3, emphasized words of every kind, phonetic input's pairs and pauses, among them a pause of 100 frames, phonemes timed by their shortest durations alone, every vowel after a glide before a nasal and between approximants before a lateral, stressed and not, in the phrase's last word or not, inside its word or at its end, vowels before two pauses, function words within written words the stages split, function words before and after words of the classes their rules test, and every sonorant after and before each consonant its column tests, between vowels and before approximants, at its word's start, inside it and at its end, stressed and not, in the phrase's last word and not, in clusters, after a pause, and before `D` or `Z` and a full stop at five speeds, and every fricative and the frications of `C` and `J` after and before each sound their column tests, inside a word, at its start and at its end, alone, after a pause, stressed and not, in the phrase's last word and not, after a nasal before a stop, with a break 15 to 17 phonemes after them, and in the exceptions' contexts). Each call left the speaking thread's state byte-identical to the original's: the 62,613 durations (section 6.1), with 17,121 nodes that aren't phonemes, 195 emphases and 82 phonemes timed by their shortest durations; the 43,420 base durations (section 6.2) and phonemes' durations (section 6.3), with as many tests for a pair, 633 of which merged one, 577 of them geminates (section 6.4), and as many emphasis steps (section 6.5); 18,121 scalings by the rate; 1,318 pauses (section 6.6), 64 of them over 50 frames; the 17,481 vowels' durations (section 6.7), 217 of them before a nasal after a glide and 147 before a lateral between approximants, and the 4,198 function words' vowels (section 6.8), 631 of which lost frames by 62 of the 101 rules; the 8,717 sonorants' durations (section 6.9), in all 20 columns, 175 of them after `S` or `Z` and a pause, 1,537 losing a frame to a cluster, 61 merged nasals before a vowel, 66 before `D` or `Z` and a full stop, and 47 unstressed `~`s whose grid holds 0; and the 7,555 fricatives' durations (section 6.10), in every column a fricative takes, 580 of them the frications of `C` and `J`, 595 given by an exception, of every kind, 206 seeing past a pause, 100 `V`s and `F`s changed by step 7, 48 taking column 3 of their grid for a 0 and 204 their own duration, and 394 of the fixed durations' places. The stops' durations aren't ported yet: in these replays each of their calls started from the state the Go stage had reached, checked against the original's, and its result was the original's.
+The durations were replayed the same way in 732 runs: those 346 and 386 more for the durations (pairs of the same consonant across words, after a function word, after a word of one consonant, within a word and at rates 6 and 7, words of stress 3, emphasized words of every kind, phonetic input's pairs and pauses, among them a pause of 100 frames, phonemes timed by their shortest durations alone, every vowel after a glide before a nasal and between approximants before a lateral, stressed and not, in the phrase's last word or not, inside its word or at its end, vowels before two pauses, function words within written words the stages split, function words before and after words of the classes their rules test, and every sonorant after and before each consonant its column tests, between vowels and before approximants, at its word's start, inside it and at its end, stressed and not, in the phrase's last word and not, in clusters, after a pause, and before `D` or `Z` and a full stop at five speeds, and every fricative and the frications of `C` and `J` after and before each sound their column tests, inside a word, at its start and at its end, alone, after a pause, stressed and not, in the phrase's last word and not, after a nasal before a stop, with a break 15 to 17 phonemes after them, and in the exceptions' contexts, and every stop after and before each sound its column tests, inside a word, at its start and at its end, after a pause, stressed and not before every vowel, in the phrase's last word and not, in clusters, after a nasal before a stop or a fricative, 16 phonemes before a break, and in the release frames' contexts). Each call left the speaking thread's state byte-identical to the original's: the 64,827 durations (section 6.1), with 17,768 nodes that aren't phonemes, 195 emphases and 82 phonemes timed by their shortest durations; the 44,960 base durations (section 6.2) and phonemes' durations (section 6.3), with as many tests for a pair, 650 of which merged one, 595 of them geminates (section 6.4), and as many emphasis steps (section 6.5); 17,719 scalings by the rate; 1,318 pauses (section 6.6), 64 of them over 50 frames; the 18,176 vowels' durations (section 6.7), 217 of them before a nasal after a glide and 147 before a lateral between approximants, and the 4,175 function words' vowels (section 6.8), 630 of which lost frames by 62 of the 101 rules; the 8,865 sonorants' durations (section 6.9), in all 20 columns, 174 of them after `S` or `Z` and a pause, 1,579 losing a frame to a cluster, 62 merged nasals before a vowel, 66 before `D` or `Z` and a full stop, and 47 unstressed `~`s whose grid holds 0; the 7,656 fricatives' durations (section 6.10), in every column a fricative takes, 614 of them the frications of `C` and `J`, 620 given by an exception, of every kind, 205 seeing past a pause, 99 `V`s and `F`s changed by step 7, 48 taking column 3 of their grid for a 0 and 204 their own duration, and 394 of the fixed durations' places; and the 8,188 stops' durations (section 6.11), in 532 of the table's places and all 156 of the release frames', 41 shortened after a nasal before a stop or a fricative, 1,600 between vowels, 692 of them flaps, 1,745 after a consonant, `l` or `n`, 925 of which lost frames, by every case of step 9, 27 in column 8 after `| N`, 43 `D`s before `p` after `N`, 16 `D`s and `T`s after `S` before a glide, 246 `T`s before `p`, and 14 held at 3 frames; of their release frames, 602 at a word's end, 382 after `S`, 60 after a space before a glide, 13 before `N` and 1 of a `P` before `l`.
 
 ## 1. Arithmetic
 
@@ -303,8 +304,6 @@ A pause is a segment `' '` (type 4) whose value is its frames and whose second v
 
 A phoneme's duration is in frames. The data pack gives each symbol an **inherent** and a **shortest** duration (`durations`), and each rate a **duration percent** (`durationPercents`, 344 at rate 0 to 65 at rate 25, 117 at rate 13). The stage keeps for the current node its inherent and shortest durations times 10, four **percents**, the **emphasis** of its word, and whether it is a **geminate** (section 6.4).
 
-The stops' durations (section 6.3, step 2) will follow.
-
 ### 6.1 A node's duration
 
 The stage times the current node:
@@ -331,12 +330,12 @@ From the node's value, its base duration `d`:
 1. The phoneme may merge with the consonant before it (section 6.4). If it does, the context is noted again (section 2.3) and `d` becomes the merged node's value.
 2. By the phoneme's class:
    - a vowel (class vowel): its duration (section 6.7);
-   - a stop but `q`: the stop's duration, plus a geminate's frames (below);
+   - a stop but `q`: its duration (section 6.11), plus a geminate's frames (below);
    - a fricative, `H` or `d`: its duration (section 6.10), plus a geminate's frames;
    - a sonorant but `h`: its duration (section 6.9);
    - the pause: section 6.6;
    - `q`: 7 before a nasal, and `d` otherwise; the flap `t`: 3; any other: `d`.
-3. After a `P`, `T` or `K` (the preceding sound), the duration gains the preceding node's byte 0x10, its release frames, which the stop's duration sets.
+3. After a `P`, `T` or `K` (the preceding sound), the duration gains the preceding node's byte 0x10, its release frames, which the stop's duration sets (section 6.11).
 4. Emphasis (section 6.5).
 5. With contour 19 (section 3.5), when the sentence's word marks before the phrase (section 3.1) are 1 the duration becomes `d · 144 / 100`, and when they are 2 `d · 123 / 100`.
 6. At any rate but 13: `R · (91 · d / 100) / 100`, `R` the rate's duration percent, but at least the shortest duration (`S / 10`) and at most 55.
@@ -564,6 +563,136 @@ The fricatives `F X S s Z` have grids 24 to 28 (section 6.7), in that order. `H`
 | 6 | 6 | 10 | 18 | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | 10 | – |
 | 7 | 6 | 10 | – | 0 | 0 | 7 | 0 | 0 | 7 | 0 | 0 | 8 | 9 | 0 | 9 | 9 | 8 | 7 | – | 10 | 6 |
 
+### 6.11 A stop's duration
+
+The stops `B C D G J K P T` (class stop but `q`) have fixed durations, in the tables below, by row and column. `P`, `T` and `K` also get **release frames**, their node's byte 0x10, which the duration of the phoneme after them gains (section 6.3, step 3). The steps use the symbols the context noted (section 2.3); a **glide** is `L R W Y j`.
+1. **The last word**, as in section 6.7, step 4.
+2. **At its word's start.** The stop is at its word's start when the preceding is a space or the previous symbol is `&` or `%`.
+3. **The column**, by the sounds around it:
+   - after a space: 11;
+   - after a vowel or a glide: 0 before `E b i u`, 2 before a glide, 1 before another vowel but `p`;
+   - after anything else, before a glide: 3 after a nasal and 4 otherwise;
+   - otherwise by the following: 5 for `p`, 6 for `d`, 7 for `l`, 8 for `n`;
+   - otherwise by the preceding: 9 for `C K P T q`, 10 for `F H S X s`, 12 for `B D G J t`, 13 for `V Z x z`; for `M N ~` 14, but 8 for an `N` after `|` (the before preceding) when the stop is at its word's start;
+   - otherwise by the following: 15 for `C K P T q`, 16 for `F H S X s`, 17 for `B D G J t`, 18 for `V Z x z`, 19 for `M N ~`, and 20 for any other.
+4. **The row** is 1 when the stop isn't at its word's start, plus 2 in the last word.
+5. **The duration** `d` is the table's value at the row and column. A `D` after `N` (the preceding) before `p`, in the last word, gets 5.
+6. **After a nasal.** When the previous symbol is a nasal and the next a stop or a fricative, `P` loses 2, and `T` 1 outside the last word.
+7. **Release frames** for `P`, `T` and `K` (below).
+8. **Between vowels.** After a vowel or a glide, before a vowel, when the phrase's last node (section 5.1) is unstressed, `D` gets 6 and `T` 8.
+9. **Clusters.** Otherwise a stop other than `C` and `J` after a consonant that isn't a nasal, or after `l` or `n`, loses the frames of the first of these that applies, a **cluster consonant** being a consonant that isn't a glide, or `l` or `n`:
+   - 2 before a cluster consonant (the following), when the before preceding is a consonant that isn't a nasal or the after following is a consonant;
+   - 1 for `P`, `T` and `K` after `n` before a cluster consonant;
+   - 1 after a sound that isn't a glide, when the before preceding is a nasal;
+   - 2 for `B`, `D` and `G` after `n` before a cluster consonant;
+   - 2 when the after following is `l` or `n`, or the following is a consonant and the after following a cluster consonant;
+   - none before a sound that isn't a cluster consonant, when the before preceding is neither a consonant nor `l` or `n`;
+   - 1 otherwise.
+10. `D` and `T` at their word's start after `S`, before a glide, gain 1. Before `p`, `T` gets 9, and `C` and `J` gain 1.
+11. The duration is `d`, at least 3.
+
+**The release frames** of `P`, `T` and `K` are none after a vowel, before a vowel, when the phrase's first and last nodes (section 5.1) are stressed. Otherwise they are the table's value by row, 1 when the stop isn't at its word's start plus 2 in the last word and 4 when it is unstressed, and by **group**: after a space 6, else by the following: 0 for `4 E i |`, 1 for `O U b c g u w y`, 2 for `A a e k`, 3 for `3 @ I f o r v`, 4 for `L R W Y`, and 5 for any other. Then the first of these that applies:
+- `T` before `l`: 2;
+- before `N`: 1 fewer;
+- at its word's end (the next is `&` or `%`): `T` after `S` before a vowel whose node is stressed (the following's) gets none; `P` and `T` before a vowel 1; any of them before a glide 2;
+- after a space, before a glide: 2 more;
+- after `S` not at its word's start: none for `T` and 1 for `P` and `K`.
+
+`P` before `l` then has 1 fewer, unless it has none.
+
+**The durations**, by row and column; `–` marks the places no stop comes to, after a space and not at its word's start.
+
+| `B` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 7 | 10 | 10 | 5 | 8 | 7 | 7 | 6 | 7 | 8 | 9 | 10 | 7 | 7 | 5 | 7 | 6 | 6 | 6 | 6 | 7 |
+| 1 | 7 | 7 | 7 | 5 | 9 | 7 | 7 | 6 | 7 | 9 | 8 | – | 7 | 7 | 4 | 7 | 6 | 6 | 6 | 6 | 7 |
+| 2 | 9 | 8 | 9 | 6 | 10 | 11 | 7 | 7 | 7 | 8 | 9 | 10 | 8 | 8 | 4 | 7 | 8 | 7 | 8 | 8 | 11 |
+| 3 | 7 | 7 | 8 | 5 | 8 | 11 | 7 | 7 | 7 | 8 | 8 | – | 8 | 9 | 4 | 7 | 8 | 7 | 8 | 8 | 11 |
+
+| `C` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 4 | 6 | 10 | 3 | 5 | 3 | 7 | 5 | 7 | 8 | 6 | 11 |
+| 1 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 3 | 5 | – | 3 | 5 | 3 | 7 | 5 | 7 | 8 | 6 | 11 |
+| 2 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 3 | 6 | 10 | 3 | 5 | 3 | 7 | 6 | 7 | 8 | 6 | 11 |
+| 3 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 4 | 5 | – | 3 | 5 | 3 | 7 | 6 | 7 | 8 | 6 | 11 |
+
+| `D` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 8 | 8 | 8 | 5 | 6 | 3 | 5 | 3 | 7 | 7 | 7 | 11 | 7 | 6 | 4 | 7 | 6 | 6 | 6 | 6 | 3 |
+| 1 | 7 | 8 | 5 | 4 | 5 | 3 | 5 | 3 | 7 | 5 | 6 | – | 7 | 6 | 3 | 7 | 6 | 6 | 6 | 6 | 3 |
+| 2 | 8 | 9 | 8 | 5 | 6 | 8 | 5 | 4 | 7 | 8 | 8 | 11 | 8 | 7 | 5 | 8 | 6 | 7 | 6 | 7 | 8 |
+| 3 | 7 | 9 | 8 | 5 | 6 | 8 | 5 | 4 | 7 | 5 | 7 | – | 7 | 7 | 3 | 8 | 6 | 7 | 6 | 7 | 8 |
+
+| `G` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 9 | 9 | 8 | 5 | 7 | 6 | 6 | 6 | 6 | 7 | 7 | 9 | 5 | 7 | 4 | 7 | 7 | 6 | 7 | 6 | 6 |
+| 1 | 7 | 7 | 7 | 5 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | – | 4 | 7 | 4 | 7 | 7 | 6 | 7 | 6 | 6 |
+| 2 | 10 | 9 | 7 | 5 | 7 | 11 | 6 | 6 | 6 | 8 | 7 | 9 | 6 | 7 | 5 | 8 | 8 | 7 | 9 | 8 | 11 |
+| 3 | 7 | 6 | 6 | 5 | 6 | 11 | 6 | 6 | 6 | 7 | 6 | – | 7 | 8 | 3 | 8 | 8 | 7 | 9 | 8 | 11 |
+
+| `J` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 6 | 5 | 11 | 2 | 5 | 3 | 7 | 6 | 7 | 6 | 6 | 11 |
+| 1 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 4 | 5 | – | 2 | 4 | 3 | 7 | 6 | 7 | 4 | 6 | 11 |
+| 2 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 6 | 8 | 11 | 2 | 6 | 3 | 7 | 6 | 7 | 6 | 6 | 11 |
+| 3 | 8 | 7 | 8 | 5 | 6 | 11 | 5 | 6 | 6 | 6 | 6 | – | 2 | 5 | 2 | 7 | 6 | 7 | 5 | 6 | 11 |
+
+| `K` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 8 | 7 | 8 | 5 | 7 | 7 | 4 | 8 | 8 | 7 | 7 | 11 | 6 | 7 | 6 | 7 | 7 | 7 | 8 | 10 | 7 |
+| 1 | 7 | 7 | 6 | 5 | 6 | 7 | 4 | 8 | 8 | 6 | 6 | – | 5 | 8 | 4 | 7 | 7 | 7 | 8 | 10 | 7 |
+| 2 | 9 | 8 | 7 | 7 | 8 | 11 | 5 | 9 | 9 | 6 | 8 | 11 | 6 | 8 | 5 | 7 | 8 | 8 | 8 | 11 | 11 |
+| 3 | 8 | 7 | 8 | 5 | 8 | 11 | 5 | 9 | 9 | 6 | 7 | – | 6 | 8 | 5 | 7 | 8 | 8 | 8 | 11 | 11 |
+
+| `P` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 10 | 9 | 8 | 5 | 8 | 8 | 5 | 9 | 9 | 8 | 8 | 10 | 6 | 10 | 6 | 8 | 6 | 9 | 7 | 10 | 8 |
+| 1 | 8 | 7 | 8 | 5 | 7 | 8 | 5 | 9 | 9 | 8 | 9 | – | 7 | 10 | 6 | 8 | 6 | 9 | 7 | 10 | 8 |
+| 2 | 10 | 9 | 9 | 6 | 8 | 12 | 6 | 9 | 10 | 9 | 8 | 10 | 7 | 9 | 7 | 10 | 7 | 10 | 7 | 10 | 12 |
+| 3 | 9 | 7 | 9 | 6 | 7 | 12 | 6 | 9 | 10 | 7 | 8 | – | 8 | 10 | 7 | 10 | 7 | 10 | 7 | 10 | 12 |
+
+| `T` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+| ---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|--- |
+| 0 | 8 | 7 | 8 | 6 | 6 | 6 | 4 | 4 | 6 | 7 | 6 | 10 | 6 | 6 | 5 | 5 | 6 | 6 | 8 | 5 | 6 |
+| 1 | 6 | 7 | 7 | 5 | 5 | 6 | 4 | 4 | 6 | 5 | 6 | – | 6 | 7 | 5 | 5 | 6 | 6 | 8 | 5 | 6 |
+| 2 | 7 | 9 | 8 | 6 | 6 | 10 | 5 | 4 | 6 | 8 | 6 | 10 | 6 | 7 | 5 | 5 | 6 | 5 | 11 | 6 | 10 |
+| 3 | 8 | 7 | 8 | 5 | 6 | 10 | 5 | 4 | 6 | 7 | 6 | – | 6 | 8 | 5 | 5 | 6 | 5 | 11 | 6 | 10 |
+
+**The release frames**, by row and group; `–` marks the places no stop comes to, after a space and not at its word's start.
+
+| `P` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| ---|---|---|---|---|---|---|--- |
+| 0 | 5 | 3 | 2 | 3 | 3 | 1 | 4 |
+| 1 | 5 | 3 | 3 | 3 | 3 | 1 | – |
+| 2 | 5 | 3 | 2 | 2 | 3 | 2 | 4 |
+| 3 | 3 | 3 | 2 | 2 | 3 | 2 | – |
+| 4 | 1 | 2 | 1 | 2 | 3 | 1 | 3 |
+| 5 | 2 | 2 | 2 | 2 | 3 | 1 | – |
+| 6 | 5 | 2 | 2 | 2 | 2 | 2 | 3 |
+| 7 | 2 | 2 | 2 | 2 | 3 | 2 | – |
+
+| `T` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| ---|---|---|---|---|---|---|--- |
+| 0 | 5 | 4 | 4 | 4 | 7 | 1 | 4 |
+| 1 | 5 | 5 | 4 | 4 | 3 | 1 | – |
+| 2 | 6 | 5 | 4 | 3 | 7 | 1 | 4 |
+| 3 | 5 | 5 | 4 | 3 | 9 | 1 | – |
+| 4 | 4 | 2 | 2 | 2 | 3 | 1 | 2 |
+| 5 | 3 | 4 | 2 | 2 | 3 | 1 | – |
+| 6 | 5 | 3 | 3 | 2 | 3 | 1 | 2 |
+| 7 | 4 | 2 | 2 | 2 | 3 | 1 | – |
+
+| `K` row | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+| ---|---|---|---|---|---|---|--- |
+| 0 | 4 | 4 | 4 | 3 | 5 | 1 | 5 |
+| 1 | 5 | 5 | 4 | 3 | 3 | 1 | – |
+| 2 | 5 | 5 | 4 | 3 | 3 | 1 | 5 |
+| 3 | 5 | 4 | 5 | 3 | 3 | 1 | – |
+| 4 | 3 | 3 | 4 | 3 | 3 | 1 | 3 |
+| 5 | 3 | 4 | 3 | 2 | 3 | 1 | – |
+| 6 | 3 | 3 | 4 | 2 | 3 | 1 | 3 |
+| 7 | 3 | 3 | 3 | 2 | 3 | 1 | – |
+
 ## 7. The reset
 
 At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1, −1, −1 and 0 and the scan's result 3, so that the next scan starts a sentence; no phrasing, slow speech, prosody off, the short phrase flag and lowered are cleared; the phrase limit becomes 180; the phonemes since the last mark, the padding, the presets' bits and the previous bits become 0, and the emphasis none (section 6.1). The cursor's types are 0, 3 and 4 (the pipeline sets them). The shared state (section 3.1) isn't reset.
@@ -601,6 +730,12 @@ At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1,
 - A fricative stressed at its word's end: every recorded stressed fricative began a stressed syllable. So rows 0 and 2 of the fixed durations (section 6.10), the grids' bytes of 0 for a stressed fricative (step 8: inside a word the stressed rows hold 0 only in columns 2 and 18, which a fricative inside its word never takes), and the 0 the exceptions of columns 5, 11 and 12 give a stressed fricative at its word's end.
 - The fixed durations' other places no recorded fricative reached: of their 610, the recorded runs reached 394; besides the 115 of rows 0 and 2 and the 8 before `p`, 77 of `H`, which came only before a vowel and never between vowels, after a glide, or after `B D G J Q q t` inside its word, and 16 of a stressed `d` before a consonant.
 - Dead code left out of the port (section 6.10): the original also gives the frication of `C` durations in columns 1, 5, 7, 9, 11, 12, 14 to 16, 19 and column 3 by its following, and the frication of `J` in columns 7 to 9, 11, 12, 14, 15, column 3 by its following, and in column 2 after `z`'s, where they never come: the frication of `C` reaches only columns 2, 3 and 4, that of `J` only columns 2, 5 and 6. It changes the frication of `C`'s value in column 4 too, where its grid's byte replaces it; and it gives a fricative in the last word at its word's end durations in columns 3 to 17, where column 2 takes it first.
+- A stop after a space whose previous symbol isn't `&` or `%` (section 6.11, step 2): a stop after a space always began its word, after the word's mark.
+- `C` and `J` before anything but their frications (section 6.11): the lexical stage writes them as `C s` and `J z`, so of their places in the table they reach only columns 8 (at a word's start), 9 to 14, and 16 for `C` and 18 for `J`; neither comes before `p` (step 10) or before another stop (columns 9 and 12 by the preceding). Nor does `H` come before a stop (column 10): the lexical stage leaves out an `H` before a consonant.
+- `B`, `G`, `K`, `P` and `T` before `l` in their own word (column 7 in rows 0, 2 and 3): the lexical stage writes such an `l` as `@ j` or `| j`. A `T` at its word's end before a word starting with `l` becomes the flap `t`, so no `T` came before `l` at all (column 7 in row 1, and the release frames' 2). Of the table's 656 places, the recorded runs reached the other 532.
+- A stop's release frames of none between vowels (section 6.11): the phrase's first node was stressed only at the mark of an emphasized word (phonetic input's `[:]`, section 3.5) that started a phrase without a `P` command, at a rate of 25 or more or before a `!` (section 3.2), and its last node only in a phrase the limit broke off; no phrase was both.
+- A stop after a glide with `n` before it (section 6.11, step 9), where the before preceding being `n` decides between no frame and 1: no recorded stop came after one.
+- Dead code left out of the port (section 6.11): a stop's duration of 0 after step 10, for which the original takes column 20's value when the stop isn't at its word's start and its inherent duration when it is: the table's smallest values less the most that steps 6 and 9 take leave at least 1 frame. Before step 6 the original also tests whether the stop is in class fortis, which `P` and `T` are, and before step 9 whether it is a closure and a consonant, which every stop is; in step 9 it gives 2 frames after a sound that isn't a glide with a nasal before it, which the third case has already given 1, and before giving none it tests again whether the preceding is a consonant, `l` or `n`, which step 9 already requires.
 - Pairs of `C`, `J` or `q` (section 6.4): the lexical stage writes `C` and `J` as `C s` and `J z`, and no recorded `q` pair merged. Nor did a pair of `h` or `Q`: with `q`, the only consonants whose duration is the merged node's value (section 6.3, step 2).
 - Durations at which a percent one higher would give another result: emphasis's 125 % from 27 frames, 150 % from 51 and 200 % from 100 (section 6.5), and the stressed `q`'s halving at 59 tenths of a frame (section 6.2, step 7). The recorded durations were all below.
 - Running short of free nodes: the scheduler runs the stage with 106 free ([pipeline.md](pipeline.md) §6), and no phrase's `\` commands, breaks, slow pauses or pauses used them up (sections 3.2 to 3.4, 5.4 and 6.6).

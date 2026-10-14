@@ -2,32 +2,30 @@ package prosody
 
 import "testing"
 
-// TestDurations replays every recorded call of the durations and their parts, with the stops' durations the
-// original gave.
+// TestDurations replays every recorded call of the durations and their parts.
 func TestDurations(t *testing.T) {
 	data := loadTestData(t)
-	withClasses := func(run func(stage *Stage, call *call) error) replayer {
+	withState := func(run func(stage *Stage, call *call) error) replayer {
 		return func(call *call) error {
 			stage := data.load(call)
-			recorded := takeClassDurations(stage, call)
 			resultError := run(stage, call)
-			if err := recorded.check(stage); err != nil {
+			if err := compare(stage, call); err != nil {
 				return err
 			}
 			return resultError
 		}
 	}
 	result := func(duration func(stage *Stage, call *call) int32) replayer {
-		return withClasses(func(stage *Stage, call *call) error {
+		return withState(func(stage *Stage, call *call) error {
 			return expectResult(int32(call.Result.EAX), duration(stage, call))
 		})
 	}
 	counts := replayDurations(t, map[string]replayer{
-		"Prosody::AssignDuration": withClasses(func(stage *Stage, call *call) error {
+		"Prosody::AssignDuration": withState(func(stage *Stage, call *call) error {
 			stage.AssignDuration()
 			return nil
 		}),
-		"Prosody::MarkerDuration": withClasses(func(stage *Stage, call *call) error {
+		"Prosody::MarkerDuration": withState(func(stage *Stage, call *call) error {
 			stage.MarkerDuration()
 			return nil
 		}),
@@ -40,7 +38,7 @@ func TestDurations(t *testing.T) {
 		"Prosody::SegmentDuration": result(func(stage *Stage, call *call) int32 {
 			return stage.SegmentDuration()
 		}),
-		"Prosody::MergeGeminate": withClasses(func(stage *Stage, call *call) error {
+		"Prosody::MergeGeminate": withState(func(stage *Stage, call *call) error {
 			merged := stage.MergeGeminate()
 			return expectResult(int32(call.Result.EAX&0xff), map[bool]int32{false: 0, true: 1}[merged])
 		}),
@@ -61,6 +59,9 @@ func TestDurations(t *testing.T) {
 		}),
 		"Prosody::FricativeDuration": result(func(stage *Stage, call *call) int32 {
 			return stage.FricativeDuration()
+		}),
+		"Prosody::StopDuration": result(func(stage *Stage, call *call) int32 {
+			return stage.StopDuration()
 		}),
 		"Prosody::FunctionWordVowelRule": result(func(stage *Stage, call *call) int32 {
 			return stage.FunctionWordVowelRule(byte(call.Argument(0)), call.Argument(1) != 0, byte(call.Argument(2)) != 0)

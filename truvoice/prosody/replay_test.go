@@ -17,8 +17,7 @@ import (
 // with the changes of the speaking thread's state and of the stage's global variables around them. The replay
 // rebuilds both at every call and return (internal/threadstate), so that a Go function can start from the state
 // the original's started from and leave what it left. The durations' golden data (durations.jsonl.gz) records
-// the same runs' durations and their parts. Not all the durations are ported yet: a replayed call takes the
-// rest from the original's calls within it.
+// the same runs' durations and their parts.
 
 type (
 	call     = threadstate.Call
@@ -27,8 +26,6 @@ type (
 
 const durationFunction = "Prosody::AssignDuration"
 
-var classFunctions = [...]string{stopDuration: "Prosody::StopDuration"}
-
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
 	return threadstate.Replay(t, "prosody.jsonl.gz", replayers, durationFunction)
@@ -36,7 +33,7 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 
 func replayDurations(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
-	return threadstate.Replay(t, "durations.jsonl.gz", replayers, classFunctions[:]...)
+	return threadstate.Replay(t, "durations.jsonl.gz", replayers)
 }
 
 // stageFields lists the stage's values with their places in the thread state, and the synthesizer's the walk
@@ -226,15 +223,6 @@ func takeDurations(stage *Stage, outer *call) *recordedCalls {
 	recorded := takeRecorded(outer)
 	stage.duration = func() {
 		recorded.take(stage, durationFunction)
-	}
-	return recorded
-}
-
-// takeClassDurations gives the stage the original's class durations within a replayed call.
-func takeClassDurations(stage *Stage, outer *call) *recordedCalls {
-	recorded := takeRecorded(outer)
-	stage.classDuration = func(kind int) int32 {
-		return int32(recorded.take(stage, classFunctions[kind]))
 	}
 	return recorded
 }

@@ -74,11 +74,10 @@ type Stage struct {
 
 	Context Context
 
-	tables        *datapack.Prosody
-	parameters    *datapack.Parameters
-	classes       *datapack.Classes
-	duration      func()
-	classDuration func(kind int) int32
+	tables     *datapack.Prosody
+	parameters *datapack.Parameters
+	classes    *datapack.Classes
+	duration   func()
 }
 
 // New returns the stage for the pipeline, with the process's shared state.
