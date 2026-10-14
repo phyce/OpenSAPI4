@@ -17,11 +17,12 @@ import (
 )
 
 // The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz, dictionary.jsonl.gz, lexicon.jsonl.gz,
-// affixes.jsonl.gz and letters.jsonl.gz) records calls of the original's functions with the changes of the
-// speaking thread's state around them. The replay rebuilds the state at every call and return
+// affixes.jsonl.gz, letters.jsonl.gz and postlexical.jsonl.gz) records calls of the original's functions with the
+// changes of the speaking thread's state around them. The replay rebuilds the state at every call and return
 // (internal/threadstate, internal/lexicalstate), so that a Go function can start from the state the original's
-// started from and leave what it left. The stage's parts that later parts port run as the original's recorded calls: each starts from
-// the state the Go stage reached, checked against the original's, and leaves what the original's left.
+// started from and leave what it left. The stage's parts that later parts port run as the original's recorded
+// calls: each starts from the state the Go stage reached, checked against the original's, and leaves what the
+// original's left.
 
 type (
 	call     = threadstate.Call
@@ -29,7 +30,7 @@ type (
 )
 
 // recorded are the functions of the parts later parts port.
-var recorded = []string{"Lexical::PostLexicalRules", "Lexical::FunctionWordDestress", "Lexical::FunctionWordReduceVowels"}
+var recorded = []string{"Lexical::PostLexicalRules"}
 
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
@@ -45,7 +46,7 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 		}
 	}
 	counts := map[string]int{}
-	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz", "lexicon.jsonl.gz", "affixes.jsonl.gz", "letters.jsonl.gz"} {
+	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz", "lexicon.jsonl.gz", "affixes.jsonl.gz", "letters.jsonl.gz", "postlexical.jsonl.gz"} {
 		for function, count := range threadstate.Replay(t, file, guarded, recorded...) {
 			counts[function] += count
 		}
@@ -173,14 +174,6 @@ func (rules *recordedRules) PostLexicalRules(node *pipeline.Node) *pipeline.Node
 	return rules.mapping.NodeAt(call.Result.EAX)
 }
 
-func (rules *recordedRules) FunctionWordStress() {
-	rules.take("Lexical::FunctionWordDestress")
-}
-
-func (rules *recordedRules) FunctionWordReductions() {
-	rules.take("Lexical::FunctionWordReduceVowels")
-}
-
 func describeNode(mapping threadstate.Mapping, pointer uint32) string {
 	if node := mapping.NodeAt(pointer); node != nil {
 		return fmt.Sprintf("node %d", node.Index())
@@ -211,7 +204,7 @@ func expectFlag(call *call, result bool) error {
 }
 
 // TestStage replays every recorded run of the stage's step, word conversion, post-lexical pass and reset, with
-// the original's post-lexical rules and function words' reductions.
+// the original's post-lexical rules.
 func TestStage(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
@@ -274,6 +267,24 @@ func TestReduceVowel(t *testing.T) {
 		"Lexical::ReduceVowel": func(call *call) error {
 			stage, rules := data.load(call)
 			stage.ReduceVowel(call.Argument(0)&0xff != 0)
+			return rules.finish(call, nil)
+		},
+	})
+	t.Logf("calls replayed: %v", counts)
+}
+
+// TestFunctionWords replays every recorded change of a function word's stress and every reduction of its vowels.
+func TestFunctionWords(t *testing.T) {
+	data := loadTestData(t)
+	counts := replay(t, map[string]replayer{
+		"Lexical::FunctionWordDestress": func(call *call) error {
+			stage, rules := data.load(call)
+			stage.FunctionWordStress()
+			return rules.finish(call, nil)
+		},
+		"Lexical::FunctionWordReduceVowels": func(call *call) error {
+			stage, rules := data.load(call)
+			stage.FunctionWordReductions()
 			return rules.finish(call, nil)
 		},
 	})

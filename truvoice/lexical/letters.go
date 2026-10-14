@@ -133,7 +133,7 @@ func (conversion *conversion) passPhoneme(node *pipeline.Node) bool {
 		}
 		return true
 	}
-	if stress := node.Flags() >> stressShift & 3; stress == 0 {
+	if stress := stressOf(node); stress == 0 {
 		if stage.hasClass(node.Symbol(), vowel) {
 			conversion.marked = false
 		}
@@ -371,6 +371,10 @@ func (conversion *conversion) finishRule() {
 			stage.Following |= fullVowel
 		}
 	}
+}
+
+func stressOf(node *pipeline.Node) uint32 {
+	return node.Flags() >> stressShift & 3
 }
 
 func setStress(node *pipeline.Node, stress uint32) {

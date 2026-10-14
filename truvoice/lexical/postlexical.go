@@ -41,7 +41,7 @@ func (stage *Stage) PostLexicalWord() *pipeline.Node {
 		}
 	}
 	if word.Symbol() == '%' && word.Value() != codeKept {
-		stage.Rules.FunctionWordStress()
+		stage.FunctionWordStress()
 	}
 	symbol := stage.PreviousWord.Symbol()
 	if symbol == '%' || stage.PreviousWord.Second() == adverbClass {
@@ -62,7 +62,7 @@ func (stage *Stage) PostLexicalWord() *pipeline.Node {
 		node = next
 	}
 	if stage.PreviousWord.Symbol() == '%' && stage.PreviousWord.Value() != codeKept {
-		stage.Rules.FunctionWordReductions()
+		stage.FunctionWordReductions()
 	}
 	stage.PreviousSymbol = int32(int8(end.Previous.Symbol()))
 	return end

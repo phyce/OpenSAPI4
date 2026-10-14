@@ -7,16 +7,11 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// Rules are the parts of the stage that later parts port: the post-lexical rules and the function words' stress
-// and reductions (lexical.md).
+// Rules are the part of the stage a later part ports: the post-lexical rules (lexical.md).
 type Rules interface {
 	// PostLexicalRules applies the post-lexical rules to a phoneme of the previous word and returns the node to
 	// go on from.
 	PostLexicalRules(node *pipeline.Node) *pipeline.Node
-	// FunctionWordStress and FunctionWordReductions change the previous word's stress and vowels when it is a
-	// function word.
-	FunctionWordStress()
-	FunctionWordReductions()
 }
 
 // A Stage is the lexical stage's state.
@@ -100,6 +95,7 @@ const (
 	velar       class = 0x280
 	approximant class = 0x301
 	palatal     class = 0x304
+	rounded     class = 0x320
 	reduced     class = 0x440
 )
 
