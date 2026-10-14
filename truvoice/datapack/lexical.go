@@ -8,13 +8,15 @@ import (
 
 // Lexical is the lexical stage's tables: the lists of function words it looks a word up in, in order, and the
 // endings it tests a word no list has for; the affixes it strips, with the lists it tries for a word's last letter
-// and for its first, from '@' to 'Z' (nil for none), and the conditions on the stems they leave.
+// and for its first, from '@' to 'Z' (nil for none), and the conditions on the stems they leave; and the context
+// letter-to-sound tests to reduce a vowel.
 type Lexical struct {
 	FunctionWords       []FunctionWordList
 	FunctionWordEndings []FunctionWordEnding
 	Affixes             []Affix
 	Suffixes, Prefixes  [AffixLetters]*AffixList
 	StemConditions      StemConditions
+	ReductionContext    Context
 }
 
 // A FunctionWordList is a list of words, each between two #, which give a word in it Class, but the Exceptions.
@@ -45,6 +47,7 @@ type lexicalDescription struct {
 	AffixLists          [][]int64                     `json:"affixLists"`
 	Affixes             []affixDescription            `json:"affixes"`
 	StemConditions      stemConditionsDescription     `json:"stemConditions"`
+	ReductionContext    []json.RawMessage             `json:"reductionContext"`
 }
 
 type functionWordListDescription struct {
@@ -99,6 +102,13 @@ func parseLexical(data []byte) (*Lexical, error) {
 		lexical.FunctionWordEndings = append(lexical.FunctionWordEndings, parsed)
 	}
 	if err := parseAffixes(&description, lexical); err != nil {
+		return nil, err
+	}
+	if description.ReductionContext == nil {
+		return nil, fmt.Errorf("reductionContext is missing")
+	}
+	var err error
+	if lexical.ReductionContext, err = parseContext(description.ReductionContext, "reductionContext"); err != nil {
 		return nil, err
 	}
 	return lexical, nil

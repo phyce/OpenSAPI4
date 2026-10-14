@@ -501,15 +501,19 @@ func TestLexical(t *testing.T) {
 	if plural < 0 || lexical.Affixes[plural].Context[len(lexical.Affixes[plural].Context)-1].Elements[0] != (datapack.Element{Plane: 2, Bits: 4}) {
 		t.Errorf("the suffix S with a context past its end is %d", plural)
 	}
+	if !reflect.DeepEqual(lexical.ReductionContext, datapack.Context{{Test: 0x40}}) {
+		t.Errorf("the reduction context %+v", lexical.ReductionContext)
+	}
 }
 
-// lexicalWithAffixes is a lexical.json with a function word list, an affix and stem conditions, changed by a
-// replacer's pairs.
+// lexicalWithAffixes is a lexical.json with a function word list, an affix, stem conditions and a reduction
+// context, changed by a replacer's pairs.
 func lexicalWithAffixes(pairs ...string) string {
 	none := strings.Repeat("-1,", 26) + "-1"
 	content := `{"functionWords":[{"words":"#A#","class":1}],"suffixes":[` + none + `],"prefixes":[0,` + none[3:] + `],` +
 		`"affixLists":[[0]],"affixes":[{"letters":"UN","if":[{"test":16,"match":["A",[2,2]]},"end"],"lookup":true,` +
-		`"class":0,"stress":1,"next":0}],"stemConditions":{"silentE":[],"noSilentE":[],"withoutE":[],"lostT":[]}}`
+		`"class":0,"stress":1,"next":0}],"stemConditions":{"silentE":[],"noSilentE":[],"withoutE":[],"lostT":[]},` +
+		`"reductionContext":[{"test":64}]}`
 	return strings.NewReplacer(pairs...).Replace(content)
 }
 
@@ -547,6 +551,8 @@ func TestChangedLexical(t *testing.T) {
 		{lexicalWithAffixes(`[2,2]`, `[2]`), "affixes[0].if[0].match[1] isn't a symbol or [plane, bits]"},
 		{lexicalWithAffixes(`"lostT":[]`, `"lostT":["stop"]`), `stemConditions.lostT[0] is "stop"`},
 		{lexicalWithAffixes(`,"lostT":[]`, ``), "stemConditions.lostT is missing"},
+		{lexicalWithAffixes(`[{"test":64}]`, `[{"test":64,"match":["A"]}]`), "reductionContext[0].match isn't empty"},
+		{lexicalWithAffixes(`,"reductionContext":[{"test":64}]`, ``), "reductionContext is missing"},
 	}
 	if _, err := writePack(t, "lexical.json", []byte(lexicalWithAffixes())).LoadLexical(); err != nil {
 		t.Errorf("the lexical tables with an affix: %v", err)

@@ -49,11 +49,18 @@ type Stage struct {
 	PreviousSymbol int32
 
 	// The lookup by affixes (lexical.md §9): the suffix it found last, and whether a stem was looked up with a
-	// silent E and not found. Consonants is letter-to-sound's count of consonants, which a context can test
-	// (lexical.md §8.1).
-	Affix      *datapack.Affix
-	TriedE     bool
+	// silent E and not found.
+	Affix  *datapack.Affix
+	TriedE bool
+
+	// Letter-to-sound (lexical.md §10): its count of consonants, which a context can test (lexical.md §8.1); the
+	// vowel it wrote last and whether that vowel may be reduced; whether it converts the letters after a stem the
+	// lookup found; and what follows the letter it converts, which its rules test.
 	Consonants int32
+	Vowel      *pipeline.Node
+	Reducible  bool
+	AfterStem  bool
+	Following  uint32
 
 	tables     *datapack.Lexical
 	dictionary *datapack.Dictionary
@@ -80,6 +87,7 @@ const (
 	syllabic    class = 0x001
 	sonorant    class = 0x002
 	wordMark    class = 0x008
+	stop        class = 0x020
 	phoneme     class = 0x080
 	boundary    class = 0x101
 	stressMark  class = 0x102
@@ -87,7 +95,11 @@ const (
 	phraseBreak class = 0x140
 	closure     class = 0x201
 	vowel       class = 0x202
+	alveolar    class = 0x204
 	front       class = 0x220
+	velar       class = 0x280
+	approximant class = 0x301
+	palatal     class = 0x304
 	reduced     class = 0x440
 )
 
