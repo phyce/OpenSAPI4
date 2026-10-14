@@ -421,7 +421,7 @@ func TestChangedProsody(t *testing.T) {
 	valid := `{"pitchRanges":[1,2,3,4,5,6,7,8,9,10],"pausePercents":[` + repeated("30", datapack.RateCount) +
 		`],"slowPausePatterns":[` + repeated("1", datapack.SlowRateCount) + `]`
 	tables := valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[` + repeated("100", datapack.RateCount) + `]`
-	grids := tables + `,"durationGrids":[` + repeated("1", datapack.GridSize) + `]`
+	grids := tables + `,"durationGrids":[` + repeated("1", datapack.NasalGridSize) + `]`
 	reductions := grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount) + `],"breakReductions":[` +
 		repeated("1", datapack.BreakReductionCount) + `]`
 	withRule := func(rule string) string {
@@ -440,9 +440,11 @@ func TestChangedProsody(t *testing.T) {
 		{valid + `,"durations":[` + repeated("[1,2]", 127) + `,[1,256]]}`, "durations[127][1] is 256"},
 		{valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[1]}`, "durationPercents has 1 values"},
 		{valid + `,"durations":[` + repeated("[1,2]", 128) + `],"durationPercents":[` + repeated("100", datapack.RateCount-1) + `,1001]}`, "durationPercents[25] is 1001"},
-		{tables + `,"durationGrids":[1]}`, "durationGrids has 1 values, expected at least 160"},
-		{tables + `,"durationGrids":[` + repeated("1", datapack.GridSize-1) + `,256]}`, "durationGrids[159] is 256"},
-		{grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount-1) + `,1]}`, "gridOffsets[37] is 1, outside 0 to 0"},
+		{tables + `,"durationGrids":[1]}`, "durationGrids has 1 values, expected at least 240"},
+		{tables + `,"durationGrids":[` + repeated("1", datapack.NasalGridSize-1) + `,256]}`, "durationGrids[239] is 256"},
+		{grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount-1) + `,81]}`, "gridOffsets[37] is 81, outside 0 to 80"},
+		{grids + `,"gridOffsets":[` + repeated("0", datapack.NasalGrid+1) + `,1,` + repeated("0", datapack.GridCount-datapack.NasalGrid-2) + `]}`,
+			"gridOffsets[30] is 1, outside 0 to 0"},
 		{grids + `,"gridOffsets":[` + repeated("0", datapack.GridCount) + `],"breakReductions":[1]}`, "breakReductions has 1 values"},
 		{reductions + `,"functionWordRules":[[]]}`, "functionWordRules has 1 classes, expected 16"},
 		{withRule(`{"symbols":"xk","conditions":8,"tests":[],"frames":4}`), "functionWordRules[15][0].back is missing"},

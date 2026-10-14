@@ -22,11 +22,8 @@ const (
 	glideClosureColumn = 18
 )
 
-// A vowel's shortest duration in frames, and where a stressed vowel's break reductions start.
-const (
-	shortestVowel      = 3
-	stressedReductions = 23
-)
+// Where a stressed vowel's break reductions start.
+const stressedReductions = 23
 
 // The places in a node's data of byte 0x17, a phoneme's syllable in its word, and byte 0x19, a vowel's word class.
 const (
@@ -138,6 +135,19 @@ func (stage *Stage) gridValue(grid int, index int32) int32 {
 	return int32(stage.tables.DurationGrids[position])
 }
 
+// gridOrDuration is the byte at the index in the grid, or when it is 0 the symbol's inherent duration if stressed and
+// its shortest one if not.
+func (stage *Stage) gridOrDuration(grid int, index int32, symbol byte, stressed bool) int32 {
+	if duration := stage.gridValue(grid, index); duration != 0 {
+		return duration
+	}
+	durations := stage.durations(symbol)
+	if stressed {
+		return durations.Inherent
+	}
+	return durations.Shortest
+}
+
 // VowelDuration is a vowel's duration in frames: its grid's value for the sounds after it, whether it is
 // stressed, in the phrase's last word and inside its word, less what its glides, nasals and laterals, its stress
 // and its function word take (prosody.md §6.7).
@@ -224,18 +234,11 @@ func (stage *Stage) VowelDuration() int32 {
 		}
 	}
 	if duration == 0 {
-		duration = stage.gridValue(grid, (firstRow+1)*gridColumns+glidesColumn)
-		if duration == 0 {
-			durations := stage.durations(symbol)
-			duration = durations.Shortest
-			if stressed {
-				duration = durations.Inherent
-			}
-		}
+		duration = stage.gridOrDuration(grid, (firstRow+1)*gridColumns+glidesColumn, symbol, stressed)
 		if stress(node) == 1 {
 			duration -= 2
 		}
-		return max(duration, shortestVowel)
+		return max(duration, shortestByClass)
 	}
 	if stress(node) == 1 {
 		duration -= 2
@@ -274,7 +277,7 @@ func (stage *Stage) VowelDuration() int32 {
 	if symbol == 'v' && symbolOrZero(node.Next) == 'N' && symbolOrZero(node.Previous) == '&' {
 		duration = max(duration, 8)
 	}
-	return max(duration, shortestVowel)
+	return max(duration, shortestByClass)
 }
 
 // syllableFollows reports whether a vowel but p, or l, m or n, comes in the list from the node on, before a word
@@ -320,9 +323,9 @@ func (stage *Stage) vowelColumn(preceding, beforePreceding, following, afterFoll
 	case 'V', 'Z', 'd', 'x', 'z':
 		return 6
 	case 'L', 'j', 'l':
-		return stage.sonorantColumn(afterFollowing, afterNext, 11, 7, 8)
+		return stage.columnBeforeSonorant(afterFollowing, afterNext, 11, 7, 8)
 	case 'M', 'N', 'm', 'n', '~':
-		return stage.sonorantColumn(afterFollowing, afterNext, 12, 9, 10)
+		return stage.columnBeforeSonorant(afterFollowing, afterNext, 12, 9, 10)
 	case 'R':
 		return 14
 	case 'W', 'Y':
@@ -331,9 +334,9 @@ func (stage *Stage) vowelColumn(preceding, beforePreceding, following, afterFoll
 	return -1
 }
 
-// sonorantColumn is the column of a vowel before a lateral or a nasal: before no stop or at the word's end, before a
-// voiceless stop or q, or before a voiced stop.
-func (stage *Stage) sonorantColumn(afterFollowing, afterNext byte, noStopColumn, voicelessColumn, voicedColumn int32) int32 {
+// columnBeforeSonorant is the column of a vowel before a lateral or a nasal: before no stop or at the word's end,
+// before a voiceless stop or q, or before a voiced stop.
+func (stage *Stage) columnBeforeSonorant(afterFollowing, afterNext byte, noStopColumn, voicelessColumn, voicedColumn int32) int32 {
 	switch {
 	case !stage.hasClass(afterFollowing, stop) || isWordMark(afterNext):
 		return noStopColumn

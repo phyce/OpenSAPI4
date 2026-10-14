@@ -27,6 +27,7 @@ const (
 	approximant class = 0x301
 	laryngeal   class = 0x302
 	frontEnding class = 0x340
+	lax         class = 0x380
 	high        class = 0x401
 	fortis      class = 0x540
 )

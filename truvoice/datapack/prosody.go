@@ -6,13 +6,16 @@ import (
 	"math"
 )
 
-// GridCount is the number of duration grids and GridSize the bytes of the smallest. BreakReductionCount is the
-// number of break reductions and WordClassCount the number of word classes with function word rules.
+// GridCount is the number of duration grids, GridSize the bytes of each but grids NasalGrid and NasalGrid + 1, M's and
+// N's, which have NasalGridSize. BreakReductionCount is the number of break reductions and WordClassCount the number
+// of word classes with function word rules.
 const (
 	RateCount           = 26
 	SlowRateCount       = 9
 	GridCount           = 38
 	GridSize            = 160
+	NasalGrid           = 29
+	NasalGridSize       = 240
 	BreakReductionCount = 47
 	WordClassCount      = 16
 )
@@ -124,8 +127,8 @@ func parseProsody(data []byte) (*Prosody, error) {
 	if err := copyValues(prosody.DurationPercents[:], description.DurationPercents, "durationPercents", 0, 1000); err != nil {
 		return nil, err
 	}
-	if len(description.DurationGrids) < GridSize {
-		return nil, fmt.Errorf("durationGrids has %d values, expected at least %d", len(description.DurationGrids), GridSize)
+	if len(description.DurationGrids) < NasalGridSize {
+		return nil, fmt.Errorf("durationGrids has %d values, expected at least %d", len(description.DurationGrids), NasalGridSize)
 	}
 	prosody.DurationGrids = make([]byte, len(description.DurationGrids))
 	if err := copyValues(prosody.DurationGrids, description.DurationGrids, "durationGrids", 0, math.MaxUint8); err != nil {
@@ -133,6 +136,11 @@ func parseProsody(data []byte) (*Prosody, error) {
 	}
 	if err := copyValues(prosody.GridOffsets[:], description.GridOffsets, "gridOffsets", 0, int64(len(prosody.DurationGrids)-GridSize)); err != nil {
 		return nil, err
+	}
+	for grid := NasalGrid; grid <= NasalGrid+1; grid++ {
+		if last := int32(len(prosody.DurationGrids) - NasalGridSize); prosody.GridOffsets[grid] > last {
+			return nil, fmt.Errorf("gridOffsets[%d] is %d, outside 0 to %d", grid, prosody.GridOffsets[grid], last)
+		}
 	}
 	if err := copyValues(prosody.BreakReductions[:], description.BreakReductions, "breakReductions", 0, math.MaxUint8); err != nil {
 		return nil, err

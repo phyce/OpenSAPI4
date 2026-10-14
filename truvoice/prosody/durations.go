@@ -5,10 +5,11 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// A duration's limits in frames.
+// A duration's limits in frames, and the shortest duration of a vowel or a sonorant.
 const (
 	shortestDuration = 2
 	longestDuration  = 55
+	shortestByClass  = 3
 )
 
 // The rate whose base durations take its percent and that the rate's scaling leaves alone, and the slowest rate
@@ -48,7 +49,6 @@ const (
 const (
 	fricativeDuration = iota
 	stopDuration
-	sonorantDuration
 )
 
 // AssignDuration gives the current node its duration in frames (prosody.md §6.1).
@@ -221,7 +221,7 @@ func (stage *Stage) SegmentDuration() int32 {
 		}
 		duration = stage.classDuration(fricativeDuration) + extra
 	case stage.hasClass(symbol, sonorant) && symbol != 'h':
-		duration = stage.classDuration(sonorantDuration)
+		duration = stage.SonorantDuration()
 	case symbol == ' ':
 		duration = stage.PauseDuration()
 	case symbol == 'q':
