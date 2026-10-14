@@ -34,7 +34,7 @@ func (stage *Stage) SonorantDuration() int32 {
 		preceding = beforePreceding
 	}
 	stressed := stage.cursor().Scan.Flags()&stressedFlag != 0
-	lastWord := stage.scanForClass(true, 16, phraseBreak, -wordMark, byClass)
+	lastWord := stage.scanForClass(true, 16, phraseBreak, -wordMark)
 	beforeSilence := following == ' ' && afterFollowing == ' ' || among(following, ".!,?\\")
 	place := insideWord
 	switch {

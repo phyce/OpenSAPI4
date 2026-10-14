@@ -156,18 +156,10 @@ func (stage *Stage) LoadContext() {
 	context.FollowingSyllabic = stage.hasClass(context.FollowingSymbol, syllabic)
 }
 
-// A stress test of scanForClass.
-const (
-	byClass = iota
-	findStress
-	stopStress
-)
-
 // scanForClass looks at up to count phonemes after the current node going forward, or before it going back:
 // it reports true at the first one in class find, and false at the first one not in class stop, or when it
-// runs out. With findStress, a phoneme is found by its stress instead, and with stopStress it stops by it
-// (prosody.md §2.2).
-func (stage *Stage) scanForClass(forward bool, count int32, find, stop class, test int) bool {
+// runs out (prosody.md §2.2).
+func (stage *Stage) scanForClass(forward bool, count int32, find, stop class) bool {
 	node := stage.cursor().Scan
 	for ; count > 0; count-- {
 		if forward {
@@ -178,28 +170,12 @@ func (stage *Stage) scanForClass(forward bool, count int32, find, stop class, te
 		if node == nil {
 			return false
 		}
-		if test == findStress {
-			if found := hasStress(node, find); found && find > 0 || !found && find < 0 {
-				return true
-			}
-		} else if stage.inClass(node, find) {
+		if stage.inClass(node, find) {
 			return true
 		}
-		if test == stopStress {
-			if found := hasStress(node, stop); found && stop < 0 || !found && stop > 0 {
-				return false
-			}
-		} else if !stage.inClass(node, stop) {
+		if !stage.inClass(node, stop) {
 			return false
 		}
 	}
 	return false
-}
-
-// hasStress reports whether the node has stress 3, or stress 2 when the level's magnitude is 2.
-func hasStress(node *pipeline.Node, level class) bool {
-	if level < 0 {
-		level = -level
-	}
-	return stress(node) == 3 || level == 2 && stress(node) == 2
 }

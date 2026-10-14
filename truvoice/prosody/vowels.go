@@ -193,7 +193,7 @@ func (stage *Stage) VowelDuration() int32 {
 	stressed := node.Flags()&stressedFlag != 0
 	medial := !stage.hasClass(next, wordMark) && following != 'p' && following != ' ' && following != ',' &&
 		!stage.hasClass(next, boundary)
-	lastWord := stage.scanForClass(true, 16, phraseBreak, -wordMark, byClass)
+	lastWord := stage.scanForClass(true, 16, phraseBreak, -wordMark)
 	if following == ' ' {
 		following = afterFollowing
 		afterFollowing = symbolOrZero(stage.nextSound(context.AfterFollowing))

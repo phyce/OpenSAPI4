@@ -117,14 +117,14 @@ func (stage *Stage) KlattBaseDuration() int32 {
 		return stage.durations(symbol).Inherent
 	}
 	count := 0
-	if !stage.ProsodyOff && stage.scanForClass(true, 6, phraseBreak, -syllabic, byClass) {
+	if !stage.ProsodyOff && stage.scanForClass(true, 6, phraseBreak, -syllabic) {
 		count = 1
 		stage.Percents[count] = 160
 		if symbol == 'q' {
 			stage.Percents[count] = 150
 		}
 	}
-	if stage.scanForClass(false, 7, syllabic, -wordMark, byClass) {
+	if stage.scanForClass(false, 7, syllabic, -wordMark) {
 		count++
 		stage.Percents[count] = 85
 	}

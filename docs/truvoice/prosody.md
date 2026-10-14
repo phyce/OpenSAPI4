@@ -76,7 +76,7 @@ The stage walks the nodes of its window ([pipeline.md](pipeline.md) §2.3: there
 
 There is none when the window has none.
 
-**Scanning** looks at up to `n` phonemes from the cursor's scan node, the **current** node: its next phonemes going forward, its previous phonemes going back. With a class to find and a class to stop at, it reports a find at the first phoneme in the class to find, and stops without one at the first phoneme not in the class to stop at; the scan stops without a find after `n` phonemes or at the window's end. (The durations also scan by stress.)
+**Scanning** looks at up to `n` phonemes from the cursor's scan node, the **current** node: its next phonemes going forward, its previous phonemes going back. With a class to find and a class to stop at, it reports a find at the first phoneme in the class to find, and stops without one at the first phoneme not in the class to stop at; the scan stops without a find after `n` phonemes or at the window's end.
 
 ### 2.3 The context
 
@@ -707,6 +707,7 @@ At the pipeline's reset ([pipeline.md](pipeline.md) §7), the marks become −1,
 - The nucleus search running past the window's end before the phrase's end (section 4.2, step 4).
 - A phrase of 0 phonemes at a phoneme's pitch, and contour 6 with `m6` 0 (the scan doesn't choose contour 6 then); a contour other than those of section 4.3.
 - A symbol of 128 or more: the port gives it no classes and no durations.
+- Dead code left out of the port (section 2.2): the original's scan can also find a phoneme, or stop at one, by its stress (3, or 2 and 3) instead of its class; every scan of the stage is by class.
 - A phoneme whose inherent duration is below its shortest (section 6.2, step 3): no symbol's is.
 - For `P`, `T` and `K` geminates after a vowel before a sound that isn't one (section 6.3), the original also tests whether the vowel is a nasal (8 frames for `P`, 5 for `T`, 9 for `K`) or a consonant (9). No symbol is both, so the port leaves the test out.
 - The walk back for a function word's mark (section 6.3) reaching the list's start: every word has a mark.

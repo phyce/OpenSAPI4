@@ -95,7 +95,7 @@ func (stage *Stage) FricativeDuration() int32 {
 	sounds.affricate = symbol == 's' && sounds.preceding == 'C' || symbol == 'z' && sounds.preceding == 'J'
 	stage.skipPause(&sounds, node)
 	sounds.stressed = node.Flags()&stressedFlag != 0
-	sounds.lastWord = stage.scanForClass(true, 16, phraseBreak, -wordMark, byClass)
+	sounds.lastWord = stage.scanForClass(true, 16, phraseBreak, -wordMark)
 	sounds.medial = !stage.hasClass(next, wordMark) && !among(sounds.following, "p ,") && !stage.hasClass(next, boundary)
 	if pause := after(node, 2); symbol == 'S' && pause != nil && pause.Symbol() == ' ' && pause.Value() > 20 {
 		sounds.lastWord = true

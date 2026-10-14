@@ -135,7 +135,7 @@ func (stage *Stage) StopDuration() int32 {
 		preceding: context.PrecedingSymbol, beforePreceding: context.BeforePrecedingSymbol,
 		following: context.FollowingSymbol, afterFollowing: context.AfterFollowingSymbol}
 	sounds.stressed = isStressed(node)
-	sounds.lastWord = stage.scanForClass(true, 16, phraseBreak, -wordMark, byClass)
+	sounds.lastWord = stage.scanForClass(true, 16, phraseBreak, -wordMark)
 	sounds.initial = sounds.preceding == ' ' || isWordMark(sounds.previous)
 	preceding, following := sounds.preceding, sounds.following
 	row := int32(0)

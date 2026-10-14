@@ -95,10 +95,10 @@ func (stage *Stage) PitchContext() {
 	if stage.Nucleus == nil {
 		stage.findNucleus(cursor)
 	}
-	if stage.scanForClass(true, 9, phraseBreak, -syllabic, byClass) {
+	if stage.scanForClass(true, 9, phraseBreak, -syllabic) {
 		stage.PhraseEnd = true
 		stage.WordEnd = true
-	} else if stage.scanForClass(true, 10, wordMark, -syllabic, byClass) {
+	} else if stage.scanForClass(true, 10, wordMark, -syllabic) {
 		stage.WordEnd = true
 	}
 	if cursor.Scan == stage.Nucleus {
