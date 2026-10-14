@@ -504,3 +504,71 @@ func TestChangedLexical(t *testing.T) {
 		}
 	}
 }
+
+func TestDictionary(t *testing.T) {
+	dictionary, err := conformance.Pack(t).LoadDictionary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, buckets := range dictionary.Entries {
+		for _, entries := range buckets {
+			count += len(entries)
+		}
+	}
+	if count != 6494 {
+		t.Errorf("%d entries, expected 6494", count)
+	}
+	if entries := dictionary.Entries[0][0]; !reflect.DeepEqual(entries, []datapack.DictionaryEntry{{Class: 3, Phonemes: "@"}}) {
+		t.Errorf("A %+v", entries)
+	}
+	var record []datapack.DictionaryEntry
+	for _, entry := range dictionary.Entries['R'-'A'][5] {
+		if entry.Letters == "ECORD" {
+			record = append(record, entry)
+		}
+	}
+	if !reflect.DeepEqual(record, []datapack.DictionaryEntry{{Letters: "ECORD", Class: 6, StressPattern: 3}, {Letters: "ECORD", StressPattern: 12}}) {
+		t.Errorf("RECORD %+v", record)
+	}
+	if !strings.HasPrefix(dictionary.Homographs, "#ALLY#ABUSE#") || !reflect.DeepEqual(dictionary.VerbEndings, []string{"ING", "ED", "D"}) ||
+		!reflect.DeepEqual(dictionary.PluralEndings, []string{"S", "ES"}) || dictionary.NounBeforeColon != "#SUBJECT#" || dictionary.PastTense != "#READ#" {
+		t.Errorf("homographs %.20q, endings %q %q, words %q %q", dictionary.Homographs, dictionary.VerbEndings, dictionary.PluralEndings,
+			dictionary.NounBeforeColon, dictionary.PastTense)
+	}
+}
+
+func TestChangedDictionary(t *testing.T) {
+	word := func(entry string) string {
+		return `{"words":[` + entry + `],"homographs":"#A#","verbEndings":["ED"],"pluralEndings":["ES"],"nounBeforeColon":"#A#","pastTense":"#A#"}`
+	}
+	tests := []struct{ content, message string }{
+		{`{"words":[]}`, "words is empty"},
+		{word(`{"word":"","class":0,"phonemes":"a"}`), `words[0].word is ""`},
+		{word(`{"word":"aB","class":0,"phonemes":"a"}`), `words[0].word is "aB"`},
+		{word(`{"word":"A[","class":0,"phonemes":"a"}`), `words[0].word is "A["`},
+		{word(`{"word":"` + strings.Repeat("A", 22) + `","class":0,"phonemes":"a"}`), `words[0].word is "AAAA`},
+		{word(`{"word":"A","phonemes":"a"}`), "words[0].class is missing"},
+		{word(`{"word":"A","class":16,"phonemes":"a"}`), "words[0].class is 16"},
+		{word(`{"word":"A","class":0,"phonemes":"a","stressPattern":3}`), "words[0] has phonemes and a stress pattern"},
+		{word(`{"word":"A","class":0,"phonemes":""}`), "words[0].phonemes is empty"},
+		{word(`{"word":"A","class":0,"phonemes":"` + strings.Repeat("a", 16) + `"}`), "words[0].phonemes has 16 symbols"},
+		{word(`{"word":"A","class":0,"phonemes":"12"}`), "words[0].phonemes has only stress digits"},
+		{word(`{"word":"A","class":0}`), "words[0].stressPattern is missing"},
+		{word(`{"word":"A","class":0,"stressPattern":256}`), "words[0].stressPattern is 256"},
+		{strings.Replace(word(`{"word":"A","class":0,"phonemes":"a"}`), `"#A#","verb`, `"A","verb`, 1), `homographs is "A"`},
+		{strings.Replace(word(`{"word":"A","class":0,"phonemes":"a"}`), `["ED"]`, `[]`, 1), "verbEndings is empty"},
+		{strings.Replace(word(`{"word":"A","class":0,"phonemes":"a"}`), `["ED"]`, `[""]`, 1), "verbEndings[0] is empty"},
+		{strings.Replace(word(`{"word":"A","class":0,"phonemes":"a"}`), `["ES"]`, `[""]`, 1), "pluralEndings[0] is empty"},
+		{strings.Replace(word(`{"word":"A","class":0,"phonemes":"a"}`), `"nounBeforeColon":"#A#"`, `"nounBeforeColon":"#A##B#"`, 1), `nounBeforeColon is "#A##B#"`},
+		{strings.Replace(word(`{"word":"A","class":0,"phonemes":"a"}`), `,"pastTense":"#A#"`, ``, 1), "pastTense is empty"},
+	}
+	for _, test := range tests {
+		if _, err := writePack(t, "dictionary.json", []byte(test.content)).LoadDictionary(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
+		}
+	}
+	if _, err := writePack(t, "dictionary.json", []byte(word(`{"word":"A@Z","class":15,"stressPattern":0}`))).LoadDictionary(); err != nil {
+		t.Error(err)
+	}
+}

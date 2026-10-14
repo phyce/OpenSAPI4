@@ -48,7 +48,7 @@ func Store(mapping threadstate.Mapping, stage *lexical.Stage, state []byte) {
 
 // Names names the thread state's bytes the stage's and its pipeline's values cover.
 var Names = sync.OnceValue(func() map[int]string {
-	stage := lexical.New(nil, nil, pipeline.New(nil, new(synthesizer.Synthesizer), nil, nil))
+	stage := lexical.New(nil, nil, nil, pipeline.New(nil, new(synthesizer.Synthesizer), nil, nil))
 	return threadstate.Names(Fields(stage), threadstate.PipelineFields(stage.Pipeline))
 })
 

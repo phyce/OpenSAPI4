@@ -50,13 +50,14 @@ type Stage struct {
 	Alternating    bool
 	PreviousSymbol int32
 
-	tables  *datapack.Lexical
-	classes *datapack.Classes
+	tables     *datapack.Lexical
+	dictionary *datapack.Dictionary
+	classes    *datapack.Classes
 }
 
 // New returns the stage for the pipeline.
-func New(tables *datapack.Lexical, parameters *datapack.Parameters, pipeline *pipeline.Pipeline) *Stage {
-	stage := &Stage{Pipeline: pipeline, tables: tables}
+func New(tables *datapack.Lexical, dictionary *datapack.Dictionary, parameters *datapack.Parameters, pipeline *pipeline.Pipeline) *Stage {
+	stage := &Stage{Pipeline: pipeline, tables: tables, dictionary: dictionary}
 	if parameters != nil {
 		stage.classes = &parameters.Classes
 	}
@@ -82,6 +83,7 @@ const (
 	closure     class = 0x201
 	vowel       class = 0x202
 	front       class = 0x220
+	reduced     class = 0x440
 )
 
 // hasClass reports whether the symbol is in the class. Symbols of 128 and up are in none.

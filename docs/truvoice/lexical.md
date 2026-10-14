@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) turns words into phonemes. The lexical stage works on the words the normalizer hands it ([pipeline.md](pipeline.md) §3): words of letters, words of phonemes from phonetic input, and the punctuation. It converts each word into phonemes with their stress, marks the word's class, and gives the word before it a second, post-lexical pass. The prosody stage ([prosody.md](prosody.md)) takes the phonemes it hands on.
 
-This spec covers the nodes the stage works on and the classes it tests (section 1), its step and how it finds the next word (section 2), a word's conversion (section 3), the post-lexical pass (section 4) and the stage's reset (section 5). The stage's **rules** are the parts that give the phonemes themselves: the lookup of a word in the user lexicon, the dictionary and by its affixes, letter-to-sound, the post-lexical rules, and the function words' stress and reductions. The spec's later sections will say how they work; sections 3 and 4 say where the stage applies them.
+This spec covers the nodes the stage works on and the classes it tests (section 1), its step and how it finds the next word (section 2), a word's conversion (section 3), the post-lexical pass (section 4), the stage's reset (section 5) and the dictionary (section 6). The stage's **rules** are the parts that give the phonemes themselves: the lookup of a word in the user lexicon, the dictionary and by its affixes, letter-to-sound, the post-lexical rules, and the function words' stress and reductions. Section 6 says how the dictionary works, and later sections will say how the others do; sections 3 and 4 say where the stage applies them.
 
 **In short.**
 - Each step converts one word, then gives the word before it its post-lexical pass and hands on the nodes up to the word just converted. A word's pass waits for the word after it, as the rules look at the next word.
@@ -10,10 +10,13 @@ This spec covers the nodes the stage works on and the classes it tests (section 
 - A digit after a syllabic phoneme gives it its stress: `1` primary, `2` secondary, `"` emphatic. A stressed syllable's vowel and the consonants of its onset are marked, for the prosody stage and the parameter generator.
 - Phonetic input's word marks can make a word a function word, a content word or a juncture, emphasize it, or make it keep the form it is written in.
 - In the post-lexical pass a schwa before a front vowel in the next syllable, with at most one consonant between, becomes a barred i, and a barred i before a consonant and `l` a schwa. The vowels are numbered by syllable. The filter command can drop all words but every n-th content word.
+- The dictionary has 6,494 entries: a word's phonemes with stress digits, or a stress pattern for letter-to-sound, and its class: verbs, adverbs and kinds of function word. A function word found whole becomes `%`. A homograph's verb's entry is taken or passed over by the word before it: `to record`, `the record`. Phonetic input's word mark `*` takes a word's second entry.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 799 runs: the 729 runs of the stages in the pipeline ([prosody.md](prosody.md), [parameters.md](parameters.md)), and 70 more for the stage, 35 texts at two speeds: words with `~` and `` ` ``, stress digits in phonetic input, `"` among them, every word of the function words' lists and the words they treat apart, words ending in `'ve` and `'s`, numbers, single letters after a word ending in `S`, in text, spell mode and phonetic input, spelled letters, schwas before front vowels within and across words, barred i before a consonant and `l` or `j`, the onsets of stressed syllables, 13 commands between two words, runs of punctuation, every word mark of phonetic input before function and content words and before a phonetic word, the filter command at three values with words of every class it counts, the post-lexical rules switched off in phonetic input, words with affixes after a schwa, and bytes of 128 and up in phonetic input. Each call left the speaking thread's state byte-identical to the original's: the 72,924 steps (section 2.1), the 35,810 conversions (section 3), the 16,346 post-lexical passes (section 4) and the 799 resets (section 5). The rules ran as the original's recorded calls: each started from the state the Go stage had reached, checked against the original's, and left what the original's left.
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 1,333 runs: the 729 runs of the stages in the pipeline ([prosody.md](prosody.md), [parameters.md](parameters.md)), 70 more for the stage, 35 texts at two speeds: words with `~` and `` ` ``, stress digits in phonetic input, `"` among them, every word of the function words' lists and the words they treat apart, words ending in `'ve` and `'s`, numbers, single letters after a word ending in `S`, in text, spell mode and phonetic input, spelled letters, schwas before front vowels within and across words, barred i before a consonant and `l` or `j`, the onsets of stressed syllables, 13 commands between two words, runs of punctuation, every word mark of phonetic input before function and content words and before a phonetic word, the filter command at three values with words of every class it counts, the post-lexical rules switched off in phonetic input, words with affixes after a schwa, and bytes of 128 and up in phonetic input, and 534 for the dictionary (below). Each call left the speaking thread's state byte-identical to the original's: the 231,693 steps (section 2.1), the 118,280 conversions (section 3), the 49,853 post-lexical passes (section 4), the 1,333 resets (section 5) and the 54,139 lookups in the dictionary (section 6). The rules ran as the original's recorded calls: each started from the state the Go stage had reached, checked against the original's, and left what the original's left.
 
-The conversions took 8,572 words of letters, 92 with `~` and 8 with `` ` ``, 13,722 words of phonemes and 832 nodes of type 0; 2,983 of the words of letters went to letter-to-sound, 133 of them for their stress pattern. The lists classified 3,742 words, in every class, 292 of them by an exception, and the endings 54: 14 `'ve`, 36 `'s` and 4 `let's`. 4,648 stress digits gave 4,636 syllabic phonemes their stress, 4 of them `"`, and 1,319 were their word's last node; the onsets of stressed syllables marked 7,780 consonants, 1,349 second consonants and 76 `S`s, and 1,236 onsets in function words. The mark byte became 1 at 582 words and 2 at 608, 592 of them number words and 16 single letters after `S`. Codes 2, 3, 5 and 11 came six times each, code 1 four times and code 9 eight times. The passes skipped 979 nodes; the filter counted 65 words and dropped 60; 3,837 function words got their stress and reductions, 4,085 words gave their vowels their class, and the post-lexical rules ran on 49,894 phonemes. 1,461 schwas started the alternation, and 56 became barred i in their word; 450 times a front vowel walked back to an earlier word's schwas, 141 times joined, and 6 schwas became barred i; 18 barred i became schwas. 19,756 vowels got their syllable's number and 387 nodes `[` were freed.
+In the first 799 runs, the conversions took 8,572 words of letters, 92 with `~` and 8 with `` ` ``, 13,722 words of phonemes and 832 nodes of type 0; 2,983 of the words of letters went to letter-to-sound, 133 of them for their stress pattern. The lists classified 3,742 words, in every class, 292 of them by an exception, and the endings 54: 14 `'ve`, 36 `'s` and 4 `let's`. 4,648 stress digits gave 4,636 syllabic phonemes their stress, 4 of them `"`, and 1,319 were their word's last node; the onsets of stressed syllables marked 7,780 consonants, 1,349 second consonants and 76 `S`s, and 1,236 onsets in function words. The mark byte became 1 at 582 words and 2 at 608, 592 of them number words and 16 single letters after `S`. Codes 2, 3, 5 and 11 came six times each, code 1 four times and code 9 eight times. The passes skipped 979 nodes; the filter counted 65 words and dropped 60; 3,837 function words got their stress and reductions, 4,085 words gave their vowels their class, and the post-lexical rules ran on 49,894 phonemes. 1,461 schwas started the alternation, and 56 became barred i in their word; 450 times a front vowel walked back to an earlier word's schwas, 141 times joined, and 6 schwas became barred i; 18 barred i became schwas. 19,756 vowels got their syllable's number and 387 nodes `[` were freed.
+
+The 534 runs for the dictionary speak every word in it; the homographs and `read` alone, after a word of every class the lists give, and with endings, each plural after every one of these; an article up to 10 commands before the previous word, or emphasized; `subject` before a colon; the word mark `*` before the words with two entries; the words of every class but 0, and every tenth other word, with `~` and `` ` ``; long words; and every sixth word with prefixes and suffixes. Of the 54,139 lookups, 41,543 were of a whole word, 9,417 of a stem before a suffix, 1,195 after a prefix and 1,984 between both; 8 stems had more than 20 letters and 83 more than their letter's lists. 35,135 stems were found, in every class: 27,285 entries with phonemes and 7,850 with a stress pattern. 14,053 headers became `%`, 18,368 words got the entry's class, and 780 emphasized words with a class got neither. 3,838 digits `1` gave the primary stress, 283 times 3 and 279 times 1, and 462 digits `2` stress 1; 23,507 entries got the default stress, 755 of them on a reduced vowel. The word mark `*` passed 646 entries over and started the search again 20 times. The homographs' test met 1,440 verbs' entries that aren't homographs and 852 stems before `ING`, `ED` or `D`; the previous word decided 6,293 times, after every class of the lists, with a plural and without, and 124 homographs had none; the word before it was tested 1,749 times, 251 of them an article; `subject` before a colon was passed over 3 times, and of 40 tests of `read`, 11 passed its first entry over.
 
 ## 1. Nodes and classes
 
@@ -31,7 +34,7 @@ The stage makes every word's nodes type 3. A header becomes the word's mark: `&`
 
 ### 1.2 Classes
 
-The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2). Symbols of 128 and up never reach the stage (section 6); they are in no class.
+The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2). Symbols of 128 and up never reach the stage (section 7); they are in no class.
 
 | Class | Name here | Symbols |
 |---|---|---|
@@ -46,6 +49,7 @@ The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2). Sym
 | (2, 0x01) | closure | `B C D G J K M N P Q T m n q t ~` |
 | (2, 0x02) | vowel | the vowels and `p` |
 | (2, 0x20) | front | `4 A E U a e i k \|` |
+| (4, 0x40) | reduced | `3 @ l m n \|` |
 
 The vowels are `3 4 5 @ A E I O U a b c e f g i k o r u v w y |`. A word mark is `&` or `%` where the spec says so, and the class word mark where it names the class.
 
@@ -154,7 +158,7 @@ The normalizer gives a header the code of the word mark phonetic input puts befo
 | 11 | `#` | A space of type 3 and value 8 comes after the header; the header's second value becomes 59 |
 | 13 | `$` | The post-lexical pass leaves the word as converted: no post-lexical rules, and for a function word no stress or reductions (section 4.2) |
 
-A function word after `#` makes the original fault (section 6).
+A function word after `#` makes the original fault (section 7).
 
 ## 4. The post-lexical pass
 
@@ -199,7 +203,73 @@ When alternating is clear, a node `@` starts the alternation, as the schwa, unle
 
 At the pipeline's reset ([pipeline.md](pipeline.md) §7), the current and previous words become none, filtered and the previous symbol 0, and alternating is cleared. The search, the emphasis and what the rules found keep their values. The cursor's types are 2 and 3 (the pipeline sets them).
 
-## 6. What the recorded runs don't reach
+## 6. The dictionary
+
+The rules' lookup (section 3.3, step 6) looks the word up in the user lexicon and the dictionary, then takes off its affixes and looks up what they leave. The lookup in the dictionary works on a **stem**: the nodes from the cursor's first working node to its second ([pipeline.md](pipeline.md) §3), the word's letters from its first letter to its last node, or what its affixes leave of them. The data pack holds the dictionary ([datapack.md](datapack.md) §9).
+
+### 6.1 The entries
+
+The dictionary has 6,494 entries for 6,334 words. An entry has a **word**, a letter `A` to `Z` and up to 20 more of `A` to `Z` and `@`; a **class**, 0 to 15; and either **phonemes**, up to 15 symbols with their stress digits, or a **stress pattern**, 0 to 255, for letter-to-sound. 4,747 entries have phonemes and 1,747 a stress pattern.
+
+| Class | Words |
+|---|---|
+| 0 | the rest |
+| 1 | pronouns and their forms: `he`, `it's`, `myself`, `anyone`…, and a few others: `much`, `per`, `so` |
+| 2 | `be`, `can`, `have`, `the` |
+| 3 | `a`, `an`, `am`, `for`, `from`, `of`, `shall` |
+| 4 | prepositions: `about`, `after`, `before`, `without`… |
+| 5 | conjunctions and linking adverbs: `because`, `if`, `that`, `therefore`… |
+| 6 | verbs, 447 |
+| 7 | quantifiers: `all`, `any`, `both`, `many`… |
+| 8 | negations: `not`, `never`, `can't`… |
+| 9 | `do`, `did`, `does` |
+| 10 | prepositions: `as`, `at`, `by`, `in`, `to`… |
+| 11 | `may`, `must`, `might` |
+| 12 | auxiliaries: `are`, `been`, `could`, `has`, `will`… |
+| 13 | question words: `how`, `who`, `what`… |
+| 14 | `and`, `but`, `nor`, `or` |
+| 15 | adverbs: `early`, `only`, `perhaps`… |
+
+The entries are in lists by their first letter and their number of letters, each list in the order the lookup searches it. 160 words have two entries: 116 homographs, whose verb's entry, of class 6, comes first but for `frequent` (section 6.3), the past tense word `read`, whose second entry is its past tense, and 43 words with a second way to say them, `data`, `minute`, `Paris`…, which only the word mark `*` reaches (section 6.2).
+
+### 6.2 The search
+
+1. The stem's **letters** are its nodes after the first. With more than 20, the stem isn't found. Its first node must be a letter `A` to `Z`; otherwise the stem isn't found.
+2. The list of the stem's first letter and number of letters is searched in order. An entry **fits** when its letters are the stem's, compared by their five low bits: `@` is 0 and the letters 1 to 26.
+3. At an entry that fits: if the word's header has code 4, from phonetic input's word mark `*` (section 3.6), the code is cleared (flag bit 0x20), the entry is remembered and the search goes on. Otherwise, a verb's entry goes through the homographs' test (section 6.3), which can pass over it: the search goes on. Otherwise the entry is taken (section 6.4), and the stem is found.
+4. If the search ends with an entry remembered, it starts again at that entry, which the code no longer passes over. If it ends again, the stem isn't found.
+
+The word mark `*` so gives a word its second entry, or its only one.
+
+### 6.3 Homographs
+
+A verb's entry is taken unless the words around the stem make it a noun, or a past tense. The stem's **spelling** is `#`, its symbols, `#`.
+
+1. If the stem ends at the word's last node: when its spelling is the past tense word, `#READ#`, there is a previous word, and the past tense word wasn't tested before in this lookup, the entry is passed over after a form of be or have (class 0x0c or 0x0d in the low four bits, section 3.4), or after `he`, `she` or `it` (class 0x12).
+   If the stem ends before the word's last node, its **ending** is the symbols after it up to the word's last node, but `[`, at most 30. After `ING`, `ED` or `D`, the entry is taken. After `S` or `ES`, the stem is **plural**.
+2. Unless the list of homographs has the spelling, the entry is taken. The list has 116 words, from `ally`, `abuse` and `affix` to `wind` and `wound`.
+3. `#SUBJECT#` before a colon, a node `:` of type 1 right after the word's last node in the list, is passed over.
+4. With no previous word, the entry is taken. Otherwise the previous word's class (section 3.4) decides, its low four bits the list and its high four the subclass:
+
+| Previous word | Class, low bits | The verb's entry is taken |
+|---|---|---|
+| articles, possessives, forms of be, words ending in `'s` | 0x01, 0x08, 0x0c, 0x0e | never |
+| quantifiers, prepositions, demonstratives | 0x03, 0x05, 0x0f | with subclass 1, `few`, `many`…, `to`, `these` and `those`, when the stem isn't plural |
+| numbers | 0x06 | with subclass 1, `one`, when the stem is plural |
+| conjunctions | 0x04 | with subclass 0; with subclass 1, `that`, when the stem is plural; never with subclass 2, `which` |
+| other words: content words, `he`, `she`, `it`, forms of have | | unless the word before the previous word is an article, class 0x01 in the low bits: the nearest header `&` or `%` among the 8 nodes before the previous word's header, before a node in class break |
+
+So `to record` takes the verb's entry and `the record` the noun's, `one records` the verb's and `all records` the noun's.
+
+### 6.4 Taking an entry
+
+1. If the entry's class isn't 0 and the word isn't emphasized: if the stem is the whole word, from its first letter to its last node, and the class is neither 6 nor 15, the header becomes `%`, a function word; and if the word class is 0, it becomes the entry's class.
+2. An entry without phonemes gives the word its stress pattern, and the lookup ends; letter-to-sound converts the word (section 3.3, step 6).
+3. Otherwise the stem's letters are freed, and the entry's phonemes, nodes of type 3, take their place. The working nodes become the first and the last phoneme, and so do the word's first letter and last node when the stem starts or ends there.
+4. A `1` gives the phoneme after it the word's **primary stress**: 3 when the word is emphasized, 1 when it is de-emphasized, else 2. A `2` gives the phoneme after it stress 1. A `0` keeps the phoneme after it from the default stress; no entry has one.
+5. If the entry has no `1`, the **default stress**: the first syllabic phoneme with no digit before it gets the primary stress, the first that isn't reduced, or else the first reduced one, `3 @ l m n |`.
+
+## 7. What the recorded runs don't reach
 
 - A word of more than 96 letters, which section 3.4 doesn't classify: the input stage splits a word into pieces of 30 letters.
 - A symbol 0 in a word's spelling (section 3.4), which would end it early.
@@ -215,4 +285,8 @@ At the pipeline's reset ([pipeline.md](pipeline.md) §7), the current and previo
 - The pass running out of the window before its end (section 4.2, step 3), and the post-lexical rules returning no node.
 - A reset of a stage that has run (section 5): the recorded resets are of a new speaking thread's state, whose values are all 0. A reset within a session drops the rest of the text, so a recorded run never ends ([pipeline.md](pipeline.md) §9).
 - A function word after phonetic input's word mark `#`, code 11, which puts a space after the word's header (section 3.6): the original faults. The spec of the function words' rules will say where, and what the port does.
-- Dead code left out of the port: code 5 also makes the header type 3 (section 3.6), which it already is; and case 1 of section 4.3 also clears the schwa, which nothing reads before the next schwa that starts the alternation sets it.
+- A stem whose first node isn't a letter (section 6.2, step 1). The input stage gives words only letters and `@`, and an affix leaves a letter first. For a symbol after `[` the original reads past the dictionary's index; the port doesn't find the stem.
+- A search that ends twice without an entry (section 6.2, step 4): the original searches again, without end. A word with the code that has only homographs' verb entries would do it, and no word has: every homograph has an entry of another class.
+- An ending of more than 30 symbols (section 6.3, step 1): a word has at most 30 letters.
+- An entry with a `0`, or with only digits (section 6.4): the dictionary has none, and the data pack refuses one with only digits.
+- Dead code left out of the port: code 5 also makes the header type 3 (section 3.6), which it already is; case 1 of section 4.3 also clears the schwa, which nothing reads before the next schwa that starts the alternation sets it; and the original copies at most 97 symbols of a stem's spelling (section 6.3), when the stem has at most 21.

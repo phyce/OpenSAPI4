@@ -14,7 +14,7 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
 
-// The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz) records calls of the original's functions
+// The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz and dictionary.jsonl.gz) records calls of the original's functions
 // with the changes of the speaking thread's state around them. The replay rebuilds the state at every call and
 // return (internal/threadstate, internal/lexicalstate), so that a Go function can start from the state the
 // original's started from and leave what it left. The stage's parts that later parts port run as the original's
@@ -43,12 +43,19 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 			return replayer(call)
 		}
 	}
-	return threadstate.Replay(t, "lexical.jsonl.gz", guarded, recorded...)
+	counts := map[string]int{}
+	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz"} {
+		for function, count := range threadstate.Replay(t, file, guarded, recorded...) {
+			counts[function] += count
+		}
+	}
+	return counts
 }
 
 // testData are the data pack's tables the replays need.
 type testData struct {
 	lexical    *datapack.Lexical
+	dictionary *datapack.Dictionary
 	parameters *datapack.Parameters
 	pipeline   *datapack.Pipeline
 }
@@ -60,6 +67,10 @@ func loadTestData(t *testing.T) *testData {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dictionary, err := pack.LoadDictionary()
+	if err != nil {
+		t.Fatal(err)
+	}
 	parameters, err := pack.LoadParameters()
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +79,7 @@ func loadTestData(t *testing.T) *testData {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testData{lexicalTables, parameters, pipelineTables}
+	return &testData{lexicalTables, dictionary, parameters, pipelineTables}
 }
 
 // recordedRules stand in for the stage's parts later parts port, with a call's recorded inner calls.
@@ -83,7 +94,7 @@ type recordedRules struct {
 // load returns a stage with the thread state's values when the call started, whose rules are the call's
 // recorded inner calls.
 func (data *testData) load(call *call) (*lexical.Stage, *recordedRules) {
-	stage := lexical.New(data.lexical, data.parameters, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
+	stage := lexical.New(data.lexical, data.dictionary, data.parameters, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
 	mapping := threadstate.Mapping{Pipeline: stage.Pipeline, Base: call.Base}
 	mapping.LoadPipeline(call.Before)
 	lexicalstate.Load(mapping, stage, call.Before)
@@ -212,6 +223,18 @@ func TestStage(t *testing.T) {
 			stage.Reset()
 			stage.Pipeline.Cursors[pipeline.Lexical].Types = 6
 			return rules.finish(call, nil)
+		},
+	})
+	t.Logf("calls replayed: %v", counts)
+}
+
+// TestDictionary replays every recorded dictionary lookup.
+func TestDictionary(t *testing.T) {
+	data := loadTestData(t)
+	counts := replay(t, map[string]replayer{
+		"Lexical::DictionaryLookup": func(call *call) error {
+			stage, rules := data.load(call)
+			return rules.finish(call, expectFlag(call, stage.DictionaryLookup()))
 		},
 	})
 	t.Logf("calls replayed: %v", counts)

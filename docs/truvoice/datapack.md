@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), and the lexical stage's function words' lists ([lexical.md](lexical.md) §3.4). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), and the lexical stage's function words' lists and dictionary ([lexical.md](lexical.md) §3.4 and §6). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -168,3 +168,17 @@ A **word** here is a string of symbols 1 to 127.
 |---|---|---|
 | `functionWords` | Lists | The lists of function words, in the order the lexical stage searches them ([lexical.md](lexical.md) §3.4). A list is `{"words": w, "class": c, "exceptions": e}`: `w` a word, the list's words each between two `#`, which a word's spelling is searched in; `c` 0 to 255, the class its words get; `e`, which can be left out, a list of `{"word": s, "class": c}`, a spelling between two `#` that gets class `c` instead |
 | `functionWordEndings` | Endings | The endings tested in turn when no list has a word's spelling: `{"ending": n, "class": c, "exceptions": e}`, `n` a word, the ending before the spelling's last `#`, with `c` and `e` as above |
+
+## 9. `dictionary.json`
+
+A **word** here is a string of symbols 1 to 127, and in `homographs`, `nounBeforeColon` and `pastTense` words each between two `#`.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `words` | Entries | The dictionary's entries ([lexical.md](lexical.md) §6.1). An entry is `{"word": w, "class": c, "phonemes": p}` or `{"word": w, "class": c, "stressPattern": s}`: `w` a letter `A` to `Z` and up to 20 more of `@` and `A` to `Z`; `c` 0 to 15; `p` 1 to 15 symbols below 128, not only the digits `0`, `1` and `2`; `s` 0 to 255. The lookup searches the entries of the same first letter and length in their order here |
+| `homographs` | A word | The homographs, each between two `#` ([lexical.md](lexical.md) §6.3) |
+| `verbEndings` | Words | The endings after which a homograph's verb's entry is taken |
+| `pluralEndings` | Words | The endings that make a homograph plural |
+| `nounBeforeColon` | A word | The homograph, between two `#`, whose verb's entry a colon after it passes over |
+| `pastTense` | A word | The word, between two `#`, whose first entry the forms of be and have, and `he`, `she` and `it`, pass over |
+
