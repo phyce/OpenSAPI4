@@ -41,6 +41,11 @@ type Cursor struct {
 	Types uint32
 }
 
+// Takes reports whether the node is of one of the cursor's types.
+func (cursor *Cursor) Takes(node *Node) bool {
+	return cursor.Types&typeMasks[node.Type()] != 0
+}
+
 func (pipeline *Pipeline) stageOf(cursor *Cursor) int {
 	for stage := range pipeline.Cursors {
 		if cursor == &pipeline.Cursors[stage] {
@@ -56,11 +61,11 @@ func (pipeline *Pipeline) stageOf(cursor *Cursor) int {
 func (pipeline *Pipeline) Begin(cursor *Cursor) bool {
 	pipeline.Current = cursor
 	first := cursor.First
-	for first != nil && cursor.Types&typeMasks[first.Type()] == 0 {
+	for first != nil && !cursor.Takes(first) {
 		first = pipeline.Next(first)
 	}
 	cursor.First = first
-	for cursor.Scan != nil && cursor.Types&typeMasks[cursor.Scan.Type()] == 0 && pipeline.ExecuteControl() {
+	for cursor.Scan != nil && !cursor.Takes(cursor.Scan) && pipeline.ExecuteControl() {
 		scanned := cursor.Scan
 		cursor.Scan = pipeline.Next(scanned)
 		if cursor.Done == scanned {

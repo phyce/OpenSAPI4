@@ -465,3 +465,42 @@ func TestChangedProsody(t *testing.T) {
 		}
 	}
 }
+
+func TestLexical(t *testing.T) {
+	lexical, err := conformance.Pack(t).LoadLexical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lexical.FunctionWords) != 11 || lexical.FunctionWords[0].Words != "#A#AN#THE#" || lexical.FunctionWords[0].Class != 1 {
+		t.Errorf("%d function word lists, the first %+v", len(lexical.FunctionWords), lexical.FunctionWords[0])
+	}
+	demonstratives := lexical.FunctionWords[10]
+	if demonstratives.Class != 0x1f || !reflect.DeepEqual(demonstratives.Exceptions, []datapack.WordException{{Word: "#THIS#", Class: 0x0f}}) {
+		t.Errorf("demonstratives %+v", demonstratives)
+	}
+	want := []datapack.FunctionWordEnding{{Ending: "@VE", Class: 0x0d},
+		{Ending: "@S", Class: 0x0e, Exceptions: []datapack.WordException{{Word: "#LET@S#", Class: 0}}}}
+	if !reflect.DeepEqual(lexical.FunctionWordEndings, want) {
+		t.Errorf("function word endings %+v", lexical.FunctionWordEndings)
+	}
+}
+
+func TestChangedLexical(t *testing.T) {
+	tests := []struct{ content, message string }{
+		{`{"functionWords":[]}`, "functionWords is empty"},
+		{`{"functionWords":[{"words":"","class":1}]}`, "functionWords[0].words is empty"},
+		{`{"functionWords":[{"words":"#A\u0000#","class":1}]}`, "functionWords[0].words[2] is 0"},
+		{`{"functionWords":[{"words":"#\u00e9#","class":1}]}`, "functionWords[0].words[1] is 195"},
+		{`{"functionWords":[{"words":"#A#"}]}`, "functionWords[0].class is missing"},
+		{`{"functionWords":[{"words":"#A#","class":256}]}`, "functionWords[0].class is 256"},
+		{`{"functionWords":[{"words":"#A#","class":1,"exceptions":[{"word":"","class":2}]}]}`, "functionWords[0].exceptions[0].word is empty"},
+		{`{"functionWords":[{"words":"#A#","class":1,"exceptions":[{"word":"#A#","class":-1}]}]}`, "functionWords[0].exceptions[0].class is -1"},
+		{`{"functionWords":[{"words":"#A#","class":1}],"functionWordEndings":[{"ending":"","class":1}]}`, "functionWordEndings[0].ending is empty"},
+		{`{"functionWords":[{"words":"#A#","class":1}],"functionWordEndings":[{"ending":"@S"}]}`, "functionWordEndings[0].class is missing"},
+	}
+	for _, test := range tests {
+		if _, err := writePack(t, "lexical.json", []byte(test.content)).LoadLexical(); err == nil || !strings.Contains(err.Error(), test.message) {
+			t.Errorf("%v, expected %q", err, test.message)
+		}
+	}
+}

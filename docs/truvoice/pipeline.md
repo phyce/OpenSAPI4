@@ -34,6 +34,7 @@ What the stages share:
 - the **saved rate**, which the filter command keeps, the **track levels**, 22 bytes, and the synthesizer's **sample rate**;
 - a **reset request** and its value;
 - the **short phrase** flag, which makes the prosody stage's next phrase shorter ([prosody.md](prosody.md) §3.2);
+- the **number word** flag, which the normalizer sets when it writes a number's word and the lexical stage clears when it converts the word ([lexical.md](lexical.md) §3.1);
 - the **engine**: its attributes (pitch, speed, volume, character, voice), which its interface sets and reads, its sample rate and output gain, a **queue** that carries the audio and the events to the destination, in order, and the **messages** the pipeline posts to the engine's window. The engine is absent when it only converts text to phonemes.
 
 ## 2. Nodes

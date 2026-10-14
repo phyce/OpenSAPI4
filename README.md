@@ -123,6 +123,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `truvoice/datapack` | Reads and checks the TruVoice data pack |
 | `truvoice/synthesizer` | TruVoice's formant synthesizer: parameter frames to coefficient blocks to samples, its frame ring, steps and audio buffer |
 | `truvoice/pipeline` | TruVoice's pipeline: the nodes its stages pass on, the stages' cursors, the text's control commands, the output stage, the scheduler and the speaking thread's start, attributes and hand-overs |
+| `truvoice/lexical` | TruVoice's lexical stage (in progress): its step, the words' conversion, their stress, class and codes, and the post-lexical pass |
 | `truvoice/prosody` | TruVoice's prosody stage: the phrases, their breaks and pauses, the walk over their nodes, the context it notes for each phoneme, the pitch and the durations |
 | `truvoice/parameters` | TruVoice's parameter generator: its tracks and the segments it renders into the frame ring, the phonemes' targets, the rules, the per-phoneme rules, the actions that set the onsets and shapes, the fricatives' amplitudes and the stops' closures, the vowels' formants with the vowel database, the loci and final adjustments that finish a phoneme, the consonants' targets and transitions with the liquids, the pitch's small movements, the sources at the boundaries, the rendering of a phoneme, and the stage's step with its pauses and generated segments |
 

@@ -52,6 +52,10 @@ type Pipeline struct {
 	// enough ahead of the synthesizer.
 	ShortPhrase bool
 
+	// NumberWord is set by the normalizer when it writes a number's word, and cleared by the lexical stage when it
+	// converts the word.
+	NumberWord bool
+
 	// VisualEvents is whether the parameter generator queues a visual event for each phoneme, PostedSpace
 	// whether the last one it queued was a pause.
 	VisualEvents bool

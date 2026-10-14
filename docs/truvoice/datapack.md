@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), and the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), and the lexical stage's function words' lists ([lexical.md](lexical.md) §3.4). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -13,6 +13,7 @@ pipeline.json
 parameters.json
 vowels.json
 prosody.json
+lexical.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -158,3 +159,12 @@ A vowel:
 | `gridOffsets` | 38 numbers | Each grid's first byte in `durationGrids`, at least its size before its end. Grids 0 to 23 are the vowels' ([prosody.md](prosody.md) §6.7), 24 to 28 the fricatives' (§6.10) and 29 to 37 the sonorants' (§6.9). The grids lie in another order than this list's: 0 to 20, 22, 23, 21, then the others |
 | `breakReductions` | 47 numbers, 0 to 255 | By a vowel's grid: the frames a vowel after a glide loses before a break, from 0 when unstressed and from 23 when stressed ([prosody.md](prosody.md) §6.7, step 19) |
 | `functionWordRules` | 16 lists of rules | By word class: the rules for a function word's vowel ([prosody.md](prosody.md) §6.8). A rule is `{"back": b, "symbols": s, "conditions": c, "tests": t, "frames": f}`: `b` 0 to 255, `s` 1 to 255 symbols below 128, `c` bits 0 to 127, `f` 0 to 255. A test is `{"kind": k, "direction": d, "steps": n, "value": v}`: `k` 0 to 5, `d` 0 or 1, `n` 0 to 255 and 0 for direction 0, `v` a class `(p, b)` as `p · 256 + b` below 1536 for kinds 0, 3 and 4, a symbol below 128 for kind 5, and 0 to 255 for kinds 1 and 2. Classes 0 and 6 have none |
+
+## 8. `lexical.json`
+
+A **word** here is a string of symbols 1 to 127.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `functionWords` | Lists | The lists of function words, in the order the lexical stage searches them ([lexical.md](lexical.md) §3.4). A list is `{"words": w, "class": c, "exceptions": e}`: `w` a word, the list's words each between two `#`, which a word's spelling is searched in; `c` 0 to 255, the class its words get; `e`, which can be left out, a list of `{"word": s, "class": c}`, a spelling between two `#` that gets class `c` instead |
+| `functionWordEndings` | Endings | The endings tested in turn when no list has a word's spelling: `{"ending": n, "class": c, "exceptions": e}`, `n` a word, the ending before the spelling's last `#`, with `c` and `e` as above |
