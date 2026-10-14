@@ -12,14 +12,16 @@ import (
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/truvoice/internal/conformance"
+	"github.com/phyce/OpenSAPI4/truvoice/internal/prosodystate"
 	"github.com/phyce/OpenSAPI4/truvoice/internal/threadstate"
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
+	"github.com/phyce/OpenSAPI4/truvoice/prosody"
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
 
 // The stage's golden data (golden/truvoice/stage.jsonl.gz) records the calls of the original's scheduler, and of
-// the stages it runs before the parameter generator, with the changes of the speaking thread's state around
-// them.
+// the stages it runs before the parameter generator, with the changes of the speaking thread's state and of the
+// prosody stage's global variables around them.
 
 // The thread state's places of the scheduler's state and the synthesizer's flags.
 const (
@@ -43,17 +45,18 @@ type stageCase struct {
 	Records []threadstate.Record `json:"records"`
 }
 
-// stageReplay runs the Go scheduler, parameter generator, output stage and synthesizer on one recorded run, and
-// stands in for the stages before the parameter generator: a stage's call takes the state the original's left.
+// stageReplay runs the Go scheduler, prosody stage, parameter generator, output stage and synthesizer on one
+// recorded run, and stands in for the stages before prosody: a stage's call takes the state the original's left.
 type stageReplay struct {
 	data              *testData
 	synthesizerTables *datapack.Synthesizer
+	prosodyTables     *datapack.Prosody
 	records           []threadstate.Record
 	position          int
-	state             []byte
-	base              uint32
+	thread            *threadstate.State
 	pipeline          *pipeline.Pipeline
 	generator         *Generator
+	prosody           *prosody.Stage
 	texts             map[uint32]*pipeline.Text
 	stepping          bool
 	ran               []string
@@ -90,13 +93,7 @@ func (replay *stageReplay) next() *threadstate.Record {
 		if record.Kind != "call" && record.Kind != "return" {
 			continue
 		}
-		if record.Base != 0 {
-			replay.base = record.Base
-			clear(replay.state)
-		}
-		for _, run := range record.Diff {
-			copy(replay.state[run.Offset:], run.Data)
-		}
+		replay.thread.Apply(record)
 		return record
 	}
 	return nil
@@ -120,7 +117,7 @@ func (replay *stageReplay) text(pointer uint32) *pipeline.Text {
 // start starts the Go speaking thread with the engine's sample rate, gain and attributes as the state has them
 // at the first step, and compares the state it leaves with that, but for what the input side wrote.
 func (replay *stageReplay) start() error {
-	state := replay.state
+	state := replay.thread.Bytes
 	halfWord := func(offset int) uint16 { return binary.LittleEndian.Uint16(state[offset:]) }
 	engine := &pipeline.Engine{SampleRate: int(halfWord(threadstate.SampleRate)), Gain: uint32(halfWord(stateGain)),
 		Pitch: uint16(threadstate.Dword(state, threadstate.Pitch)), Speed: threadstate.Dword(state, threadstate.Speed), Volume: threadstate.Dword(state, threadstate.Volume),
@@ -128,6 +125,8 @@ func (replay *stageReplay) start() error {
 	replay.pipeline = pipeline.New(replay.data.pipeline, synthesizer.New(replay.synthesizerTables, engine.SampleRate), replay, engine)
 	replay.generator = New(replay.data.parameters, replay.data.vowels, replay.pipeline)
 	replay.pipeline.Generator = countedGenerator{replay.generator, replay.counts}
+	replay.prosody = prosody.New(replay.prosodyTables, replay.data.parameters, replay.pipeline)
+	replay.prosody.Shared = new(prosody.Shared)
 	replay.pipeline.Start()
 	replay.pipeline.ApplyAttributes()
 	replay.pipeline.OutOfInput = state[stateOutOfInput] != 0
@@ -138,10 +137,16 @@ func (replay *stageReplay) start() error {
 	return nil
 }
 
-// load gives the Go pipeline the state's values.
+// mapping maps the state to the Go pipeline.
+func (replay *stageReplay) mapping() threadstate.Mapping {
+	return threadstate.Mapping{Pipeline: replay.pipeline, Base: replay.thread.Base, Text: replay.text}
+}
+
+// load gives the Go pipeline the state's values, and the prosody stage the global variables'.
 func (replay *stageReplay) load() {
-	state := replay.state
-	loadInto(replay.generator, state, replay.base, replay.text)
+	state := replay.thread.Bytes
+	loadInto(replay.generator, state, replay.thread.Base, replay.text)
+	prosodystate.Load(replay.mapping(), replay.prosody, state, replay.thread.Globals)
 	stages := replay.pipeline
 	ring := stages.Synthesizer
 	stages.OutOfInput = state[stateOutOfInput] != 0
@@ -157,10 +162,11 @@ func (replay *stageReplay) load() {
 	ring.Rendering = binary.LittleEndian.Uint16(state[stateRendering:]) != 0
 }
 
-// compare reports where the Go pipeline differs from the state.
+// compare reports where the Go pipeline differs from the state, and the prosody stage from the global variables.
 func (replay *stageReplay) compare() error {
-	state := slices.Clone(replay.state)
-	store(replay.generator, state, replay.base)
+	state := slices.Clone(replay.thread.Bytes)
+	store(replay.generator, state, replay.thread.Base)
+	globals := prosodystate.Store(replay.mapping(), replay.prosody, state, replay.thread.Globals)
 	stages := replay.pipeline
 	ring := stages.Synthesizer
 	flag := func(offset int, value bool) {
@@ -185,21 +191,31 @@ func (replay *stageReplay) compare() error {
 	if ring.Rendering {
 		state[stateRendering] = 1
 	}
-	if err := differences(state, replay.state); err != nil {
+	if err := threadstate.Differences(state, replay.thread.Bytes, describeStage); err != nil {
+		return err
+	}
+	if err := threadstate.Differences(globals, prosodystate.Padded(replay.thread.Globals), prosodystate.DescribeGlobal); err != nil {
 		return err
 	}
 	for index, offset := range threadstate.NodeOffsets() {
 		node := stages.Node(index)
-		if pointer := threadstate.Dword(replay.state, offset+threadstate.NodeText); pointer != 0 && node.Text != replay.text(pointer) {
+		if pointer := threadstate.Dword(replay.thread.Bytes, offset+threadstate.NodeText); pointer != 0 && node.Text != replay.text(pointer) {
 			return fmt.Errorf("node %d has text %v, expected %d", index, node.Text, replay.text(pointer).Number)
 		}
 	}
 	return nil
 }
 
-// stage stands in for a stage's run: it checks that the original ran it here and from the same state, and
-// takes the state it left.
-func (replay *stageReplay) stage(function string) bool {
+// describeStage names a byte of the thread state, for the reports.
+func describeStage(offset int) string {
+	if name, found := prosodystate.Names()[offset]; found {
+		return name
+	}
+	return describe(offset)
+}
+
+// enter checks that the original ran a stage here and from the same state.
+func (replay *stageReplay) enter(function string) bool {
 	replay.ran = append(replay.ran, function)
 	if replay.err != nil {
 		return false
@@ -212,25 +228,64 @@ func (replay *stageReplay) stage(function string) bool {
 		replay.fail("before %s: %v", function, err)
 		return false
 	}
+	return true
+}
+
+// leave returns the stage's return, or nil when the original went on with something else.
+func (replay *stageReplay) leave(function string) *threadstate.Record {
 	record := replay.next()
 	if record == nil || record.Kind != "return" || record.Function != function {
 		replay.fail("%s went on with %s", function, named(record))
+		return nil
+	}
+	replay.counts[function]++
+	return record
+}
+
+// stage stands in for a stage's run: it checks that the original ran it here and from the same state, and
+// takes the state it left.
+func (replay *stageReplay) stage(function string) bool {
+	if !replay.enter(function) {
+		return false
+	}
+	record := replay.leave(function)
+	if record == nil {
 		return false
 	}
 	replay.load()
-	replay.counts[function]++
 	return record.EAX&0xff != 0
 }
 
 func (replay *stageReplay) Input() bool      { return replay.stage("Input::MakeRecords") }
 func (replay *stageReplay) Normalizer() bool { return replay.stage("Normalizer::Run") }
 func (replay *stageReplay) Lexical() bool    { return replay.stage("Lexical::Step") }
-func (replay *stageReplay) Prosody() bool    { return replay.stage("Prosody::Run") }
+
+// Prosody runs the Go prosody stage where the original ran its own, from the same state, and checks what it
+// reports and leaves.
+func (replay *stageReplay) Prosody() bool {
+	const function = "Prosody::Run"
+	if !replay.enter(function) {
+		return false
+	}
+	handed := replay.prosody.Run()
+	record := replay.leave(function)
+	switch {
+	case record == nil:
+	case handed != (record.EAX&0xff != 0):
+		replay.fail("%s reported %t, expected %t", function, handed, !handed)
+	default:
+		if err := replay.compare(); err != nil {
+			replay.fail("after %s: %v", function, err)
+		}
+	}
+	return handed
+}
 
 func (replay *stageReplay) Reset() {
 	if replay.stepping {
 		replay.fail("the Go scheduler reset the stages")
 	}
+	replay.prosody.Reset()
 }
 
 // step runs the Go scheduler's step for the original's, from the state it started from, and compares what it
@@ -241,8 +296,8 @@ func (replay *stageReplay) step() error {
 			return err
 		}
 	}
-	if bytes := 2 * len(replay.pipeline.Synthesizer.Samples); uint32(bytes) != threadstate.Dword(replay.state, stateBytes) {
-		return fmt.Errorf("%d bytes of samples before the step, expected %d", bytes, threadstate.Dword(replay.state, stateBytes))
+	if bytes := 2 * len(replay.pipeline.Synthesizer.Samples); uint32(bytes) != threadstate.Dword(replay.thread.Bytes, stateBytes) {
+		return fmt.Errorf("%d bytes of samples before the step, expected %d", bytes, threadstate.Dword(replay.thread.Bytes, stateBytes))
 	}
 	replay.load()
 	replay.ran = nil
@@ -331,14 +386,19 @@ func compareQueue(queue []pipeline.Item, golden stageCase) error {
 	return nil
 }
 
-// TestStage runs the Go scheduler, parameter generator, output stage and synthesizer for every recorded step of
-// the original's scheduler, with the stages before the parameter generator taken from the records: it checks the
-// stages the scheduler runs, the state before each of them, what each step reports and the whole state it
-// leaves, and that the audio handed over is the original's PCM, with the bookmarks and words where the
-// original's came.
+// TestStage runs the Go scheduler, prosody stage, parameter generator, output stage and synthesizer for every
+// recorded step of the original's scheduler, with the stages before prosody taken from the records: it checks the
+// stages the scheduler runs, the state before each of them, what each step and the prosody stage report and the
+// whole state they leave, with the prosody stage's shared state, and that the audio handed over is the original's
+// PCM, with the bookmarks and words where the original's came.
 func TestStage(t *testing.T) {
 	data := loadTestData(t)
-	synthesizerTables, err := conformance.Pack(t).LoadSynthesizer()
+	pack := conformance.Pack(t)
+	synthesizerTables, err := pack.LoadSynthesizer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prosodyTables, err := pack.LoadProsody()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,8 +410,8 @@ func TestStage(t *testing.T) {
 	for range runtime.GOMAXPROCS(0) {
 		workers.Go(func() {
 			for golden := range cases {
-				replay := &stageReplay{data: data, synthesizerTables: synthesizerTables, records: golden.Records,
-					state: make([]byte, threadstate.Size), texts: map[uint32]*pipeline.Text{}, counts: map[string]int{}}
+				replay := &stageReplay{data: data, synthesizerTables: synthesizerTables, prosodyTables: prosodyTables,
+					records: golden.Records, thread: threadstate.NewState(), texts: map[uint32]*pipeline.Text{}, counts: map[string]int{}}
 				err := replay.run(golden)
 				lock.Lock()
 				runs++

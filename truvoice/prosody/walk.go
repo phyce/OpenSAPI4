@@ -123,9 +123,7 @@ func afterOpening(node *pipeline.Node) bool {
 func (stage *Stage) DurationAndPitch() {
 	stage.PitchContext()
 	stage.AssignPitch()
-	if stage.duration != nil {
-		stage.duration()
-	}
+	stage.AssignDuration()
 }
 
 // The presets' bits: a duration, a pitch, and both relative to the stage's.

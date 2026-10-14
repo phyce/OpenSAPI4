@@ -1,11 +1,15 @@
-package prosody
+package prosody_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/phyce/OpenSAPI4/truvoice/prosody"
+)
 
 // TestPitch replays every recorded call of the context, the pitch's context, the pitch and its reset.
 func TestPitch(t *testing.T) {
 	data := loadTestData(t)
-	plain := func(run func(stage *Stage)) replayer {
+	plain := func(run func(stage *prosody.Stage)) replayer {
 		return func(call *call) error {
 			stage := data.load(call)
 			run(stage)
@@ -13,10 +17,10 @@ func TestPitch(t *testing.T) {
 		}
 	}
 	counts := replay(t, map[string]replayer{
-		"Prosody::LoadContext":     plain((*Stage).LoadContext),
-		"Prosody::PitchContext":    plain((*Stage).PitchContext),
-		"Prosody::AssignPitch":     plain((*Stage).AssignPitch),
-		"Prosody::ResetPitchState": plain((*Stage).ResetPitch),
+		"Prosody::LoadContext":     plain((*prosody.Stage).LoadContext),
+		"Prosody::PitchContext":    plain((*prosody.Stage).PitchContext),
+		"Prosody::AssignPitch":     plain((*prosody.Stage).AssignPitch),
+		"Prosody::ResetPitchState": plain((*prosody.Stage).ResetPitch),
 	})
 	if counts["Prosody::AssignPitch"] == 0 {
 		t.Error("no pitch recorded")

@@ -77,7 +77,6 @@ type Stage struct {
 	tables     *datapack.Prosody
 	parameters *datapack.Parameters
 	classes    *datapack.Classes
-	duration   func()
 }
 
 // New returns the stage for the pipeline, with the process's shared state.
