@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -15,13 +16,12 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
 
-// The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz, dictionary.jsonl.gz and lexicon.jsonl.gz)
-// records calls of the original's functions
-// with the changes of the speaking thread's state around them. The replay rebuilds the state at every call and
-// return (internal/threadstate, internal/lexicalstate), so that a Go function can start from the state the
-// original's started from and leave what it left. The stage's parts that later parts port run as the original's
-// recorded calls: each starts from the state the Go stage reached, checked against the original's, and leaves
-// what the original's left.
+// The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz, dictionary.jsonl.gz, lexicon.jsonl.gz and
+// affixes.jsonl.gz) records calls of the original's functions with the changes of the speaking thread's state
+// around them. The replay rebuilds the state at every call and return (internal/threadstate,
+// internal/lexicalstate), so that a Go function can start from the state the original's started from and leave
+// what it left. The stage's parts that later parts port run as the original's recorded calls: each starts from
+// the state the Go stage reached, checked against the original's, and leaves what the original's left.
 
 type (
 	call     = threadstate.Call
@@ -29,8 +29,8 @@ type (
 )
 
 // recorded are the functions of the parts later parts port.
-var recorded = []string{"Lexical::MorphLookup", "Lexical::LetterToSound", "Lexical::PostLexicalRules",
-	"Lexical::FunctionWordDestress", "Lexical::FunctionWordReduceVowels"}
+var recorded = []string{"Lexical::LetterToSound", "Lexical::PostLexicalRules", "Lexical::FunctionWordDestress",
+	"Lexical::FunctionWordReduceVowels"}
 
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
@@ -46,7 +46,7 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 		}
 	}
 	counts := map[string]int{}
-	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz", "lexicon.jsonl.gz"} {
+	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz", "lexicon.jsonl.gz", "affixes.jsonl.gz"} {
 		for function, count := range threadstate.Replay(t, file, guarded, recorded...) {
 			counts[function] += count
 		}
@@ -54,12 +54,13 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	return counts
 }
 
-// testData are the data pack's tables the replays need.
+// testData are the data pack's tables the replays need, and each run's pointers to the affixes.
 type testData struct {
 	lexical    *datapack.Lexical
 	dictionary *datapack.Dictionary
 	parameters *datapack.Parameters
 	pipeline   *datapack.Pipeline
+	affixes    sync.Map
 }
 
 func loadTestData(t *testing.T) *testData {
@@ -81,13 +82,14 @@ func loadTestData(t *testing.T) *testData {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &testData{lexicalTables, dictionary, parameters, pipelineTables}
+	return &testData{lexical: lexicalTables, dictionary: dictionary, parameters: parameters, pipeline: pipelineTables}
 }
 
 // recordedRules stand in for the stage's parts later parts port, with a call's recorded inner calls.
 type recordedRules struct {
 	stage    *lexical.Stage
 	mapping  threadstate.Mapping
+	affixes  *lexicalstate.Affixes
 	calls    []*call
 	position int
 	err      error
@@ -118,7 +120,9 @@ func (data *testData) load(call *call) (*lexical.Stage, *recordedRules) {
 	mapping := threadstate.Mapping{Pipeline: stage.Pipeline, Base: call.Base}
 	mapping.LoadPipeline(call.Before)
 	lexicalstate.Load(mapping, stage, call.Before)
-	rules := &recordedRules{stage: stage, mapping: mapping, calls: call.Inner}
+	affixes, _ := data.affixes.LoadOrStore(call.Case, lexicalstate.NewAffixes())
+	rules := &recordedRules{stage: stage, mapping: mapping, affixes: affixes.(*lexicalstate.Affixes), calls: call.Inner}
+	rules.affixes.Load(stage, call.Before)
 	stage.Rules = rules
 	return stage, rules
 }
@@ -129,6 +133,7 @@ func (rules *recordedRules) differences(before, expected []byte) error {
 	state := slices.Clone(before)
 	rules.mapping.StorePipeline(state)
 	lexicalstate.Store(rules.mapping, rules.stage, state)
+	rules.affixes.Store(rules.stage, state, expected)
 	lexicalstate.TakeUnported(state, expected)
 	return threadstate.Differences(state, expected, lexicalstate.Describe)
 }
@@ -156,11 +161,6 @@ func (rules *recordedRules) take(function string) *call {
 	rules.mapping.LoadPipeline(call.After)
 	lexicalstate.Load(rules.mapping, rules.stage, call.After)
 	return call
-}
-
-func (rules *recordedRules) Lookup() bool {
-	call := rules.take("Lexical::MorphLookup")
-	return call != nil && call.Result.EAX&0xff != 0
 }
 
 func (rules *recordedRules) LetterToSound() {
@@ -217,7 +217,7 @@ func expectFlag(call *call, result bool) error {
 }
 
 // TestStage replays every recorded run of the stage's step, word conversion, post-lexical pass and reset, with
-// the original's lookups, letter-to-sound, post-lexical rules and function words' reductions.
+// the original's letter-to-sound, post-lexical rules and function words' reductions.
 func TestStage(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
@@ -243,6 +243,18 @@ func TestStage(t *testing.T) {
 			stage.Reset()
 			stage.Pipeline.Cursors[pipeline.Lexical].Types = 6
 			return rules.finish(call, nil)
+		},
+	})
+	t.Logf("calls replayed: %v", counts)
+}
+
+// TestLookup replays every recorded lookup of a word, whole and by its affixes.
+func TestLookup(t *testing.T) {
+	data := loadTestData(t)
+	counts := replay(t, map[string]replayer{
+		"Lexical::MorphLookup": func(call *call) error {
+			stage, rules := data.load(call)
+			return rules.finish(call, expectFlag(call, stage.Lookup()))
 		},
 	})
 	t.Logf("calls replayed: %v", counts)

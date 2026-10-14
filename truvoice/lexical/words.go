@@ -175,7 +175,7 @@ func (stage *Stage) convertLetters() {
 	if spelling, found := stage.spelling(); found {
 		stage.classify(spelling, stage.Word)
 	}
-	if !stage.Rules.Lookup() || stage.StressPattern != 0 {
+	if !stage.Lookup() || stage.StressPattern != 0 {
 		stage.Rules.LetterToSound()
 	}
 	stage.Word.SetSecond(stage.WordClass)

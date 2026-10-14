@@ -168,6 +168,12 @@ A **word** here is a string of symbols 1 to 127.
 |---|---|---|
 | `functionWords` | Lists | The lists of function words, in the order the lexical stage searches them ([lexical.md](lexical.md) §3.4). A list is `{"words": w, "class": c, "exceptions": e}`: `w` a word, the list's words each between two `#`, which a word's spelling is searched in; `c` 0 to 255, the class its words get; `e`, which can be left out, a list of `{"word": s, "class": c}`, a spelling between two `#` that gets class `c` instead |
 | `functionWordEndings` | Endings | The endings tested in turn when no list has a word's spelling: `{"ending": n, "class": c, "exceptions": e}`, `n` a word, the ending before the spelling's last `#`, with `c` and `e` as above |
+| `suffixes`, `prefixes` | 27 numbers | The list of affixes the lookup tries for a word that ends, or starts, with each letter `@` to `Z` ([lexical.md](lexical.md) §9.1): an index into `affixLists`, or -1 for none |
+| `affixLists` | Lists | The lists of affixes, each a list of indexes into `affixes`, tried in their order |
+| `affixes` | Affixes | `{"letters": l, "if": c, "lookup": b, "class": k, "stress": s, "next": n, "silentE": e, "keepsI": i}`: `l` the affix's letters, `@` to `Z`, in reading order; `c` its context; `b` whether the stem it leaves is looked up; `k` 0 to 255, the word class a first suffix gives; `s` -128 to 127, its stress; `n` the index of the list tried after it; `e`, which can be left out for 0, 0 to 2, whether the stem may have lost a silent E (lexical.md §9.3); `i`, which can be left out for false, whether a final I stays |
+| `stemConditions` | Contexts | `{"silentE": c, "noSilentE": c, "withoutE": c, "lostT": c}`, the contexts of a stem's end the lookup tests (lexical.md §9.3) |
+
+A **context** ([lexical.md](lexical.md) §8) is a list of items: `"end"`, or a clause `{"test": t, "match": m}`, `t` 1 to 255 and `m`, which can be left out when empty, a list of elements: a string of one symbol 32 to 126, or `[p, b]`, a class, the bits `b`, 1 to 255, of class byte `p`, 0 to 5. Only tests whose high three bits are 0 or 7 have elements, and a sequence has at least one element fewer than its nodes. The items after a context's first end are those the original stores after it, which a clause that reads past its end can reach.
 
 ## 9. `dictionary.json`
 

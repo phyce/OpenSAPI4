@@ -120,7 +120,7 @@ func (stage *Stage) takesVerbEntry(toWordEnd bool, readFirst *bool) bool {
 	} else {
 		var symbols []byte
 		for node := cursor.Working[1].Next; node != stage.LastNode.Next && len(symbols) < maximumEnding; node = node.Next {
-			if node.Symbol() != '[' {
+			if node.Symbol() != affixMark {
 				symbols = append(symbols, node.Symbol())
 			}
 		}

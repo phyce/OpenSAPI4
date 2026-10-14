@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) turns words into phonemes. The lexical stage works on the words the normalizer hands it ([pipeline.md](pipeline.md) §3): words of letters, words of phonemes from phonetic input, and the punctuation. It converts each word into phonemes with their stress, marks the word's class, and gives the word before it a second, post-lexical pass. The prosody stage ([prosody.md](prosody.md)) takes the phonemes it hands on.
 
-This spec covers the nodes the stage works on and the classes it tests (section 1), its step and how it finds the next word (section 2), a word's conversion (section 3), the post-lexical pass (section 4), the stage's reset (section 5), the dictionary (section 6) and the user lexicon (section 7). The stage's **rules** are the parts that give the phonemes themselves: the lookup of a word in the user lexicon, the dictionary and by its affixes, letter-to-sound, the post-lexical rules, and the function words' stress and reductions. Sections 6 and 7 say how the dictionary and the user lexicon work, and later sections will say how the others do; sections 3 and 4 say where the stage applies them.
+This spec covers the nodes the stage works on and the classes it tests (section 1), its step and how it finds the next word (section 2), a word's conversion (section 3), the post-lexical pass (section 4), the stage's reset (section 5), the dictionary (section 6), the user lexicon (section 7), the contexts the rules test (section 8) and the lookup by affixes (section 9). The stage's **rules** are the parts that give the phonemes themselves: the lookup of a word in the user lexicon, the dictionary and by its affixes, letter-to-sound, the post-lexical rules, and the function words' stress and reductions. Sections 6 to 9 say how the lookup works, and later sections will say how the others do; sections 3 and 4 say where the stage applies them.
 
 **In short.**
 - Each step converts one word, then gives the word before it its post-lexical pass and hands on the nodes up to the word just converted. A word's pass waits for the word after it, as the rules look at the next word.
@@ -12,14 +12,17 @@ This spec covers the nodes the stage works on and the classes it tests (section 
 - In the post-lexical pass a schwa before a front vowel in the next syllable, with at most one consonant between, becomes a barred i, and a barred i before a consonant and `l` a schwa. The vowels are numbered by syllable. The filter command can drop all words but every n-th content word.
 - The dictionary has 6,494 entries: a word's phonemes with stress digits, or a stress pattern for letter-to-sound, and its class: verbs, adverbs and kinds of function word. A function word found whole becomes `%`. A homograph's verb's entry is taken or passed over by the word before it: `to record`, `the record`. Phonetic input's word mark `*` takes a word's second entry.
 - The user lexicon, which an application fills, is looked up before the dictionary, for the word and for the stem a suffix leaves. Its pronunciations have a stress digit after the phoneme it stresses; without a `1`, the stress falls as the dictionary's default does. It gives the word no class.
+- A word not found whole loses its suffixes, from its end, then its prefixes, each found by its letters and a context of the letters next to it, and the stems they leave are looked up: a stem may have lost a silent E or a T, doubled its last consonant or made a Y an I, and is looked up as it was. A stem found leaves the affixes' letters to letter-to-sound. A word's first suffix can make it a verb, an adverb or a negation, and prefixes stress it.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 1,357 runs: the 729 runs of the stages in the pipeline ([prosody.md](prosody.md), [parameters.md](parameters.md)), 70 more for the stage, 35 texts at two speeds: words with `~` and `` ` ``, stress digits in phonetic input, `"` among them, every word of the function words' lists and the words they treat apart, words ending in `'ve` and `'s`, numbers, single letters after a word ending in `S`, in text, spell mode and phonetic input, spelled letters, schwas before front vowels within and across words, barred i before a consonant and `l` or `j`, the onsets of stressed syllables, 13 commands between two words, runs of punctuation, every word mark of phonetic input before function and content words and before a phonetic word, the filter command at three values with words of every class it counts, the post-lexical rules switched off in phonetic input, words with affixes after a schwa, and bytes of 128 and up in phonetic input, 534 for the dictionary and 24 for the user lexicon (below). Each call left the speaking thread's state byte-identical to the original's: the 233,233 steps (section 2.1), the 119,170 conversions (section 3), the 50,209 post-lexical passes (section 4), the 1,361 resets (section 5), the 54,259 lookups in the dictionary (section 6) and the 51,226 in the user lexicon (section 7). The rules ran as the original's recorded calls: each started from the state the Go stage had reached, checked against the original's, and left what the original's left.
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its functions recorded in 1,385 runs: the 729 runs of the stages in the pipeline ([prosody.md](prosody.md), [parameters.md](parameters.md)), 70 more for the stage, 35 texts at two speeds: words with `~` and `` ` ``, stress digits in phonetic input, `"` among them, every word of the function words' lists and the words they treat apart, words ending in `'ve` and `'s`, numbers, single letters after a word ending in `S`, in text, spell mode and phonetic input, spelled letters, schwas before front vowels within and across words, barred i before a consonant and `l` or `j`, the onsets of stressed syllables, 13 commands between two words, runs of punctuation, every word mark of phonetic input before function and content words and before a phonetic word, the filter command at three values with words of every class it counts, the post-lexical rules switched off in phonetic input, words with affixes after a schwa, and bytes of 128 and up in phonetic input, 534 for the dictionary, 24 for the user lexicon and 28 for the affixes (below). Each call left the speaking thread's state byte-identical to the original's: the 236,449 steps (section 2.1), the 121,874 conversions (section 3), the 50,769 post-lexical passes (section 4), the 1,389 resets (section 5), the 55,665 lookups in the dictionary (section 6), the 52,234 in the user lexicon (section 7) and the 42,399 lookups of a word (section 9). The rules ran as the original's recorded calls: each started from the state the Go stage had reached, checked against the original's, and left what the original's left.
 
 In the first 799 runs, the conversions took 8,572 words of letters, 92 with `~` and 8 with `` ` ``, 13,722 words of phonemes and 832 nodes of type 0; 2,983 of the words of letters went to letter-to-sound, 133 of them for their stress pattern. The lists classified 3,742 words, in every class, 292 of them by an exception, and the endings 54: 14 `'ve`, 36 `'s` and 4 `let's`. 4,648 stress digits gave 4,636 syllabic phonemes their stress, 4 of them `"`, and 1,319 were their word's last node; the onsets of stressed syllables marked 7,780 consonants, 1,349 second consonants and 76 `S`s, and 1,236 onsets in function words. The mark byte became 1 at 582 words and 2 at 608, 592 of them number words and 16 single letters after `S`. Codes 2, 3, 5 and 11 came six times each, code 1 four times and code 9 eight times. The passes skipped 979 nodes; the filter counted 65 words and dropped 60; 3,837 function words got their stress and reductions, 4,085 words gave their vowels their class, and the post-lexical rules ran on 49,894 phonemes. 1,461 schwas started the alternation, and 56 became barred i in their word; 450 times a front vowel walked back to an earlier word's schwas, 141 times joined, and 6 schwas became barred i; 18 barred i became schwas. 19,756 vowels got their syllable's number and 387 nodes `[` were freed.
 
 The 534 runs for the dictionary speak every word in it; the homographs and `read` alone, after a word of every class the lists give, and with endings, each plural after every one of these; an article up to 10 commands before the previous word, or emphasized; `subject` before a colon; the word mark `*` before the words with two entries; the words of every class but 0, and every tenth other word, with `~` and `` ` ``; long words; and every sixth word with prefixes and suffixes. Of the 54,139 lookups in the first 1,333 runs, 41,543 were of a whole word, 9,417 of a stem before a suffix, 1,195 after a prefix and 1,984 between both; 8 stems had more than 20 letters and 83 more than their letter's lists. 35,135 stems were found, in every class: 27,285 entries with phonemes and 7,850 with a stress pattern. 14,053 headers became `%`, 18,368 words got the entry's class, and 780 emphasized words with a class got neither. 3,838 digits `1` gave the primary stress, 283 times 3 and 279 times 1, and 462 digits `2` stress 1; 23,507 entries got the default stress, 755 of them on a reduced vowel. The word mark `*` passed 646 entries over and started the search again 20 times. The homographs' test met 1,440 verbs' entries that aren't homographs and 852 stems before `ING`, `ED` or `D`; the previous word decided 6,293 times, after every class of the lists, with a plural and without, and 124 homographs had none; the word before it was tested 1,749 times, 251 of them an article; `subject` before a colon was passed over 3 times, and of 40 tests of `read`, 11 passed its first entry over.
 
 The 24 runs for the user lexicon give it 38 words and speak 10 texts with them, at two modes and speeds: stress digits after full and reduced vowels and after consonants, first, doubled and last; pronunciations without a `1`, with only reduced vowels and without vowels; the phonemes `3`, `4`, `5`, `@`, `|`, `~` and `&`; words given in lower case and in capitals, words the dictionary has, a letter, which spelled words look up, a word of 29 letters and words of 40 and 41, which reach the stage in pieces; the words with suffixes, `~`, `` ` `` and `\Emp\`, in spell mode, between commands, in the filter command's words and after phonetic input's word marks. 4 more runs have lexicons of their own: pronunciations of 39 to 87 symbols, empty ones, ones of only digits and ones with `&`. Of their 366 lookups in the user lexicon, 250 found the stem: 212 a whole word and 38 a stem before a suffix, 20 of an emphasized word and 22 of a de-emphasized one. 162 digits `1` gave the primary stress, 15 of them to a consonant, 30 digits `2` stress 1, and 11 digits were skipped; the default stress fell 50 times on a full vowel and 26 times on a reduced one, and 6 pronunciations found had no vowel and 8 no phoneme. The other runs have no user lexicon: their 50,860 lookups found nothing.
+
+The 28 runs for the affixes speak 14 texts at two modes, of words picked by running the lookup on words made of the dictionary's words and the affixes: a first suffix `n't`; stems that end in `IE` or `I` before a suffix, found with a `Y`; stems that lost a `T` before `-CE` or `-CY`; stems that lost a silent `E`, found or not, and later stems tried with an `E` after one wasn't found; doubled consonants; `'s` after an `I`; `-ABLE`, `-ABLY` and `-OR` after `IT`, `C` or `G`; prefixes that aren't looked up and that stress the word; foreign endings and an `I` before them; plurals whose `S` reads past its context's end; words of three consonants; stems ending in `AN` or `EN` before `-CRAFT`, `-CAKE` and the like, which get no `T`; and stems ending in `U` that lost an `E`. Of the 42,399 lookups of a word in all the runs, 28,733 found it whole and 852 had too few letters for affixes. 9,845 suffixes and 3,452 prefixes were found: 1,507 first suffixes gave the word their class, 18 of them made it a negation, 91 prefixes stressed the header and 38 affixes set the affix stress, 37 of them foreign endings; 10 suffixes and 306 prefixes weren't looked up. 6,291 stems before a suffix were found and 603 after a prefix. Restoring tried 243 doubled consonants, 19 found; 120 stems that lost a silent `E` and 33 tried with one after another wasn't found, 42 found, and 26 kept from it by `IT`, `C` or `G`; 60 stems in `IE`, 26 found; 18 in `I`, 9 found, while 8 before a foreign ending and 6 before `'s` kept the `I`; and 61 `T`s, 18 found. 78 words kept an `E` for letter-to-sound. The contexts passed over an item 2,181 times, 542 of them reading past the context's end.
 
 ## 1. Nodes and classes
 
@@ -37,7 +40,7 @@ The stage makes every word's nodes type 3. A header becomes the word's mark: `&`
 
 ### 1.2 Classes
 
-The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2). Symbols of 128 and up never reach the stage (section 8); they are in no class.
+The stage tests the symbols' classes ([parameters.md](parameters.md) §3.2). Symbols of 128 and up never reach the stage (section 10); they are in no class.
 
 | Class | Name here | Symbols |
 |---|---|---|
@@ -86,6 +89,8 @@ The search moves from the node it has reached. If that is the window's last node
 | filtered | The words the filter has counted (section 4.1) |
 | alternating | Whether a schwa may still become a barred i (section 4.3) |
 | previous symbol | The last symbol of the word before, which the post-lexical rules read |
+| affix, tried E | The suffix the lookup found last, and whether it looked up a stem with a silent E and didn't find it (section 9) |
+| consonants | Letter-to-sound's count of consonants, which a context can test (section 8.1) |
 
 ## 3. A word's conversion
 
@@ -111,7 +116,7 @@ The stage reports that a word was converted.
 3. The word's first letter is the next node. Its last node is the last of the nodes from there, in the window, of type 2, up to a `&`.
 4. The stress pattern, the word class and the affix stress become 0.
 5. If the word has at most 96 letters, classify it (section 3.4).
-6. The rules look the word up. If they don't find it, or the stress pattern isn't 0, they convert it by letter-to-sound.
+6. The word is looked up (section 9). If it isn't found, or the stress pattern isn't 0, the rules convert it by letter-to-sound.
 7. The header's second value becomes the word class.
 
 ### 3.4 The word's class
@@ -161,7 +166,7 @@ The normalizer gives a header the code of the word mark phonetic input puts befo
 | 11 | `#` | A space of type 3 and value 8 comes after the header; the header's second value becomes 59 |
 | 13 | `$` | The post-lexical pass leaves the word as converted: no post-lexical rules, and for a function word no stress or reductions (section 4.2) |
 
-A function word after `#` makes the original fault (section 8).
+A function word after `#` makes the original fault (section 10).
 
 ## 4. The post-lexical pass
 
@@ -208,7 +213,7 @@ At the pipeline's reset ([pipeline.md](pipeline.md) §7), the current and previo
 
 ## 6. The dictionary
 
-The rules' lookup (section 3.3, step 6) looks the word up in the user lexicon and the dictionary, then takes off its affixes and looks up what they leave. The lookup in the dictionary works on a **stem**: the nodes from the cursor's first working node to its second ([pipeline.md](pipeline.md) §3), the word's letters from its first letter to its last node, or what its affixes leave of them. The data pack holds the dictionary ([datapack.md](datapack.md) §9).
+The lookup (section 9) looks the word up in the user lexicon and the dictionary, then takes off its affixes and looks up what they leave. The lookup in the dictionary works on a **stem**: the nodes from the cursor's first working node to its second ([pipeline.md](pipeline.md) §3), the word's letters from its first letter to its last node, or what its affixes leave of them. The data pack holds the dictionary ([datapack.md](datapack.md) §9).
 
 ### 6.1 The entries
 
@@ -274,7 +279,7 @@ So `to record` takes the verb's entry and `the record` the noun's, `one records`
 
 ## 7. The user lexicon
 
-The **user lexicon** holds words with their pronunciations, which an application gives the engine; the interface's spec will say how it adds, removes, saves and reads them. Its words are in capitals, of letters only, and its pronunciations are of the symbols `A` to `Z`, `a` to `z`, `1` to `5`, `@`, `|`, `~` and `&`. The rules' lookup (section 3.3, step 6) looks up the whole word in the user lexicon before the dictionary, and so the stem a suffix leaves; the stem a prefix leaves only in the dictionary. The lexicon can change while the engine speaks: the search and the copy of the pronunciation it finds are made under the lexicon's lock.
+The **user lexicon** holds words with their pronunciations, which an application gives the engine; the interface's spec will say how it adds, removes, saves and reads them. Its words are in capitals, of letters only, and its pronunciations are of the symbols `A` to `Z`, `a` to `z`, `1` to `5`, `@`, `|`, `~` and `&`. The lookup (section 9) looks up the whole word in the user lexicon before the dictionary, and so the stem a suffix leaves; the stem a prefix leaves only in the dictionary. The lexicon can change while the engine speaks: the search and the copy of the pronunciation it finds are made under the lexicon's lock.
 
 ### 7.1 The lookup
 
@@ -286,7 +291,87 @@ The **user lexicon** holds words with their pronunciations, which an application
 
 A pronunciation without phonemes, empty or only digits, still frees the stem: nothing takes its place, the first working node becomes the node after the stem and the second the node before it, and the word's first letter or last node with them.
 
-## 8. What the recorded runs don't reach
+## 8. Contexts
+
+The affixes and letter-to-sound test the nodes next to a place with **contexts**: conditions on the symbols before the place, or after it. A context is a list of **items**: **clauses**, and **ends**. A clause has a **test**, a byte, and its **elements**, symbols and classes; a symbol is in a class when its class byte of the class's plane has one of the class's bits. The data pack holds the contexts ([datapack.md](datapack.md) §8).
+
+### 8.1 Testing a context
+
+A context is tested at a node, looking back or forward. The nodes before and after a node are its previous and next nodes in the window ([pipeline.md](pipeline.md) §3), none past the window's ends.
+
+1. A context without items holds.
+2. Its clauses are tested in turn, from the first. Each has a **result**, and is either **sufficient**, and the context holds when it holds, or **necessary**, and the context fails when it fails. Otherwise the test goes on to the next item; a clause that **read past its end** (below) makes it pass over that item and go on to the one after.
+3. At an end, or after the last item, the context's result is the last clause's.
+
+The test's high three bits say what the clause tests:
+
+- `0x20`, **consonants**: letter-to-sound's count of consonants. The context holds when the count is more than 1, and fails otherwise, whatever comes after the clause.
+- `0x40`, **a mark before the vowel**: whether the nodes before the node, back to the nearest vowel, include one in class word mark. The walk stops at a vowel, before testing it, and at a `Y` whose node before it in the list is a consonant, after testing it. Sufficient. `0x60` is the same negated, and necessary.
+- `0xa0`, **one vowel**: whether the nodes before the node, back to the nearest one in class word mark, include exactly one vowel, a `Y` whose node before it in the list is a consonant counting as one. Sufficient. `0xc0` is the same negated, and necessary.
+- `0x80`, **a doubled consonant**: whether the node before the node, or after it when the context looks forward, is a consonant, and the node beyond it in the list has the same symbol. Sufficient.
+- `0x00` and `0xe0`, **elements**: the nodes' symbols compared with the elements.
+
+These look back whichever way the context looks, but the elements and the doubled consonant.
+
+An element clause is a **sequence** when the test has bit 0x10: it compares its first element with the first node, the next element with the next node, and so on for (test & 3) + 2 nodes, from the node before the node, or after it, outwards. Otherwise it compares the first node with each of its elements in turn. A symbol element matches a node with that symbol, a class element one whose symbol is in the class. The test's bits 0x04 and 0x08 decide what the clause holds for:
+
+| Bits 0x08, 0x04 | The clause holds when | Kind |
+|---|---|---|
+| 0, 0 | every comparison matches | sufficient |
+| 0, 1 | a comparison matches | sufficient |
+| 1, 0 | no comparison matches | necessary |
+| 1, 1 | a comparison doesn't match | necessary |
+
+The clause's result starts as true when bit 0x04 is clear, false when it is set. A comparison that doesn't match, when the two bits are alike, or one that matches, when they differ, **decides**: the result becomes the other value, and stays it.
+
+- A clause that isn't a sequence stops at the first comparison that decides. If none does, it has read past its end.
+- A sequence goes on to its last node, but stops when the result is true and the test has bits 0x1c. At a node with no element left, the elements being one fewer than the nodes, it compares nothing and has read past its end.
+- When the nodes run out before the clause is done, its result is false.
+
+A clause that reads past its end and doesn't decide the context makes the test pass over the next item. When that item is the context's end, the test goes on into the items the original stores after it, which the data pack lists after the end. The context of the suffix `S` ends with whether the node before the `S` is a closure, `E`, `A` or `@`; when it isn't, the test goes on to the next context's first clause, a necessary one: whether that node is neither a vowel nor `D`, `N`, `S`, `T` or `Z`. So most plurals lose their `S`.
+
+## 9. The lookup by affixes
+
+The rules' lookup (section 3.3, step 6) looks the word up in the user lexicon and the dictionary, and reports whether it found it. Otherwise it takes off the word's affixes, suffixes from its end and then prefixes from its start, and looks up the stems they leave; a stem found replaces its letters with its phonemes and leaves the affixes' letters to letter-to-sound, and the lookup reports the word not found.
+
+An **affix** has its letters, a context, whether the stem it leaves is looked up, a word class, a stress, and the list of affixes tried after it. There are 158 suffixes, in 36 lists, and 74 prefixes, in 35 lists; the data pack lists them, and the list each letter `@` to `Z` starts: words ending in `D E F G H K L M N O P R S T U W X Y` have suffixes, words starting with `A B C D E F G H I M N O P R S T U V` prefixes. A suffix's class is 0, 6 (verbs: `-ED`, `-IZE`, `'VE`, `'RE`, `'LL`), 15 (adverbs: `-LY`, `-ILY`, `-ABLY`, `-IBLY`, `-ALLY`) or 8 (negations: `N'T`). Its stress is 0 or 2, a prefix's 0, 1 or 4; stress 2 marks the endings of foreign names (`-MANN`, `-SEN`, `-MEYER`, `-BAUER`, `-BURG`, `-LING`, `-LER`, `-NER`, and `-T`, `-L`, `-AU`). 14 affixes don't look the stem up, and 140 have no context.
+
+### 9.1 The lookup
+
+1. The cursor's working nodes become the word's first letter and its last node. If the user lexicon (section 7) has that stem, or else the dictionary (section 6), the word is found.
+2. The **affix**, the suffix found last, becomes none, and **tried E** false.
+3. The stem's **shortest end**: walking from the first letter towards the last node, the third node, or the first after it that isn't a consonant when the first three are consonants. If the walk reaches the last node first, go to step 7.
+4. **Suffixes.** The list is the suffixes of the second working node's symbol. While there is a list: find an affix in it (section 9.2), back from the second working node, short of the shortest end; it becomes the affix, and if there is none, stop. If it is the first suffix found and its class is 6 or 15, the word class becomes it; if its class is 8, the word class becomes 8 and the header `%`. If the suffix is looked up, look its stem up in the user lexicon, then the dictionary, then restore it (section 9.3); if one finds it, the lookup ends. The list becomes the suffix's next list.
+5. The stem's **shortest start**: walking back from the second working node towards the first letter, the third node, or the first after it that isn't a consonant when the first three are consonants. If the walk reaches the first letter, or the affix stress is 2, go to step 7.
+6. **Prefixes.** The list is the prefixes of the first working node's symbol. While there is a list: find an affix in it, forward from the first working node, short of the shortest start; if there is none, stop. If the prefix is looked up, look its stem up in the dictionary, then restore it; if one finds it, the lookup ends. The list becomes the prefix's next list.
+7. If tried E, a letter `E` goes after the second working node and becomes it, for letter-to-sound.
+
+The first suffix found sets the word's class even when no stem is found, and each affix found its stress and its `[`. A stem found ends the lookup before step 7.
+
+### 9.2 Finding an affix
+
+The affixes of the list are tried in their order; the first whose letters and context fit is found.
+
+1. A suffix's last letter must be the starting node's symbol, and its letters before it the symbols of the nodes before it in the list; a prefix's first letter the starting node's, and its next letters those of the nodes after it. None of them may be on the shortest end, or start.
+2. Its context must hold at the node of its letter farthest from the start, looking back for a suffix and forward for a prefix.
+3. The stem now ends at the node before the suffix, which becomes the second working node, or starts at the node after the prefix, the first working node. A node `[` of type 2 goes between the affix and the stem.
+4. An affix's stress below 2 becomes the header's stress, flag bits 3 and 4; otherwise the affix stress becomes it.
+
+### 9.3 Restoring a stem
+
+A stem not found may be one the affix changed: a doubled consonant, a silent E, a `Y` made `I`, a `T` dropped before `-CE` or `-CY`. Restoring looks it up in the dictionary as it was. Its **end** is the second working node; the contexts are tested at the node after it, looking back.
+
+1. If the end is a consonant and the node before it has the same symbol, the stem without the end is looked up; if found, the end is freed and the stem found. Otherwise go to step 4.
+2. If tried E, go to step 3. Otherwise the stem may have lost a silent E only when the affix, the suffix found last (none for a prefix's stem), may drop one: `ING`, `EST` and `ILY` always, `ABLE`, `ABLY` and `OR` unless the end is in context **withoutE** (`IT`, `C`, `G`); and only when the end is a consonant or `U`, and in context **silentE** or not in context **noSilentE**. Otherwise go to step 4.
+3. A letter `E` goes after the end and is looked up as the stem's end. If found, the stem is found; otherwise the `E` is freed and tried E becomes true. So once a stem has been tried with an `E` and not found, every later stem of the word but one ending in a doubled consonant is tried with one too.
+4. If the end is `E` after an `I`, the end is freed and the `I` becomes `Y`, the stem's end, which is looked up.
+5. If the end is `I`, the stem was left by a suffix other than `'s`, and the affix stress isn't 2, the end becomes `Y` and is looked up.
+6. If the end isn't the word's last node, it is in context **lostT** (`AN`, `EN`), and the next nodes in the window are `[`, `C`, and a node that is neither `R` nor `A`, a letter `T` goes after the end, becomes the stem's end, and is looked up.
+7. The stem isn't found.
+
+A letter `Y` or `T` a step made stays when the stem isn't found, and so letter-to-sound sees it. After step 4 frees the end, steps 5 and 6 test the freed node: it is still `E`, so step 5 doesn't apply, and step 6's context, which needs an `N` there, doesn't hold.
+
+## 10. What the recorded runs don't reach
 
 - A word of more than 96 letters, which section 3.4 doesn't classify: the input stage splits a word into pieces of 29 letters.
 - A symbol 0 in a word's spelling (section 3.4), which would end it early.
@@ -309,5 +394,8 @@ A pronunciation without phonemes, empty or only digits, still frees the stem: no
 - A stem of more than 40 symbols in the user lexicon's lookup (section 7.1, step 1): a word has at most 29 letters.
 - A `0` in a pronunciation of the user lexicon (section 7.1, step 4): the engine takes none, from an application or a file.
 - A pronunciation of 88 symbols or more in the user lexicon (section 7.1): the original copies the pronunciation it finds into a buffer of 44 bytes on its stack. Up to 87 symbols the copy overwrites only the stem's copy, which the lookup no longer needs; from 88 it overwrites the return address, and the engine crashes. An application can add one; the port takes it whole.
-- A pronunciation without phonemes for a stem before a suffix (section 7.1): the original crashes after the lookup. The recorded runs have such pronunciations only for whole words, which don't crash it. A later part of this spec will say where it crashes, and what the port does.
-- Dead code left out of the port: code 5 also makes the header type 3 (section 3.6), which it already is; case 1 of section 4.3 also clears the schwa, which nothing reads before the next schwa that starts the alternation sets it; and the original copies at most 97 symbols of a stem's spelling (section 6.3), when the stem has at most 21.
+- A pronunciation without phonemes for a stem before a suffix (section 7.1): the original crashes after the lookup, in letter-to-sound, which starts from the stem's end, now the node before the stem (section 9.1, step 4). The recorded runs have such pronunciations only for whole words, which don't crash it. A later part of this spec will say where it crashes, and what the port does.
+- A word whose first or last letter isn't `@` to `Z` (section 9.1): the original takes the lists of affixes of any symbol, reading past its tables for the others. The input stage gives words only letters and `@`, and the port gives the others none, as `@` and `Z` have.
+- A stem's end not followed by `[` (section 9.3, step 6): an affix's `[` always follows it. Nor is a node after the `[` or the `C` missing, which the original would read through a null pointer; the port adds no `T` then.
+- A sequence of more nodes than one more than its elements (section 8.1): the original would compare the items after the clause as elements. The data pack refuses one.
+- Dead code left out of the port: code 5 also makes the header type 3 (section 3.6), which it already is; case 1 of section 4.3 also clears the schwa, which nothing reads before the next schwa that starts the alternation sets it; the original copies at most 97 symbols of a stem's spelling (section 6.3), when the stem has at most 21; and the walks to the shortest stem (section 9.1, steps 3 and 5) also stop after their third node or second node once they have met a vowel, which they have then stopped at already.

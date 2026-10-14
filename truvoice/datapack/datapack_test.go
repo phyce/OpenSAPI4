@@ -483,6 +483,34 @@ func TestLexical(t *testing.T) {
 	if !reflect.DeepEqual(lexical.FunctionWordEndings, want) {
 		t.Errorf("function word endings %+v", lexical.FunctionWordEndings)
 	}
+	if len(lexical.Affixes) != 232 || lexical.Suffixes[0] != nil || lexical.Prefixes['Z'-'@'] != nil {
+		t.Errorf("%d affixes, suffixes of @ %v, prefixes of Z %v", len(lexical.Affixes), lexical.Suffixes[0], lexical.Prefixes['Z'-'@'])
+	}
+	negation := slices.IndexFunc(lexical.Affixes, func(affix datapack.Affix) bool { return affix.Letters == "N@T" })
+	if negation < 0 || lexical.Affixes[negation].Class != 8 || !lexical.Affixes[negation].Lookup || lexical.Affixes[negation].Next == nil {
+		t.Errorf("the affix N@T is %d", negation)
+	}
+	lostT := datapack.Context{{Test: 0x10, Elements: []datapack.Element{{Symbol: 'N'}, {Symbol: 'A'}}},
+		{Test: 0x10, Elements: []datapack.Element{{Symbol: 'N'}, {Symbol: 'E'}}}}
+	if !reflect.DeepEqual(lexical.StemConditions.LostT, lostT) {
+		t.Errorf("lostT %+v", lexical.StemConditions.LostT)
+	}
+	plural := slices.IndexFunc(lexical.Affixes, func(affix datapack.Affix) bool {
+		return affix.Letters == "S" && slices.ContainsFunc(affix.Context, func(clause datapack.Clause) bool { return clause.End })
+	})
+	if plural < 0 || lexical.Affixes[plural].Context[len(lexical.Affixes[plural].Context)-1].Elements[0] != (datapack.Element{Plane: 2, Bits: 4}) {
+		t.Errorf("the suffix S with a context past its end is %d", plural)
+	}
+}
+
+// lexicalWithAffixes is a lexical.json with a function word list, an affix and stem conditions, changed by a
+// replacer's pairs.
+func lexicalWithAffixes(pairs ...string) string {
+	none := strings.Repeat("-1,", 26) + "-1"
+	content := `{"functionWords":[{"words":"#A#","class":1}],"suffixes":[` + none + `],"prefixes":[0,` + none[3:] + `],` +
+		`"affixLists":[[0]],"affixes":[{"letters":"UN","if":[{"test":16,"match":["A",[2,2]]},"end"],"lookup":true,` +
+		`"class":0,"stress":1,"next":0}],"stemConditions":{"silentE":[],"noSilentE":[],"withoutE":[],"lostT":[]}}`
+	return strings.NewReplacer(pairs...).Replace(content)
 }
 
 func TestChangedLexical(t *testing.T) {
@@ -497,6 +525,31 @@ func TestChangedLexical(t *testing.T) {
 		{`{"functionWords":[{"words":"#A#","class":1,"exceptions":[{"word":"#A#","class":-1}]}]}`, "functionWords[0].exceptions[0].class is -1"},
 		{`{"functionWords":[{"words":"#A#","class":1}],"functionWordEndings":[{"ending":"","class":1}]}`, "functionWordEndings[0].ending is empty"},
 		{`{"functionWords":[{"words":"#A#","class":1}],"functionWordEndings":[{"ending":"@S"}]}`, "functionWordEndings[0].class is missing"},
+		{`{"functionWords":[{"words":"#A#","class":1}]}`, "suffixes has 0 lists, expected 27"},
+		{lexicalWithAffixes(`"prefixes":[0,`, `"prefixes":[1,`), "prefixes[0] is 1, not a list of affixes"},
+		{lexicalWithAffixes(`"suffixes":[-1,`, `"suffixes":[-2,`), "suffixes[0] is -2, not a list of affixes"},
+		{lexicalWithAffixes(`[[0]]`, `[[1]]`), "affixLists[0][0] is 1, not an affix"},
+		{lexicalWithAffixes(`"UN"`, `""`), "affixes[0].letters is empty"},
+		{lexicalWithAffixes(`"UN"`, `"U["`), "affixes[0].letters[1] is 91, expected a letter from @ to Z"},
+		{lexicalWithAffixes(`"class":0`, `"class":256`), "affixes[0].class is 256"},
+		{lexicalWithAffixes(`"stress":1`, `"stress":128`), "affixes[0].stress is 128"},
+		{lexicalWithAffixes(`"next":0`, `"next":0,"silentE":3`), "affixes[0].silentE is 3"},
+		{lexicalWithAffixes(`,"next":0`, ``), "affixes[0].next is missing"},
+		{lexicalWithAffixes(`"next":0`, `"next":-1`), "affixes[0].next is -1, not a list of affixes"},
+		{lexicalWithAffixes(`"end"`, `"stop"`), `affixes[0].if[1] is "stop", expected a clause or "end"`},
+		{lexicalWithAffixes(`"end"`, `7`), "affixes[0].if[1]: json"},
+		{lexicalWithAffixes(`"test":16`, `"test":0`), "affixes[0].if[0].test is 0"},
+		{lexicalWithAffixes(`"test":16`, `"test":128`), "affixes[0].if[0].match isn't empty, but test 128 compares no elements"},
+		{lexicalWithAffixes(`"test":16`, `"test":18`), "affixes[0].if[0].match has 2 elements, but test 18 compares 4 nodes"},
+		{lexicalWithAffixes(`["A",`, `["AB",`), `affixes[0].if[0].match[0] is "AB", expected a symbol from 32 to 126`},
+		{lexicalWithAffixes(`[2,2]`, `[6,2]`), "affixes[0].if[0].match[1] is [6 2], expected a plane from 0 to 5"},
+		{lexicalWithAffixes(`[2,2]`, `[2,0]`), "affixes[0].if[0].match[1] is [2 0], expected a plane from 0 to 5 and bits from 1 to 255"},
+		{lexicalWithAffixes(`[2,2]`, `[2]`), "affixes[0].if[0].match[1] isn't a symbol or [plane, bits]"},
+		{lexicalWithAffixes(`"lostT":[]`, `"lostT":["stop"]`), `stemConditions.lostT[0] is "stop"`},
+		{lexicalWithAffixes(`,"lostT":[]`, ``), "stemConditions.lostT is missing"},
+	}
+	if _, err := writePack(t, "lexical.json", []byte(lexicalWithAffixes())).LoadLexical(); err != nil {
+		t.Errorf("the lexical tables with an affix: %v", err)
 	}
 	for _, test := range tests {
 		if _, err := writePack(t, "lexical.json", []byte(test.content)).LoadLexical(); err == nil || !strings.Contains(err.Error(), test.message) {
