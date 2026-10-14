@@ -504,16 +504,31 @@ func TestLexical(t *testing.T) {
 	if !reflect.DeepEqual(lexical.ReductionContext, datapack.Context{{Test: 0x40}}) {
 		t.Errorf("the reduction context %+v", lexical.ReductionContext)
 	}
+	count := 0
+	for _, rules := range lexical.LetterRules {
+		count += len(rules)
+	}
+	data := lexical.LetterRules['A'-'@'][4]
+	if count != 753 || data.Before != "DAT" || data.Phonemes != "DAT@" || data.Weight != -2 || data.Masks != [2]uint32{} ||
+		data.Flags != [2]uint32{0x40b1, 8} || len(lexical.LetterRules['@'-'@']) != 1 {
+		t.Errorf("%d letter rules, A's fifth %+v", count, data)
+	}
+	if rule := lexical.LetterRules['C'-'@'][3]; !rule.JoinsPrefix || rule.Before != "IE" || rule.Phonemes != "YeTS" || rule.Weight != -1 {
+		t.Errorf("C's fourth rule %+v", rule)
+	}
 }
 
-// lexicalWithAffixes is a lexical.json with a function word list, an affix, stem conditions and a reduction
-// context, changed by a replacer's pairs.
+// lexicalWithAffixes is a lexical.json with a function word list, an affix, stem conditions, a reduction context
+// and a rule for each letter, the first with the letters before it, changed by a replacer's pairs.
 func lexicalWithAffixes(pairs ...string) string {
 	none := strings.Repeat("-1,", 26) + "-1"
+	always := `[{"before":"","phonemes":"","if":[],"masks":[0,0],"flags":[1,0]}]`
+	letterRules := `[[{"before":"AB","phonemes":"@B","weight":-2,"joinsPrefix":true,"if":[{"test":64}],"masks":[1,2],"flags":[3,4]},` +
+		always[1:] + strings.Repeat(","+always, datapack.LetterRuleLetters-1) + `]`
 	content := `{"functionWords":[{"words":"#A#","class":1}],"suffixes":[` + none + `],"prefixes":[0,` + none[3:] + `],` +
 		`"affixLists":[[0]],"affixes":[{"letters":"UN","if":[{"test":16,"match":["A",[2,2]]},"end"],"lookup":true,` +
 		`"class":0,"stress":1,"next":0}],"stemConditions":{"silentE":[],"noSilentE":[],"withoutE":[],"lostT":[]},` +
-		`"reductionContext":[{"test":64}]}`
+		`"reductionContext":[{"test":64}],"letterRules":` + letterRules + `}`
 	return strings.NewReplacer(pairs...).Replace(content)
 }
 
@@ -553,6 +568,18 @@ func TestChangedLexical(t *testing.T) {
 		{lexicalWithAffixes(`,"lostT":[]`, ``), "stemConditions.lostT is missing"},
 		{lexicalWithAffixes(`[{"test":64}]`, `[{"test":64,"match":["A"]}]`), "reductionContext[0].match isn't empty"},
 		{lexicalWithAffixes(`,"reductionContext":[{"test":64}]`, ``), "reductionContext is missing"},
+		{lexicalWithAffixes(`[[{"before":"AB"`, `[[],[{"before":"AB"`), "letterRules has 29 lists, expected 28"},
+		{lexicalWithAffixes(`[[{"before":"AB"`, `[[{"before":"A\u0000"`), "letterRules[0][0].before[1] is 0"},
+		{lexicalWithAffixes(`"phonemes":"@B"`, `"phonemes":"@\u007f"`), "letterRules[0][0].phonemes[1] is 127, expected a symbol from 32 to 126"},
+		{lexicalWithAffixes(`"phonemes":"@B"`, `"phonemes":"@\u001f"`), "letterRules[0][0].phonemes[1] is 31"},
+		{lexicalWithAffixes(`"phonemes":"@B",`, ``), "letterRules[0][0].phonemes is missing"},
+		{lexicalWithAffixes(`"weight":-2`, `"weight":16`), "letterRules[0][0].weight is 16, outside -128 to 15"},
+		{lexicalWithAffixes(`"phonemes":"@B","weight":-2`, `"phonemes":""`), "letterRules[0][0] joins the prefix but has no weight nor phonemes"},
+		{lexicalWithAffixes(`"if":[{"test":64}]`, `"if":["stop"]`), `letterRules[0][0].if[0] is "stop"`},
+		{lexicalWithAffixes(`"if":[{"test":64}],`, ``), "letterRules[0][0].if is missing"},
+		{lexicalWithAffixes(`"masks":[1,2]`, `"masks":[1]`), "letterRules[0][0].masks has 1 values, expected 2"},
+		{lexicalWithAffixes(`"flags":[3,4]`, `"flags":[3,4294967296]`), "letterRules[0][0].flags[1] is 4294967296"},
+		{lexicalWithAffixes(`"phonemes":"@B","weight":-2,"joinsPrefix":true,"if":[{"test":64}],"masks":[1,2],"flags":[3,4]},{"before":""`, `"phonemes":"@B","if":[],"masks":[0,0],"flags":[3,4]},{"before":"A"`), "letterRules[0] doesn't end with a rule that always holds"},
 	}
 	if _, err := writePack(t, "lexical.json", []byte(lexicalWithAffixes())).LoadLexical(); err != nil {
 		t.Errorf("the lexical tables with an affix: %v", err)

@@ -8,8 +8,8 @@ import (
 
 // Lexical is the lexical stage's tables: the lists of function words it looks a word up in, in order, and the
 // endings it tests a word no list has for; the affixes it strips, with the lists it tries for a word's last letter
-// and for its first, from '@' to 'Z' (nil for none), and the conditions on the stems they leave; and the context
-// letter-to-sound tests to reduce a vowel.
+// and for its first, from '@' to 'Z' (nil for none), and the conditions on the stems they leave; the context
+// letter-to-sound tests to reduce a vowel, and its rules for each letter from '@' to '['.
 type Lexical struct {
 	FunctionWords       []FunctionWordList
 	FunctionWordEndings []FunctionWordEnding
@@ -17,6 +17,7 @@ type Lexical struct {
 	Suffixes, Prefixes  [AffixLetters]*AffixList
 	StemConditions      StemConditions
 	ReductionContext    Context
+	LetterRules         [LetterRuleLetters][]LetterRule
 }
 
 // A FunctionWordList is a list of words, each between two #, which give a word in it Class, but the Exceptions.
@@ -48,6 +49,7 @@ type lexicalDescription struct {
 	Affixes             []affixDescription            `json:"affixes"`
 	StemConditions      stemConditionsDescription     `json:"stemConditions"`
 	ReductionContext    []json.RawMessage             `json:"reductionContext"`
+	LetterRules         [][]letterRuleDescription     `json:"letterRules"`
 }
 
 type functionWordListDescription struct {
@@ -109,6 +111,9 @@ func parseLexical(data []byte) (*Lexical, error) {
 	}
 	var err error
 	if lexical.ReductionContext, err = parseContext(description.ReductionContext, "reductionContext"); err != nil {
+		return nil, err
+	}
+	if err := parseLetterRules(description.LetterRules, lexical); err != nil {
 		return nil, err
 	}
 	return lexical, nil

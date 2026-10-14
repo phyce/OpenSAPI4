@@ -29,8 +29,7 @@ type (
 )
 
 // recorded are the functions of the parts later parts port.
-var recorded = []string{"Lexical::LetterToSound", "Lexical::PostLexicalRules", "Lexical::FunctionWordDestress",
-	"Lexical::FunctionWordReduceVowels"}
+var recorded = []string{"Lexical::PostLexicalRules", "Lexical::FunctionWordDestress", "Lexical::FunctionWordReduceVowels"}
 
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
@@ -134,7 +133,6 @@ func (rules *recordedRules) differences(before, expected []byte) error {
 	rules.mapping.StorePipeline(state)
 	lexicalstate.Store(rules.mapping, rules.stage, state)
 	rules.affixes.Store(rules.stage, state, expected)
-	lexicalstate.TakeUnported(state, expected)
 	return threadstate.Differences(state, expected, lexicalstate.Describe)
 }
 
@@ -161,10 +159,6 @@ func (rules *recordedRules) take(function string) *call {
 	rules.mapping.LoadPipeline(call.After)
 	lexicalstate.Load(rules.mapping, rules.stage, call.After)
 	return call
-}
-
-func (rules *recordedRules) LetterToSound() {
-	rules.take("Lexical::LetterToSound")
 }
 
 func (rules *recordedRules) PostLexicalRules(node *pipeline.Node) *pipeline.Node {
@@ -217,7 +211,7 @@ func expectFlag(call *call, result bool) error {
 }
 
 // TestStage replays every recorded run of the stage's step, word conversion, post-lexical pass and reset, with
-// the original's letter-to-sound, post-lexical rules and function words' reductions.
+// the original's post-lexical rules and function words' reductions.
 func TestStage(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
@@ -255,6 +249,19 @@ func TestLookup(t *testing.T) {
 		"Lexical::MorphLookup": func(call *call) error {
 			stage, rules := data.load(call)
 			return rules.finish(call, expectFlag(call, stage.Lookup()))
+		},
+	})
+	t.Logf("calls replayed: %v", counts)
+}
+
+// TestLetterToSound replays every recorded conversion of a word's letters by rules.
+func TestLetterToSound(t *testing.T) {
+	data := loadTestData(t)
+	counts := replay(t, map[string]replayer{
+		"Lexical::LetterToSound": func(call *call) error {
+			stage, rules := data.load(call)
+			stage.LetterToSound()
+			return rules.finish(call, nil)
 		},
 	})
 	t.Logf("calls replayed: %v", counts)

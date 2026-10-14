@@ -26,12 +26,9 @@ func Fields(stage *lexical.Stage) []threadstate.Field {
 		at(0x1c50, "alternating", &stage.Alternating), at(0x1c28, "tried e", &stage.TriedE),
 		at(0x1c6c, "consonants", &stage.Consonants), at(0x1c54, "vowel", &stage.Vowel),
 		at(0x1c68, "reducible", &stage.Reducible), at(0x1c70, "after stem", &stage.AfterStem),
-		at(0x1c60, "following", &stage.Following)}
+		at(0x1c60, "following", &stage.Following), at(0x1c64, "ending", &stage.Ending),
+		at(0x1c58, "reached", &stage.Reached), at(0x1c5c, "letter", &stage.Letter)}
 }
-
-// Unported are the thread state's bytes of the stage's parts later parts port: the rest of letter-to-sound's
-// state. The tests take them from the records.
-var Unported = [][2]int{{0x1c58, 0x1c60}, {0x1c64, 0x1c68}, {0x1c71, 0x1c74}}
 
 // AffixPointer is where the thread state keeps the stage's affix.
 const AffixPointer = 0x1c24
@@ -82,13 +79,6 @@ func (affixes *Affixes) Store(stage *lexical.Stage, state, expected []byte) {
 		}
 	}
 	binary.LittleEndian.PutUint32(state[AffixPointer:], pointer)
-}
-
-// TakeUnported copies the unported bytes of the expected state into the state.
-func TakeUnported(state, expected []byte) {
-	for _, span := range Unported {
-		copy(state[span[0]:span[1]], expected[span[0]:span[1]])
-	}
 }
 
 // Load gives the stage the thread state's values, but its pipeline's.

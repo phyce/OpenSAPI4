@@ -7,11 +7,9 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// Rules are the parts of the stage that later parts port: letter-to-sound, the post-lexical rules and the
-// function words' stress and reductions (lexical.md).
+// Rules are the parts of the stage that later parts port: the post-lexical rules and the function words' stress
+// and reductions (lexical.md).
 type Rules interface {
-	// LetterToSound converts the current word's letters to phonemes.
-	LetterToSound()
 	// PostLexicalRules applies the post-lexical rules to a phoneme of the previous word and returns the node to
 	// go on from.
 	PostLexicalRules(node *pipeline.Node) *pipeline.Node
@@ -53,14 +51,16 @@ type Stage struct {
 	Affix  *datapack.Affix
 	TriedE bool
 
-	// Letter-to-sound (lexical.md §10): its count of consonants, which a context can test (lexical.md §8.1); the
-	// vowel it wrote last and whether that vowel may be reduced; whether it converts the letters after a stem the
-	// lookup found; and what follows the letter it converts, which its rules test.
-	Consonants int32
-	Vowel      *pipeline.Node
-	Reducible  bool
-	AfterStem  bool
-	Following  uint32
+	// Letter-to-sound (lexical.md §10): the letter it converts and the node it reached, its count of consonants,
+	// which a context can test (lexical.md §8.1), the vowel it wrote last and whether that vowel may be reduced,
+	// whether it converts the letters after a stem the lookup found, and what follows the letter, which its rules
+	// test.
+	Letter, Reached   *pipeline.Node
+	Consonants        int32
+	Vowel             *pipeline.Node
+	Reducible         bool
+	AfterStem         bool
+	Following, Ending uint32
 
 	tables     *datapack.Lexical
 	dictionary *datapack.Dictionary

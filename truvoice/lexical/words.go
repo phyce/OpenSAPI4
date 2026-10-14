@@ -176,7 +176,7 @@ func (stage *Stage) convertLetters() {
 		stage.classify(spelling, stage.Word)
 	}
 	if !stage.Lookup() || stage.StressPattern != 0 {
-		stage.Rules.LetterToSound()
+		stage.LetterToSound()
 	}
 	stage.Word.SetSecond(stage.WordClass)
 }

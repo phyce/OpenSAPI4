@@ -5,8 +5,8 @@ import "github.com/phyce/OpenSAPI4/truvoice/pipeline"
 // fullVowel is the bit of Following that a vowel kept full sets.
 const fullVowel = 0x4000
 
-// ReduceVowel settles the vowel letter-to-sound wrote last, once it has written the vowel before it, or, when
-// final, the letters' first (lexical.md §10): a U becomes b, after a Y or a consonant that takes the Y in, and a
+// ReduceVowel settles the vowel letter-to-sound wrote last, once it writes the vowel before it, or, when final,
+// at the end of a rule after the stem's start (lexical.md §11): a U becomes b, after a Y or a consonant that takes the Y in, and a
 // vowel that may be reduced becomes a schwa, a barred i or a 3, unless the nodes around it keep it full.
 func (stage *Stage) ReduceVowel(final bool) {
 	nucleus := stage.Vowel
