@@ -28,6 +28,7 @@ type Rules interface {
 type Stage struct {
 	Pipeline *pipeline.Pipeline
 	Rules    Rules
+	Lexicon  Lexicon
 
 	// The words (lexical.md §2.3): the previous word's header and last node, the current word's header, first
 	// letter and last node, the node the search for the next word has reached and the nodes it has passed.

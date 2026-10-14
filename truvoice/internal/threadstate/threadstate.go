@@ -95,10 +95,11 @@ type Record struct {
 	Globals   []Run    `json:"globals"`
 }
 
-// A Case is a recorded run.
+// A Case is a recorded run, with the words and pronunciations its user lexicon was given before its texts.
 type Case struct {
-	Name    string   `json:"name"`
-	Records []Record `json:"records"`
+	Name    string      `json:"name"`
+	Lexicon [][2]string `json:"lexicon"`
+	Records []Record    `json:"records"`
 }
 
 // State is the thread state and the global variables as the records bring them.
@@ -132,6 +133,7 @@ func (state *State) Apply(record *Record) {
 // A Call is a recorded call of one of the original's functions, with its return and the thread state and global
 // variables at both. Inner are the calls of the kept functions (see Replay) it made, at any depth, in order.
 type Call struct {
+	Case                        *Case
 	Record, Result              *Record
 	Before, After               []byte
 	GlobalsBefore, GlobalsAfter []byte
@@ -205,7 +207,7 @@ func replayCase(golden Case, replayers map[string]Replayer, kept []string) (map[
 		}
 		state.Apply(record)
 		if record.Kind == "call" {
-			entry := open{call: &Call{Record: record, Base: state.Base}, replayed: replayers[record.Function] != nil,
+			entry := open{call: &Call{Case: &golden, Record: record, Base: state.Base}, replayed: replayers[record.Function] != nil,
 				kept: slices.Contains(kept, record.Function) && withinReplayed(stack)}
 			if entry.replayed || entry.kept {
 				entry.call.Before = slices.Clone(state.Bytes)

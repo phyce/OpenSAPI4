@@ -189,14 +189,7 @@ func (stage *Stage) takeEntry(entry *datapack.DictionaryEntry, fromWordStart, to
 		stage.StressPattern = entry.StressPattern
 		return
 	}
-	list := stage.Pipeline
-	cursor := stage.cursor()
-	node := cursor.Working[0]
-	for node != cursor.Working[1] {
-		node = list.FreeNode(node, true)
-	}
-	node = list.FreeNode(node, false)
-	cursor.Working[0] = node
+	node := stage.freeStem()
 	primary, unstressed := false, false
 	var stress uint32
 	var full, weak *pipeline.Node
@@ -210,7 +203,7 @@ func (stage *Stage) takeEntry(entry *datapack.DictionaryEntry, fromWordStart, to
 		case '2':
 			stress = 1
 		default:
-			node = list.NewNode(node, true, pipeline.Phoneme, symbol)
+			node = stage.Pipeline.NewNode(node, true, pipeline.Phoneme, symbol)
 			if stress != 0 {
 				node.SetFlags(node.Flags()&^stressBits | stress<<stressShift)
 			} else if !primary && stage.hasClass(symbol, syllabic) && full == nil && !unstressed {
@@ -223,17 +216,43 @@ func (stage *Stage) takeEntry(entry *datapack.DictionaryEntry, fromWordStart, to
 			unstressed, stress = false, 0
 		}
 	}
-	cursor.Working[1] = node
+	stage.finishStem(node, fromWordStart, toWordEnd)
+	if !primary {
+		stage.stressVowel(full, weak)
+	}
+}
+
+// freeStem frees the stem between the cursor's working nodes and returns the node before it, where the
+// phonemes that replace it go.
+func (stage *Stage) freeStem() *pipeline.Node {
+	list := stage.Pipeline
+	cursor := stage.cursor()
+	node := cursor.Working[0]
+	for node != cursor.Working[1] {
+		node = list.FreeNode(node, true)
+	}
+	node = list.FreeNode(node, false)
+	cursor.Working[0] = node
+	return node
+}
+
+// finishStem makes the phonemes after the node freeStem returned, up to the last, the cursor's working nodes,
+// and the word's first or last nodes when the stem started or ended the word.
+func (stage *Stage) finishStem(last *pipeline.Node, fromWordStart, toWordEnd bool) {
+	cursor := stage.cursor()
+	cursor.Working[1] = last
 	cursor.Working[0] = cursor.Working[0].Next
 	if fromWordStart {
 		stage.FirstLetter = cursor.Working[0]
 	}
 	if toWordEnd {
-		stage.LastNode = node
+		stage.LastNode = last
 	}
-	if primary {
-		return
-	}
+}
+
+// stressVowel gives a word without a primary stress one, on its first full vowel without a stress digit, else
+// on its first reduced one.
+func (stage *Stage) stressVowel(full, weak *pipeline.Node) {
 	if full == nil {
 		full = weak
 	}

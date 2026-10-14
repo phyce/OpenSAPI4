@@ -3,6 +3,7 @@ package lexical_test
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -14,7 +15,8 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
 
-// The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz and dictionary.jsonl.gz) records calls of the original's functions
+// The lexical stage's golden data (golden/truvoice/lexical.jsonl.gz, dictionary.jsonl.gz and lexicon.jsonl.gz)
+// records calls of the original's functions
 // with the changes of the speaking thread's state around them. The replay rebuilds the state at every call and
 // return (internal/threadstate, internal/lexicalstate), so that a Go function can start from the state the
 // original's started from and leave what it left. The stage's parts that later parts port run as the original's
@@ -44,7 +46,7 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 		}
 	}
 	counts := map[string]int{}
-	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz"} {
+	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz", "lexicon.jsonl.gz"} {
 		for function, count := range threadstate.Replay(t, file, guarded, recorded...) {
 			counts[function] += count
 		}
@@ -91,10 +93,28 @@ type recordedRules struct {
 	err      error
 }
 
-// load returns a stage with the thread state's values when the call started, whose rules are the call's
-// recorded inner calls.
+// userLexicon is a run's user lexicon: its words in capitals, the first pronunciation given for each.
+type userLexicon map[string]string
+
+func (lexicon userLexicon) Pronunciation(word string) (string, bool) {
+	pronunciation, found := lexicon[word]
+	return pronunciation, found
+}
+
+// load returns a stage with the thread state's values when the call started and the run's user lexicon, whose
+// rules are the call's recorded inner calls.
 func (data *testData) load(call *call) (*lexical.Stage, *recordedRules) {
 	stage := lexical.New(data.lexical, data.dictionary, data.parameters, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
+	if len(call.Case.Lexicon) > 0 {
+		lexicon := userLexicon{}
+		for _, entry := range call.Case.Lexicon {
+			word := strings.ToUpper(entry[0])
+			if _, found := lexicon[word]; !found {
+				lexicon[word] = entry[1]
+			}
+		}
+		stage.Lexicon = lexicon
+	}
 	mapping := threadstate.Mapping{Pipeline: stage.Pipeline, Base: call.Base}
 	mapping.LoadPipeline(call.Before)
 	lexicalstate.Load(mapping, stage, call.Before)
@@ -223,6 +243,18 @@ func TestStage(t *testing.T) {
 			stage.Reset()
 			stage.Pipeline.Cursors[pipeline.Lexical].Types = 6
 			return rules.finish(call, nil)
+		},
+	})
+	t.Logf("calls replayed: %v", counts)
+}
+
+// TestUserLexicon replays every recorded user lexicon lookup.
+func TestUserLexicon(t *testing.T) {
+	data := loadTestData(t)
+	counts := replay(t, map[string]replayer{
+		"Lexical::UserLexiconLookup": func(call *call) error {
+			stage, rules := data.load(call)
+			return rules.finish(call, expectFlag(call, stage.UserLexiconLookup()))
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
