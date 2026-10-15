@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -289,6 +290,36 @@ func TestFunctionWords(t *testing.T) {
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
+}
+
+// TestPostLexicalRules replays every recorded run of the post-lexical rules. The rules for consonants come in a
+// later part: a run on a consonant only counts whether it matches.
+func TestPostLexicalRules(t *testing.T) {
+	data := loadTestData(t)
+	var matched, left atomic.Int64
+	counts := replay(t, map[string]replayer{
+		"Lexical::PostLexicalRules": func(call *call) error {
+			stage, rules := data.load(call)
+			node := rules.mapping.NodeAt(uint32(call.Argument(0)))
+			symbol := node.Symbol()
+			consonant := symbol < datapack.SymbolCount && data.parameters.Classes[1][symbol]&0x20 != 0
+			var result error
+			if pointer := rules.mapping.PointerTo(stage.PostLexicalRules(node)); pointer != call.Result.EAX {
+				result = fmt.Errorf("returned %s, expected %s", describeNode(rules.mapping, pointer), describeNode(rules.mapping, call.Result.EAX))
+			}
+			err := rules.finish(call, result)
+			if !consonant {
+				return err
+			}
+			if err != nil {
+				left.Add(1)
+			} else {
+				matched.Add(1)
+			}
+			return nil
+		},
+	})
+	t.Logf("calls replayed: %v; consonants matched %d, left %d", counts, matched.Load(), left.Load())
 }
 
 // TestUserLexicon replays every recorded user lexicon lookup.

@@ -82,10 +82,13 @@ const (
 	syllabic    class = 0x001
 	sonorant    class = 0x002
 	wordMark    class = 0x008
+	nasal       class = 0x010
 	stop        class = 0x020
+	fricative   class = 0x040
 	phoneme     class = 0x080
 	boundary    class = 0x101
 	stressMark  class = 0x102
+	neutral     class = 0x110
 	consonant   class = 0x120
 	phraseBreak class = 0x140
 	closure     class = 0x201
@@ -96,6 +99,8 @@ const (
 	approximant class = 0x301
 	palatal     class = 0x304
 	rounded     class = 0x320
+	yGlide      class = 0x340
+	rColoured   class = 0x402
 	reduced     class = 0x440
 )
 
