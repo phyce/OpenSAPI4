@@ -233,9 +233,9 @@ func (replay *replay) scheduleFlags() scheduleFlags {
 		Markers: synthesizer.MarkersPassed, Position: synthesizer.Position}
 }
 
-// replayStages stands in for the stages the Go pipeline doesn't have yet. A stage's call replays the calls of
-// the framework the original's stage made, from the records, and returns what it returned; the parameter
-// generator's also writes the frames and the ring's cursors the synthesizer then reads.
+// replayStages stands in for the stages, whose packages import this one. A stage's call replays the calls of the
+// framework the original's stage made, from the records, and returns what it returned; the parameter generator's
+// also writes the frames and the ring's cursors the synthesizer then reads.
 type replayStages struct {
 	replay   *replay
 	position int

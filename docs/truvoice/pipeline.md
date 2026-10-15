@@ -20,7 +20,7 @@ The speaking thread, the scheduler, the output stage and the reset were also che
 - each step ran the same stages (3,787 input steps, 7,899 normalizer, 8,848 lexical, 11,138 prosody and 15,293 parameter generator steps, 98,430 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor;
 - the audio handed over, 8,300,290 samples in 7,451 hand-overs, was the original's PCM in every run, and each of the 1,711 words and 4 bookmarks came at the sample where the original reported it.
 
-The scheduler, the output stage, the synthesizer and the speaking thread's loop were checked again with the Go input side, lexical stage, prosody stage and parameter generator, from the texts and what the normalizer wrote, in 1,005 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md), [input.md](input.md) §6): all 894,238 steps, the threads' ends, and the audio, were the original's.
+The scheduler, the output stage, the synthesizer and the speaking thread's loop were checked again with the Go input side, normalizer, lexical stage, prosody stage and parameter generator, from the texts, in 1,005 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md), [input.md](input.md) §6): all 894,238 steps, the threads' ends, and the audio, were the original's.
 
 ## 1. The state
 

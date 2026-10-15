@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) normalizes the words the input stage made. The normalizer runs a **program**, from the data pack, on the nodes in its window ([pipeline.md](pipeline.md) §3): a small machine of conditions and actions, with calls, registers and lists of words. The program spells words as letters for the lexical stage, says numbers, abbreviations, states, directions and symbols as phonemes, runs the control commands, and reads phonetic input of two kinds: the phonemes the lexical stage reads, and, between `[` and `]`, a phonetic alphabet the normalizer converts itself.
 
-This spec covers the nodes the normalizer works on (section 1), the program's machine (section 2), its reset (section 3) and the phonetic alphabet (section 4).
+This spec covers the nodes the normalizer works on (section 1), the program's machine (section 2), its reset (section 3), the phonetic alphabet (section 4) and what the program does (section 5).
 
 **In short.**
 - Each step goes on from where the last stopped: the machine keeps its place in the program, its calls and its registers between steps. A step stops when a condition needs a node the input stage hasn't made yet, or when the program yields, and hands on the nodes before the one it is reading.
@@ -11,10 +11,13 @@ This spec covers the nodes the normalizer works on (section 1), the program's ma
 - A word becomes letters in capitals, with `@` for an apostrophe and `&` for a hyphen.
 - Between `[` and `]`, each letter, alone or with the letter after it, is a phoneme: `AA` and `A` are `o`, `SH` is `s`, `NG` is `~`. A mark right before the `]` is kept for the next word's start: `*`, `\`, `/`, `=` and others. A digit before it gives the pending mark a second value, and two digits give it their first digit's character code times ten, at most 63: a slip of the original's.
 - The marks `!p;d!` and `/p;d/` after a phoneme of phonetic input give it a pitch and a duration.
+- The program reads numbers with commas whole, up to trillions, and numbers of three or four digits in pairs, as years: `1997` is "nineteen ninety-seven" and `555-1234` "five fifty-five, twelve thirty-four". It reads money, times, decimals, ordinals and plurals of numbers, expands abbreviations, titles and units, spells words of capitals and words without vowels, and makes the sentences' ends phonemes. Twelve flags switch spell mode, punctuation read out, numbers digit by digit, states, directions and other readings.
 
 **Exactness.** Ported from the original's code, and checked against it by replaying every step of the normalizer recorded in 1,173 runs: the 1,005 runs of the stages in the pipeline ([input.md](input.md) §6, [lexical.md](lexical.md), [prosody.md](prosody.md), [parameters.md](parameters.md)) and 168 more for the normalizer. These speak numbers of every size, with commas, decimals and signs, ordinals, money, times, years, percentages and phone numbers; every word of the 22 lists, alone, capitalized, after and before a number, in capitals, with dots and inside other words; words with apostrophes and hyphens, in capitals, single letters, words without vowels, and the symbols alone, doubled and between letters; tags and commands between each two characters of numbers and abbreviations, and 15 to 25 of them before the next word; texts with each of the flags the program tests set or cleared and with the phrase setting 0, given with a notification sink and without, which leaves no word marks after the spaces; and phonetic input of both kinds: every letter alone and with each letter that pairs with it, in both cases, each mark before the end and elsewhere, after a phoneme and not, digits, pending values taken by the next word, by a phoneme that isn't a word mark or by `%` and `&`, the marks `!` and `/` with values at the ends of their ranges and past them, after phonemes and after other symbols, `<` and `>`. Each of the 250,277 steps started from the original's state, reported the same and left the speaking thread's state byte-identical to the original's.
 
-The steps ran all 450 of the program's 454 blocks that can run (section 5); of the 367 conditions in them that can both pass and fail, 331 did both. They matched every one of the 373 words of the lists, inserted 46,635 letters and 273,577 phonemes, 33,432 replacements among them, spelled 46,332 words and made 24,994 words phonemes. 45,317 steps found no node of theirs; the others waited for a node 97,856 times, 82,686 of them at a control condition, 11,496 at the next control condition, 2,877 looking ahead and 797 at a phonetic symbol, and yielded 107,104 times. They returned from 444,922 calls, nested at most 7 deep. In phonetic input they read all 42 letter pairs and the 26 letters alone, 32 other symbols in 82 of their four cases (before the end or elsewhere, after a phoneme or not), two digits 17 times and one 13 times; the next word took the pending values 392 times; the marks `!` and `/` came 82 times and gave their values 39 times.
+The steps ran all 450 of the program's 454 blocks that can run (section 6); of the 367 conditions in them that can both pass and fail, 331 did both. They matched every one of the 373 words of the lists, inserted 46,635 letters and 273,577 phonemes, 33,432 replacements among them, spelled 46,332 words and made 24,994 words phonemes. 45,317 steps found no node of theirs; the others waited for a node 97,856 times, 82,686 of them at a control condition, 11,496 at the next control condition, 2,877 looking ahead and 797 at a phonetic symbol, and yielded 107,104 times. They returned from 444,922 calls, nested at most 7 deep. In phonetic input they read all 42 letter pairs and the 26 letters alone, 32 other symbols in 82 of their four cases (before the end or elsewhere, after a phoneme or not), two digits 17 times and one 13 times; the next word took the pending values 392 times; the marks `!` and `/` came 82 times and gave their values 39 times.
+
+The normalizer was also checked as a whole, in the pipeline, in the 1,005 recorded runs of the stages. Go speaking threads ran each run from the texts the original's took, and ended where the original's did, a new one starting for a later text in 4 runs ([pipeline.md](pipeline.md) §8.5; [input.md](input.md) §6). The Go input side ([input.md](input.md)), scheduler, normalizer, lexical stage ([lexical.md](lexical.md)), prosody stage ([prosody.md](prosody.md)), parameter generator ([parameters.md](parameters.md)), output stage and synthesizer ran all 894,238 of the original's scheduler steps, with nothing taken from the recordings. The normalizer was reset at each of the 1,009 threads' starts, and each of its 129,599 steps started from the original's state, reported the same and left the speaking thread's whole state the same. The audio, 200,579,270 samples in 170,378 hand-overs, was the original's PCM in every run, and each of the 19,527 words and 60 bookmarks came at the sample where the original reported it.
 
 ## 1. The nodes
 
@@ -190,7 +193,108 @@ A mark that is **pending** `n` sets the pending value to `n` and the pending fla
 | a digit | removed, the pending second value becoming the digit, with the pending flag set | before another digit: removed, and the other digit is freed; if the end follows them, the pending second value becomes the first digit's character code times ten, in 8 bits, at most 63, and the pending flag is set. Otherwise removed |
 | any other | removed | removed |
 
-## 5. What the recorded runs don't reach
+## 5. What the program does
+
+The program is the original's, and the port runs it as it is. This section says what it does, routine by routine, with the place each starts at. The examples are what the input side and the normalizer make of a text, with the default settings unless a flag is given: a word in capitals, like `SMITH`, is a word of letters, which the lexical stage looks up ([lexical.md](lexical.md) §1.1 and §3.3), and words in quotes, like "twenty-five", stand for the phonemes the lists give them.
+
+### 5.1 Flags and registers
+
+The program tests these flags (section 2.2). `N` and `A` commands set them, and `F` and `D` commands clear them ([input.md](input.md) §1.4):
+
+| Flag | Set by | At first | When set |
+|---|---|---|---|
+| 0 | `ESC[1N` | off | Spell mode: every word is spelled (section 5.4) |
+| 1 | `ESC[2N` | off | Punctuation is read out between pauses: "comma", "dash", "open paren", "period"; `&` is "ampersand", a decimal point "period", and `$` "dollar" before the amount |
+| 2 | `ESC[3N` | off | Numbers, times and money are read digit by digit |
+| 3 | `ESC[4N` | off | Each space is read out: "space" and a pause |
+| 4 | `ESC[5N` | off | A hyphen before a digit is "minus" |
+| 5 | `ESC[6N` | off | Numbers of three and four digits are read whole: `999` is "nine hundred ninety-nine" |
+| 6 | `ESC[7N` | on | Words of capitals are spelled |
+| 7 | `ESC[8N` | on | Abbreviations are expanded |
+| 12 | `ESC[13N` | on | Spelling says "cap" before each capital |
+| 17 | `ESC[2A` | off | A state's two-letter abbreviation is the state's name, and numbers are read digit by digit |
+| 18 | `ESC[3A` | off | Directions are expanded: `NW` is "northwest" |
+| 19 | `ESC[4A` | off | Numbers are ordinals: `5` is "fifth", `$5` "fifth dollar" |
+
+Register 6 holds the kind of the last thing the main loop read: 0 a control node, 1 phonetic input, 2 a word, 3 a space, 4 a number, 5 a sentence's end, 6 punctuation of list 9, 7 a symbol of list 6. Register 7 is set to the same kinds but for control nodes and spaces, and nothing reads it. Register 3 is 1 for a word after a `~` and 2 after a `` ` `` (section 5.7); register 9 is 1 after a number or a number word, which makes money's "dollars" "dollar" (section 5.8). The others hold the counts of the routine that runs: a word's letters, its lower-case letters and whether it has a vowel, a number's digits and its groups, and the like.
+
+### 5.2 The main loop (place 0)
+
+The program sets registers 6 and 9 to 0 and register 7 to 5, then loops at place 0x0D, on the node at first:
+- a control node: its command runs (action 18), and it is passed over;
+- in phonetic input, when the setting isn't 0: phonetic input (section 5.10), whatever the node;
+- a letter or `'`: a word (section 5.3);
+- a space: it is deleted; with flag 3, "space" and a pause go in instead;
+- a digit: a number (section 5.5);
+- `.`, `?` or `!` (list 15): a sentence's end (section 5.9);
+- `` "$(),-:;[]{}`~ `` (list 9): punctuation (section 5.7);
+- `#%&*+<=>@/\^_|` (list 6): its name; `&` is "and", or "ampersand" with flag 1. `5 + 3 = 8` is "five plus three equals eight";
+- any other node is deleted.
+
+Each routine yields after what it made (section 2.1), so that the lexical stage gets each word as soon as it is made. With the phrase setting 0 (`ESC[0P`), a pause `,` goes in before the yield, unless the node at first is `.`, `?` or `!`: every word is a phrase of its own.
+
+### 5.3 Words (place 0x1FD)
+
+A word is the run of letters and apostrophes at first, up to 30 of them. One that starts with `'` loses it, and one that ends with `'` too: `'tis` is `TIS`, `students'` `STUDENTS`. Then, in order:
+1. With flag 0, the word is spelled (section 5.4).
+2. With flags 7 and 17, a word of two letters that is a state's abbreviation in either case (list 3) is the state's name: `TX` and `tx` are "Texas". A `.` after it stays, and ends the sentence.
+3. With flag 6, a word with no lower-case letter is spelled letter by letter (section 5.4): `FBI` is `F`, `B` and "I", and `US` `U` and `S`. So is a word whose only lower-case letter is the `s` of a final `'s`: `NASA's` is `N`, `AY`, `S` and `AY@S`. A word of one letter isn't, nor one of the acronyms read as words (list 21, in capitals: `NASA`, `UNIX`, `SCSI` and others), nor a direction with flag 18. `FBIs` stays a word.
+4. With flag 7, an abbreviation is expanded (section 5.6).
+5. A word of two letters or more without a vowel (`aeiouy`) is spelled: `Hmm` is `H`, `M`, `M`; `TVs` is `T`, `V`, `S`.
+6. A word of one letter: `a` or `A` is the article, `A`, when a space or a control node follows it and the last thing read was a space, a control node or punctuation, or nothing; otherwise it is the letter, `AY`. So `a b` has the article, and `a.`, `a,`, `(a)` and `5a` have the letter. Another letter is a word of that letter. A `.` right after a word of one letter is deleted, as an initial's: `J. Smith` is `J`, `SMITH`, and `J.R.R.` `J`, `R`, `R`. Two spaces after it keep it, and it ends the sentence: `Plan B.  Then`. With flag 1 it is read out.
+7. Otherwise it is a word of letters: `&`, then `~` or `` ` `` after one of those (section 5.7), and the word's letters in capitals, `'` as `@` (section 2.3). `don't` is `DON@T`.
+
+### 5.4 Spelling (places 0x865 and 0x8BA)
+
+A word spelled letter by letter is a word of letters for each letter: `A` is `AY`, so that the lexical stage says the letter's name, and `I` the phonemes of "I". An apostrophe is "apostrophe", but before a final `s` it stays with the letter before it, as in `AY@S`; after an `I` it doesn't. An emphasized word (`~FBI`) gets a space phoneme after each letter.
+
+In spell mode (flag 0), every word is spelled that way, `a` and `i` as `A` and `I` are, with "cap" before each capital while flag 12 is on, and a pause after the word unless `.`, `?` or `!` follows it. `Hi 42.` is "cap", `H`, "I", "forty-two": numbers are still numbers.
+
+### 5.5 Numbers (places 0x3BD and 0x5AE)
+
+A number is a run of digits, with commas and decimal points:
+- With flag 2 or 17, it is read digit by digit (place 0x8FD), with a pause at each comma: `1,234` is "one", a pause, "two three four".
+- With commas between groups of three digits, it is read whole, with "thousand", "million", "billion" and "trillion": `1,234,567` is "one million", a pause, "two hundred thirty-four thousand five hundred sixty-seven". Groups of other lengths, or more than five of them, are read one by one as numbers without commas, with pauses: `12,34` is "twelve", a pause, "thirty-four".
+- Without commas, by its count of digits (place 0x957). Each leading `0` is "zero": `007` is "zero zero seven". One digit is its name, and two are a teen or a ten and a digit (lists 1, 13 and 14). Three and four are read in pairs, as years are: `1997` is "nineteen ninety-seven", `999` "nine ninety-nine", `101` "one oh one", `2005` "twenty oh five". `1900` is "nineteen hundred", `100` "one hundred" and `2000` "two thousand". With flag 5 or 19, in money, and before an ordinal's ending, three and four digits are read whole: `1997` is then "one thousand nine hundred ninety-seven". Five digits or more are read digit by digit.
+- A decimal point and digits after the number, or alone, are "point", or "period" with flag 1, and the digits one by one: `3.14` is "three point one four", `.5` "point five" and `10.25.3` "ten point two five point three".
+- An ending `st`, `nd`, `rd` or `th` (list 7) makes it an ordinal (list 8, and the tens and teens with "th"): `21st` is "twenty-first", `101st` "one hundred first". An `s` or `'s` makes it a plural: `1990s` is "nineteen nineties". With flag 19 every number is an ordinal; with flag 0 or 2 an ending is read as a word of its own.
+
+A hyphen between numbers is a pause (section 5.7), so `555-1234` is "five fifty-five", a pause, "twelve thirty-four".
+
+### 5.6 Abbreviations (place 0x91)
+
+The routine takes words of up to five letters, matched in lower case:
+- With flag 18, the directions of list 4 (`ne`, `nw`, `ene` and the others), and `n`, `s`, `e` and `w` (list 5) before a `.`: `NW` is "northwest", `N.` "north".
+- The abbreviations of list 2, with a `.` or without: units (`lbs`, `km`, `mhz`), addresses (`ave`, `blvd`, `rd`), months (`feb`, `apr`), `etc`, `ie`, `eg`, `jr`, `inc` and others, 101 in all: `5 lbs.` is "five pounds".
+- The titles of list 16: `mr`, `mrs`, `ms`, `capt`, `gen`, `prof`, `vs` and others. `Mrs. Smith` is "missus", `SMITH`.
+- `fig`, `in`, `gal`, `co` and `prop` (list 17), before a `.` and when no capital follows: `5 in.` is "five inches", but `in. Then` stays `IN`. `Mar`, `Wed`, `Sat` and `Sun`, written so (list 19), are expanded before any `.`, and in lower case (list 20) never: `Wed.` is "Wednesday", `wed.` stays `WED`.
+- `dr`, `st` and `ft` (list 10), with a `.` or without: before a capital they are "doctor", "saint" and "fort", and otherwise "drive", "street" and "feet" (list 11). `Dr. Smith` is "doctor", `SMITH`, and `Elm St. now` `ELM`, "street", `NOW`.
+- `i.e.` and `e.g.` (list 12): "that is" and "for example", each with a pause.
+
+The `.` after an expanded abbreviation is deleted, or read out with flag 1. After those of lists 2 and 4, and `Mar.`, `Wed.`, `Sat.` and `Sun.`, it stays when a capital follows, and ends the sentence: `etc. Then` keeps it.
+
+### 5.7 Punctuation (place 0xA90)
+
+- `-` with a digit after it, past spaces, is a pause, or "minus" with flag 4. Any other `-` is deleted: `a-b` is `AY`, `B`.
+- `:` is a time, and `$` money (section 5.8).
+- `~` before a word emphasizes it, and `` ` `` de-emphasizes it ([lexical.md](lexical.md) §3.3): the word's letters start with `~` or `` ` ``. Before anything else, or with flag 0 or 1, they are read out: "tilde" and "grave", between pauses.
+- A closing `"`, `)`, `]` or `}` is a pause when a letter or a digit follows it, past spaces, and is deleted otherwise. Every other mark is a pause. With flag 1, each is read out between pauses: "comma", "open paren", "quote".
+
+### 5.8 Money and times (places 0x3D8 and 0x30C)
+
+`$` and a number are the number, read whole, and "dollars", and then the cents after a point, "and" and "cents". `$5.25` is "five dollars and twenty-five cents", `$1.01` "one dollar and one cent" and `$1.00` "one dollar". "Dollars" is "dollar" for `1`, or when the word before it was a number or a number word (list 18: `a`, `an`, `one` to `nineteen`, the tens, `hundred`, `thousand`, `million`, `billion`): `a $5 bill` is "a five dollar bill". A point followed by one digit, or by three or more, is a decimal point: `$1.5` is "one point five dollars". `thousand`, `million`, `billion` and `trillion` after the number come before "dollars": `$5 million` is "five million dollars". `$` alone, or with flag 1 or 2, is "dollar", and a number after it is read as numbers are.
+
+`:` between numbers is a time: `10:30` is "ten thirty", `10:05` "ten oh five" and `10:00` "ten o'clock". A `:` with no two digits after it is a pause: `1:5` is "one", a pause, "five". With flag 1 it is "colon" between pauses; with flag 2 the digits are read one by one.
+
+### 5.9 Sentences' ends (place 0xAD4)
+
+A `.` becomes the phoneme `.`, a `?` the phonemes `?` and `.`, and a `!` the phoneme `!`: they end the sentence for prosody. With flag 1, the mark's name follows, "period", "question" or "exclamation", and another `.`. A `.` before a digit is a decimal point, and one right before a letter is deleted: `a.b` is `AY`, `B`.
+
+### 5.10 Phonetic input (place 0x7AD)
+
+With the phonetic input setting 1 (`ESC[1I`) or 2 (between `[` and `]`, section 4), every node but control nodes goes to this routine. A symbol that isn't a phonetic symbol (condition 3) is deleted. A word of phonetic symbols becomes phonemes, with `&` before it unless it starts with the word mark `&` or `%`. The word ends at a control node, at a `&` or `%`, which starts the next, or at one of `.?,]) \`, which becomes a phoneme too, and a word of more than 31 symbols is split. The marks `!` and `/` after a phoneme give it values (section 2.5). With `ESC[1I`, `hElO1 wP1Rld.` is the phonemes `&hElO1 &wP1Rld.`
+
+## 6. What the recorded runs don't reach
 
 - The program's four blocks at places 0x2F3 to 0x30B, which nothing goes to: the block before them ends in a return. The original's program also ends with four zero bytes, which the data pack leaves out.
 - 36 conditions passed and never failed, or failed and never passed. Most test for a control node right after a character of a word, where the runs' commands, put between each two characters of their words, didn't reach; others test for a symbol that the lists, the TextIn tokenizer ([input.md](input.md) §4) or the conditions before them always give or always rule out. Condition 8 with class 14 never passes: no node the normalizer reads has a symbol below 32 or from 128.
@@ -199,5 +303,6 @@ A mark that is **pending** `n` sets the pending value to `n` and the pending fla
 - Action 5 before any match: the original would read its replacement from address 0. The port inserts nothing. The program matches before each replacement it inserts.
 - The replacements of lists 18 to 21, whose words the program only tests for: they are never inserted. In the data pack each is the string that follows its word in the original, which is what it would insert.
 - More than 20 open calls: the original would keep the 21st call over the count of calls. The steps nest at most 7 deep.
+- A reset during a text ([pipeline.md](pipeline.md) §7): the original drops the rest of the text, so the recorded runs check the reset only at a thread's start, where the values it gives are a new normalizer's anyway.
 - A control node `F` or `x` where the program looks for a command it doesn't pass over (conditions 8 and 16): the escape parser writes `F` as `N` ([input.md](input.md) §1.4), and the original didn't finish a text with `x`, which resets the stages, when it was recorded.
 - The original's machine has an action 15, which sets first's symbol to its operand. The program has none, and the port doesn't have it: the data pack can't hold it.
