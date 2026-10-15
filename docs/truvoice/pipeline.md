@@ -272,7 +272,7 @@ A new speaking thread **initializes** the pipeline:
 2. Reset the nodes and the cursors (section 2.2): every cursor gets the escape parser's settings.
 3. Reset the frame ring ([synthesizer.md](synthesizer.md) §5.1), and the synthesizer's converter and renderer at its sample rate ([synthesizer.md](synthesizer.md) §3.1, §4.2).
 4. The track levels become the escape parser's track levels.
-5. Reset the escape parser and the input stage as [input.md](input.md) §3 says, and the stages with cursors: the lexical stage as [lexical.md](lexical.md) §5 says, prosody as [prosody.md](prosody.md) §7 says and the parameter generator as [parameters.md](parameters.md) §7 says; the normalizer's spec will say how. Each touches only its own stage's state, so their order doesn't matter.
+5. Reset the escape parser and the input stage as [input.md](input.md) §3 says, and the stages with cursors: the lexical stage as [lexical.md](lexical.md) §5 says, prosody as [prosody.md](prosody.md) §7 says, the parameter generator as [parameters.md](parameters.md) §7 says and the normalizer as [normalizer.md](normalizer.md) §3 says. Each touches only its own stage's state, so their order doesn't matter.
 
 The synthesizer's mute flag, gain and output-filter voice, and the attributes, keep their values.
 

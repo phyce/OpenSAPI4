@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), and the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), and the normalizer's program and lists ([normalizer.md](normalizer.md) §2). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -16,6 +16,7 @@ prosody.json
 lexical.json
 dictionary.json
 input.json
+normalizer.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -212,3 +213,14 @@ A **word** here is a string of symbols 1 to 127, and in `homographs`, `nounBefor
 | `quoteStart`, `quoteEnd` | strings | What quote mode says at the start and the end of quoted text |
 
 The tokenizer's words are ASCII, without NUL; `exclamation` holds the escape character.
+
+## 11. `normalizer.json`
+
+| Field | Values | Meaning |
+|---|---|---|
+| `program` | Blocks | The normalizer's program ([normalizer.md](normalizer.md) §2), each block its bytes in hex: a condition and its operands, a branch byte and its two runs of actions. The program is the blocks one after another; a place is an offset in it |
+| `strings` | Strings | The string table: the strings one after another, each followed by a NUL. A string operand is the offset of one of them |
+| `punctuation` | string | The characters condition 3 takes besides the letters and the digits 1 to 5 |
+| `lists` | 22 lists | The word lists, each a list of entries `[w, r]`: `w` a word, which a match spells, and `r` its replacement, which can be empty |
+
+The strings, the punctuation and the lists' words and replacements are printable ASCII. A block's conditions and actions are those normalizer.md §2.2 and §2.3 list, with all their operands, and its runs end at its end: a register is below 12, a flag below 32, a list one of the lists, a class one of the classes condition 8 tests, a string offset one where a string starts, and a goto or a call goes to a block's start. Neither run of the last block is empty, and each ends in a goto or a return, so that the program never runs past its end.
