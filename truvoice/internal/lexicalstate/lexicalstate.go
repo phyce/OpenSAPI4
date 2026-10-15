@@ -4,6 +4,7 @@ package lexicalstate
 
 import (
 	"encoding/binary"
+	"strings"
 	"sync"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -79,6 +80,29 @@ func (affixes *Affixes) Store(stage *lexical.Stage, state, expected []byte) {
 		}
 	}
 	binary.LittleEndian.PutUint32(state[AffixPointer:], pointer)
+}
+
+// A UserLexicon is a run's user lexicon: its words in capitals, the first pronunciation given for each.
+type UserLexicon map[string]string
+
+// NewUserLexicon returns the user lexicon of a run's entries, words and pronunciations, or nil when it has none.
+func NewUserLexicon(entries [][2]string) lexical.Lexicon {
+	if len(entries) == 0 {
+		return nil
+	}
+	lexicon := UserLexicon{}
+	for _, entry := range entries {
+		word := strings.ToUpper(entry[0])
+		if _, found := lexicon[word]; !found {
+			lexicon[word] = entry[1]
+		}
+	}
+	return lexicon
+}
+
+func (lexicon UserLexicon) Pronunciation(word string) (string, bool) {
+	pronunciation, found := lexicon[word]
+	return pronunciation, found
 }
 
 // Load gives the stage the thread state's values, but its pipeline's.

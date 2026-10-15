@@ -96,7 +96,7 @@ func (stage *Stage) passNodes(wordSymbol byte, end *pipeline.Node) {
 		}
 		if node.Type() == pipeline.Phoneme && stage.hasClass(node.Symbol(), phoneme) &&
 			(cursor.Flags&rulesFlag != 0 || cursor.PhoneticInput == 0) && stage.PreviousWord.Value() != codeKept {
-			node = stage.Rules.PostLexicalRules(node)
+			node = stage.PostLexicalRules(node)
 		}
 		if stage.Alternating {
 			if symbol := node.Symbol(); stage.hasClass(symbol, vowel) {

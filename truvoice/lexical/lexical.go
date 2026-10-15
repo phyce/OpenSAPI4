@@ -7,17 +7,9 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 )
 
-// Rules are the part of the stage a later part ports: the post-lexical rules (lexical.md).
-type Rules interface {
-	// PostLexicalRules applies the post-lexical rules to a phoneme of the previous word and returns the node to
-	// go on from.
-	PostLexicalRules(node *pipeline.Node) *pipeline.Node
-}
-
 // A Stage is the lexical stage's state.
 type Stage struct {
 	Pipeline *pipeline.Pipeline
-	Rules    Rules
 	Lexicon  Lexicon
 
 	// The words (lexical.md §2.3): the previous word's header and last node, the current word's header, first

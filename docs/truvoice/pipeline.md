@@ -20,7 +20,7 @@ The speaking thread, the scheduler, the output stage and the reset were also che
 - each step ran the same stages (3,787 input steps, 7,899 normalizer, 8,848 lexical, 11,138 prosody and 15,293 parameter generator steps, 98,430 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor;
 - the audio handed over, 8,300,290 samples in 7,451 hand-overs, was the original's PCM in every run, and each of the 1,711 words and 4 bookmarks came at the sample where the original reported it.
 
-The scheduler, the output stage and the synthesizer were checked again with the Go prosody stage and parameter generator, from what the stages before prosody wrote, in 729 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md)): all 339,250 steps, and the audio, were the original's.
+The scheduler, the output stage and the synthesizer were checked again with the Go lexical stage, prosody stage and parameter generator, from what the stages before the lexical stage wrote, in 923 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md)): all 433,995 steps, and the audio, were the original's.
 
 ## 1. The state
 
@@ -272,7 +272,7 @@ A new speaking thread **initializes** the pipeline:
 2. Reset the nodes and the cursors (section 2.2): every cursor gets the escape parser's settings.
 3. Reset the frame ring ([synthesizer.md](synthesizer.md) §5.1), and the synthesizer's converter and renderer at its sample rate ([synthesizer.md](synthesizer.md) §3.1, §4.2).
 4. The track levels become the escape parser's track levels.
-5. Reset the escape parser, the input stage and the stages with cursors: prosody as [prosody.md](prosody.md) §7 says and the parameter generator as [parameters.md](parameters.md) §7 says; the other specs will say how. Each touches only its own stage's state, so their order doesn't matter.
+5. Reset the escape parser, the input stage and the stages with cursors: the lexical stage as [lexical.md](lexical.md) §5 says, prosody as [prosody.md](prosody.md) §7 says and the parameter generator as [parameters.md](parameters.md) §7 says; the other specs will say how. Each touches only its own stage's state, so their order doesn't matter.
 
 The synthesizer's mute flag, gain and output-filter voice, and the attributes, keep their values.
 

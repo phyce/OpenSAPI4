@@ -3,7 +3,6 @@ package lexical_test
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -20,17 +19,12 @@ import (
 // affixes.jsonl.gz, letters.jsonl.gz and postlexical.jsonl.gz) records calls of the original's functions with the
 // changes of the speaking thread's state around them. The replay rebuilds the state at every call and return
 // (internal/threadstate, internal/lexicalstate), so that a Go function can start from the state the original's
-// started from and leave what it left. The stage's parts that later parts port run as the original's recorded
-// calls: each starts from the state the Go stage reached, checked against the original's, and leaves what the
-// original's left.
+// started from and leave what it left.
 
 type (
 	call     = threadstate.Call
 	replayer = threadstate.Replayer
 )
-
-// recorded are the functions of the parts later parts port.
-var recorded = []string{"Lexical::PostLexicalRules"}
 
 func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	t.Helper()
@@ -47,7 +41,7 @@ func replay(t *testing.T, replayers map[string]replayer) map[string]int {
 	}
 	counts := map[string]int{}
 	for _, file := range []string{"lexical.jsonl.gz", "dictionary.jsonl.gz", "lexicon.jsonl.gz", "affixes.jsonl.gz", "letters.jsonl.gz", "postlexical.jsonl.gz"} {
-		for function, count := range threadstate.Replay(t, file, guarded, recorded...) {
+		for function, count := range threadstate.Replay(t, file, guarded) {
 			counts[function] += count
 		}
 	}
@@ -85,93 +79,24 @@ func loadTestData(t *testing.T) *testData {
 	return &testData{lexical: lexicalTables, dictionary: dictionary, parameters: parameters, pipeline: pipelineTables}
 }
 
-// recordedRules stand in for the stage's parts later parts port, with a call's recorded inner calls.
-type recordedRules struct {
-	stage    *lexical.Stage
-	mapping  threadstate.Mapping
-	affixes  *lexicalstate.Affixes
-	calls    []*call
-	position int
-	err      error
+// A stageRun is a stage that runs a recorded call: the mapping of its state and its run's affixes.
+type stageRun struct {
+	stage   *lexical.Stage
+	mapping threadstate.Mapping
+	affixes *lexicalstate.Affixes
 }
 
-// userLexicon is a run's user lexicon: its words in capitals, the first pronunciation given for each.
-type userLexicon map[string]string
-
-func (lexicon userLexicon) Pronunciation(word string) (string, bool) {
-	pronunciation, found := lexicon[word]
-	return pronunciation, found
-}
-
-// load returns a stage with the thread state's values when the call started and the run's user lexicon, whose
-// rules are the call's recorded inner calls.
-func (data *testData) load(call *call) (*lexical.Stage, *recordedRules) {
+// load returns a stage with the thread state's values when the call started and the run's user lexicon.
+func (data *testData) load(call *call) (*lexical.Stage, *stageRun) {
 	stage := lexical.New(data.lexical, data.dictionary, data.parameters, pipeline.New(data.pipeline, new(synthesizer.Synthesizer), nil, nil))
-	if len(call.Case.Lexicon) > 0 {
-		lexicon := userLexicon{}
-		for _, entry := range call.Case.Lexicon {
-			word := strings.ToUpper(entry[0])
-			if _, found := lexicon[word]; !found {
-				lexicon[word] = entry[1]
-			}
-		}
-		stage.Lexicon = lexicon
-	}
+	stage.Lexicon = lexicalstate.NewUserLexicon(call.Case.Lexicon)
 	mapping := threadstate.Mapping{Pipeline: stage.Pipeline, Base: call.Base}
 	mapping.LoadPipeline(call.Before)
 	lexicalstate.Load(mapping, stage, call.Before)
 	affixes, _ := data.affixes.LoadOrStore(call.Case, lexicalstate.NewAffixes())
-	rules := &recordedRules{stage: stage, mapping: mapping, affixes: affixes.(*lexicalstate.Affixes), calls: call.Inner}
-	rules.affixes.Load(stage, call.Before)
-	stage.Rules = rules
-	return stage, rules
-}
-
-// differences reports where the stage's state, written over the state it started from, differs from the
-// expected one.
-func (rules *recordedRules) differences(before, expected []byte) error {
-	state := slices.Clone(before)
-	rules.mapping.StorePipeline(state)
-	lexicalstate.Store(rules.mapping, rules.stage, state)
-	rules.affixes.Store(rules.stage, state, expected)
-	return threadstate.Differences(state, expected, lexicalstate.Describe)
-}
-
-// take checks that the original made the call next, from the state the Go stage has reached, and gives the
-// stage the state the call left.
-func (rules *recordedRules) take(function string) *call {
-	if rules.err != nil {
-		return nil
-	}
-	if rules.position == len(rules.calls) {
-		rules.err = fmt.Errorf("the Go stage called %s, the original didn't", function)
-		return nil
-	}
-	call := rules.calls[rules.position]
-	rules.position++
-	if call.Record.Function != function {
-		rules.err = fmt.Errorf("the Go stage called %s, the original %s", function, call.Record.Function)
-		return nil
-	}
-	if err := rules.differences(call.Before, call.Before); err != nil {
-		rules.err = fmt.Errorf("before %s: %v", function, err)
-		return nil
-	}
-	rules.mapping.LoadPipeline(call.After)
-	lexicalstate.Load(rules.mapping, rules.stage, call.After)
-	return call
-}
-
-func (rules *recordedRules) PostLexicalRules(node *pipeline.Node) *pipeline.Node {
-	pointer := rules.mapping.PointerTo(node)
-	call := rules.take("Lexical::PostLexicalRules")
-	if call == nil {
-		return node
-	}
-	if argument := uint32(call.Argument(0)); argument != pointer && rules.err == nil {
-		rules.err = fmt.Errorf("the post-lexical rules ran on %s, expected %s", describeNode(rules.mapping, pointer), describeNode(rules.mapping, argument))
-	}
-	return rules.mapping.NodeAt(call.Result.EAX)
+	run := &stageRun{stage: stage, mapping: mapping, affixes: affixes.(*lexicalstate.Affixes)}
+	run.affixes.Load(stage, call.Before)
+	return stage, run
 }
 
 func describeNode(mapping threadstate.Mapping, pointer uint32) string {
@@ -181,19 +106,17 @@ func describeNode(mapping threadstate.Mapping, pointer uint32) string {
 	return fmt.Sprintf("%#x", pointer)
 }
 
-// finish reports the first difference of a replayed call: an inner call the Go stage didn't make like the
-// original, the result, and the state the call left.
-func (rules *recordedRules) finish(call *call, result error) error {
-	if rules.err != nil {
-		return rules.err
-	}
-	if rules.position < len(rules.calls) {
-		return fmt.Errorf("the original called %s, the Go stage didn't", rules.calls[rules.position].Record.Function)
-	}
+// finish reports the first difference of a replayed call: the result, then the state the call left, written over
+// the state it started from.
+func (run *stageRun) finish(call *call, result error) error {
 	if result != nil {
 		return result
 	}
-	return rules.differences(call.Before, call.After)
+	state := slices.Clone(call.Before)
+	run.mapping.StorePipeline(state)
+	lexicalstate.Store(run.mapping, run.stage, state)
+	run.affixes.Store(run.stage, state, call.After)
+	return threadstate.Differences(state, call.After, lexicalstate.Describe)
 }
 
 func expectFlag(call *call, result bool) error {
@@ -203,33 +126,32 @@ func expectFlag(call *call, result bool) error {
 	return nil
 }
 
-// TestStage replays every recorded run of the stage's step, word conversion, post-lexical pass and reset, with
-// the original's post-lexical rules.
+// TestStage replays every recorded run of the stage's step, word conversion, post-lexical pass and reset.
 func TestStage(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::Step": func(call *call) error {
-			stage, rules := data.load(call)
-			return rules.finish(call, expectFlag(call, stage.Step()))
+			stage, run := data.load(call)
+			return run.finish(call, expectFlag(call, stage.Step()))
 		},
 		"Lexical::ConvertWord": func(call *call) error {
-			stage, rules := data.load(call)
-			return rules.finish(call, expectFlag(call, stage.ConvertWord()))
+			stage, run := data.load(call)
+			return run.finish(call, expectFlag(call, stage.ConvertWord()))
 		},
 		"Lexical::PostLexicalWord": func(call *call) error {
-			stage, rules := data.load(call)
+			stage, run := data.load(call)
 			node := stage.PostLexicalWord()
 			var result error
-			if pointer := rules.mapping.PointerTo(node); pointer != call.Result.EAX {
-				result = fmt.Errorf("returned %s, expected %s", describeNode(rules.mapping, pointer), describeNode(rules.mapping, call.Result.EAX))
+			if pointer := run.mapping.PointerTo(node); pointer != call.Result.EAX {
+				result = fmt.Errorf("returned %s, expected %s", describeNode(run.mapping, pointer), describeNode(run.mapping, call.Result.EAX))
 			}
-			return rules.finish(call, result)
+			return run.finish(call, result)
 		},
 		"Lexical::Reset": func(call *call) error {
-			stage, rules := data.load(call)
+			stage, run := data.load(call)
 			stage.Reset()
 			stage.Pipeline.Cursors[pipeline.Lexical].Types = 6
-			return rules.finish(call, nil)
+			return run.finish(call, nil)
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -240,8 +162,8 @@ func TestLookup(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::MorphLookup": func(call *call) error {
-			stage, rules := data.load(call)
-			return rules.finish(call, expectFlag(call, stage.Lookup()))
+			stage, run := data.load(call)
+			return run.finish(call, expectFlag(call, stage.Lookup()))
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -252,9 +174,9 @@ func TestLetterToSound(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::LetterToSound": func(call *call) error {
-			stage, rules := data.load(call)
+			stage, run := data.load(call)
 			stage.LetterToSound()
-			return rules.finish(call, nil)
+			return run.finish(call, nil)
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -265,9 +187,9 @@ func TestReduceVowel(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::ReduceVowel": func(call *call) error {
-			stage, rules := data.load(call)
+			stage, run := data.load(call)
 			stage.ReduceVowel(call.Argument(0)&0xff != 0)
-			return rules.finish(call, nil)
+			return run.finish(call, nil)
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -278,14 +200,14 @@ func TestFunctionWords(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::FunctionWordDestress": func(call *call) error {
-			stage, rules := data.load(call)
+			stage, run := data.load(call)
 			stage.FunctionWordStress()
-			return rules.finish(call, nil)
+			return run.finish(call, nil)
 		},
 		"Lexical::FunctionWordReduceVowels": func(call *call) error {
-			stage, rules := data.load(call)
+			stage, run := data.load(call)
 			stage.FunctionWordReductions()
-			return rules.finish(call, nil)
+			return run.finish(call, nil)
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -296,13 +218,13 @@ func TestPostLexicalRules(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::PostLexicalRules": func(call *call) error {
-			stage, rules := data.load(call)
-			node := rules.mapping.NodeAt(uint32(call.Argument(0)))
+			stage, run := data.load(call)
+			node := run.mapping.NodeAt(uint32(call.Argument(0)))
 			var result error
-			if pointer := rules.mapping.PointerTo(stage.PostLexicalRules(node)); pointer != call.Result.EAX {
-				result = fmt.Errorf("returned %s, expected %s", describeNode(rules.mapping, pointer), describeNode(rules.mapping, call.Result.EAX))
+			if pointer := run.mapping.PointerTo(stage.PostLexicalRules(node)); pointer != call.Result.EAX {
+				result = fmt.Errorf("returned %s, expected %s", describeNode(run.mapping, pointer), describeNode(run.mapping, call.Result.EAX))
 			}
-			return rules.finish(call, result)
+			return run.finish(call, result)
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -313,8 +235,8 @@ func TestUserLexicon(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::UserLexiconLookup": func(call *call) error {
-			stage, rules := data.load(call)
-			return rules.finish(call, expectFlag(call, stage.UserLexiconLookup()))
+			stage, run := data.load(call)
+			return run.finish(call, expectFlag(call, stage.UserLexiconLookup()))
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
@@ -325,8 +247,8 @@ func TestDictionary(t *testing.T) {
 	data := loadTestData(t)
 	counts := replay(t, map[string]replayer{
 		"Lexical::DictionaryLookup": func(call *call) error {
-			stage, rules := data.load(call)
-			return rules.finish(call, expectFlag(call, stage.DictionaryLookup()))
+			stage, run := data.load(call)
+			return run.finish(call, expectFlag(call, stage.DictionaryLookup()))
 		},
 	})
 	t.Logf("calls replayed: %v", counts)
