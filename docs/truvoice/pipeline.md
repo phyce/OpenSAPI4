@@ -20,7 +20,7 @@ The speaking thread, the scheduler, the output stage and the reset were also che
 - each step ran the same stages (3,787 input steps, 7,899 normalizer, 8,848 lexical, 11,138 prosody and 15,293 parameter generator steps, 98,430 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor;
 - the audio handed over, 8,300,290 samples in 7,451 hand-overs, was the original's PCM in every run, and each of the 1,711 words and 4 bookmarks came at the sample where the original reported it.
 
-The scheduler, the output stage and the synthesizer were checked again with the Go lexical stage, prosody stage and parameter generator, from what the stages before the lexical stage wrote, in 923 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md)): all 433,995 steps, and the audio, were the original's.
+The scheduler, the output stage and the synthesizer were checked again with the Go input stage, lexical stage, prosody stage and parameter generator, from what the escape parser and the normalizer wrote, in 923 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md), [input.md](input.md)): all 433,995 steps, and the audio, were the original's.
 
 ## 1. The state
 
@@ -28,12 +28,12 @@ What the stages share:
 
 - the nodes: a pool, the list of nodes in use and the free list (section 2);
 - five cursors (section 3);
-- the **settings**: the escape parser's current settings, which a reset gives to every cursor (section 3.1), its speed in words a minute, and its track levels, which a reset gives to the parameter generator (section 7);
+- the **settings**: the escape parser's current settings ([input.md](input.md) §1), which a reset gives to every cursor (section 3.1), its speed in words a minute, and its track levels, which a reset gives to the parameter generator (section 7);
 - the **scheduler's** flags and the output stage's last result (section 6);
 - the **attributes** the speaking thread last applied: pitch in Hz, speed in words a minute, volume, character, and the voice, which is also the synthesizer's output-filter voice. Some commands change them too (section 4);
 - the **saved rate**, which the filter command keeps, the **track levels**, 22 bytes, and the synthesizer's **sample rate**;
 - a **reset request** and its value;
-- the **short phrase** flag, which makes the prosody stage's next phrase shorter ([prosody.md](prosody.md) §3.2);
+- the **short phrase** flag, which the escape parser sets ([input.md](input.md) §1.1) and which makes the prosody stage's next phrase shorter ([prosody.md](prosody.md) §3.2);
 - the **number word** flag, which the normalizer sets when it writes a number's word and the lexical stage clears when it converts the word ([lexical.md](lexical.md) §3.1);
 - the **engine**: its attributes (pitch, speed, volume, character, voice), which its interface sets and reads, its sample rate and output gain, a **queue** that carries the audio and the events to the destination, in order, and the **messages** the pipeline posts to the engine's window. The engine is absent when it only converts text to phonemes.
 
@@ -121,7 +121,7 @@ Each stage with a cursor works on a window of the list: the nodes the previous s
 | Parameter generator | 4, 5 |
 | Output | 0–5 |
 
-A stage makes its cursor **current** while it works. The input stage appends its nodes at the end of the list and adds them to the normalizer's window; its spec will say how.
+A stage makes its cursor **current** while it works. The input stage appends its nodes at the end of the list and adds them to the normalizer's window ([input.md](input.md) §2.2).
 
 ### 3.1 Settings
 
@@ -162,7 +162,7 @@ A stage finishes with the current cursor and hands its finished nodes, from `sta
 
 ## 4. Control commands
 
-A control node (type 0) holds a command from the text: its letter is the symbol, its value is the value's low byte (all four bytes for `i`, `n` and `z`), and its second value is byte 0x15. The escape parser makes them (its spec will say how).
+A control node (type 0) holds a command from the text: its letter is the symbol, its value is the value's low byte (all four bytes for `i`, `n` and `z`), and its second value is byte 0x15. The escape parser writes the commands and the input stage makes their nodes ([input.md](input.md) §1.4 and §2.3).
 
 Running the current cursor's `scan` node:
 1. At the prosody stage, a generated segment says to stop.
@@ -272,7 +272,7 @@ A new speaking thread **initializes** the pipeline:
 2. Reset the nodes and the cursors (section 2.2): every cursor gets the escape parser's settings.
 3. Reset the frame ring ([synthesizer.md](synthesizer.md) §5.1), and the synthesizer's converter and renderer at its sample rate ([synthesizer.md](synthesizer.md) §3.1, §4.2).
 4. The track levels become the escape parser's track levels.
-5. Reset the escape parser, the input stage and the stages with cursors: the lexical stage as [lexical.md](lexical.md) §5 says, prosody as [prosody.md](prosody.md) §7 says and the parameter generator as [parameters.md](parameters.md) §7 says; the other specs will say how. Each touches only its own stage's state, so their order doesn't matter.
+5. Reset the escape parser and the input stage as [input.md](input.md) §3 says, and the stages with cursors: the lexical stage as [lexical.md](lexical.md) §5 says, prosody as [prosody.md](prosody.md) §7 says and the parameter generator as [parameters.md](parameters.md) §7 says; the normalizer's spec will say how. Each touches only its own stage's state, so their order doesn't matter.
 
 The synthesizer's mute flag, gain and output-filter voice, and the attributes, keep their values.
 

@@ -48,9 +48,11 @@ type Pipeline struct {
 	ResetValue     uint32
 	ParsedReset    bool
 
-	// ShortPhrase makes the prosody stage end a phrase sooner. The parameter generator clears it once it is far
+	// ShortPhrase makes the prosody stage end a phrase sooner. The escape parser sets it as text comes in, unless
+	// ProsodyOff, the prosody stage's own flag, is set, and the parameter generator clears it once it is far
 	// enough ahead of the synthesizer.
 	ShortPhrase bool
+	ProsodyOff  bool
 
 	// NumberWord is set by the normalizer when it writes a number's word, and cleared by the lexical stage when it
 	// converts the word.

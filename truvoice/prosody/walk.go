@@ -45,7 +45,7 @@ func (stage *Stage) NextNode() int {
 		return phraseDone
 	}
 	node := cursor.Scan
-	if node.Type() == pipeline.Phoneme && node.Symbol() == ',' && !stage.ProsodyOff && !stage.NoPhrasing && shared.Walk != walkStart {
+	if node.Type() == pipeline.Phoneme && node.Symbol() == ',' && !stage.Pipeline.ProsodyOff && !stage.NoPhrasing && shared.Walk != walkStart {
 		end := list.Next(node)
 		stage.clearPauseStress(cursor.Done, end)
 		cursor.Done, cursor.Scan = node, end
@@ -222,11 +222,11 @@ func (stage *Stage) InsertPause(length int32) {
 	if symbol == ')' && cursor.Rate >= slowPauseRates {
 		return
 	}
-	if cursor.Rate >= fastRate || stage.ProsodyOff {
+	if cursor.Rate >= fastRate || stage.Pipeline.ProsodyOff {
 		switch {
 		case length == 0 && symbol == ']':
 			stage.newPause(bracketPause)
-		case stage.ProsodyOff:
+		case stage.Pipeline.ProsodyOff:
 			stage.newPause(flatPause)
 			stage.newPause(flatPause)
 		default:

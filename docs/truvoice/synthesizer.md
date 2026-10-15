@@ -284,7 +284,7 @@ The first step after a reset only converts, so the block of section 4.2's reset 
 
 **Rendering** is on whenever the engine speaks. The engine also runs its pipeline without rendering, to turn text into phonemes.
 
-**Hold** is set and cleared by the input stages (their spec will say when). The recorded runs never set it. Nor do they ever step while `done` is set: the loop below doesn't.
+**Hold** is set and cleared by the escape parser's commands `H`, `C` and `x` ([input.md](input.md) §1.4). The recorded runs never step with it set. Nor do they ever step while `done` is set: the loop below doesn't.
 
 ### 5.3 The loop and the buffer
 

@@ -17,8 +17,8 @@ type Stage struct {
 
 	// The phrase's scan (prosody.md §3): what ended the last one, its word marks and the sentence's before it,
 	// and the phonemes: the phrase's, the sentence's up to its end, and the padding added to a phrase without an
-	// end of its own. The phrase ends at PhraseLimit phonemes. SlowSpeech, NoPhrasing and ProsodyOff are the
-	// commands' settings, and FirstPhrase is set until the sentence's first P command is put in.
+	// end of its own. The phrase ends at PhraseLimit phonemes. SlowSpeech, NoPhrasing and the pipeline's ProsodyOff
+	// are the commands' settings, and FirstPhrase is set until the sentence's first P command is put in.
 	ScanResult       int32
 	Words            int32
 	SentenceWords    int32
@@ -29,7 +29,6 @@ type Stage struct {
 	PhraseLimit      int32
 	SlowSpeech       bool
 	NoPhrasing       bool
-	ProsodyOff       bool
 	FirstPhrase      bool
 
 	// Contour is the phrase's pitch contour and Marks the positions of its word marks of values 6, 7, 8 and 17
@@ -142,7 +141,7 @@ func (stage *Stage) Reset() {
 	stage.NoPhrasing = false
 	stage.SlowSpeech = false
 	stage.PhraseLimit = phraseLimit
-	stage.ProsodyOff = false
+	stage.Pipeline.ProsodyOff = false
 	stage.Pipeline.ShortPhrase = false
 	stage.SinceMark = 0
 	stage.Lowered = false
@@ -161,7 +160,7 @@ func (stage *Stage) Run() bool {
 	cursor := stage.cursor()
 	stage.Pipeline.Begin(cursor)
 	stage.Countdown = walkCountdown
-	if !stage.ProsodyOff && stage.Pipeline.ShortPhrase && cursor.Rate < fastRate {
+	if !stage.Pipeline.ProsodyOff && stage.Pipeline.ShortPhrase && cursor.Rate < fastRate {
 		stage.PhraseLimit = shortPhraseLimit
 	}
 	result := stage.ScanPhrase()
@@ -174,7 +173,7 @@ func (stage *Stage) Run() bool {
 		cursor.Scan = cursor.Done
 		fallthrough
 	case walking:
-		if !stage.ProsodyOff {
+		if !stage.Pipeline.ProsodyOff {
 			stage.Pipeline.ShortPhrase = false
 		}
 	}

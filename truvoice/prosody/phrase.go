@@ -55,7 +55,7 @@ func (stage *Stage) ScanPhrase() int32 {
 	}
 	for cursor.Done != nil && cursor.Done == cursor.First && cursor.Done.Type() != pipeline.Phoneme {
 		stage.Pipeline.ExecuteControl()
-		stage.ProsodyOff = false
+		stage.Pipeline.ProsodyOff = false
 		stage.PhraseLimit = phraseLimit
 		next := stage.Pipeline.Next(cursor.Done)
 		cursor.Done, cursor.Scan, cursor.First = next, next, next
@@ -157,9 +157,9 @@ func (stage *Stage) scanControl(node *pipeline.Node, letter byte) {
 		}
 		stage.ScanResult = continued
 	case 'N':
-		stage.ProsodyOff = node.Second()&prosodyOffFlag != 0
+		stage.Pipeline.ProsodyOff = node.Second()&prosodyOffFlag != 0
 		stage.PhraseLimit = phraseLimit
-		if stage.ProsodyOff {
+		if stage.Pipeline.ProsodyOff {
 			stage.PhraseLimit = flatPhraseLimit
 		}
 	case 'P':

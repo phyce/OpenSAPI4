@@ -104,11 +104,21 @@ var defaultSettings = Settings{Phrase: 1, Rate: 13, Pitch: 85, Flags: 0x17c0, In
 
 const defaultSpeed = 150
 
+// DefaultSettings gives the escape parser's settings and speed their defaults.
+func (pipeline *Pipeline) DefaultSettings() {
+	pipeline.Settings = defaultSettings
+	pipeline.SettingsSpeed = defaultSpeed
+}
+
+// GeneratedLevel is the level of a track in the frame of a generated segment.
+func (pipeline *Pipeline) GeneratedLevel(track int) byte {
+	return pipeline.tables.GeneratedFrame[track]
+}
+
 // Initialize gives the escape parser's settings their defaults and resets the stages, as a new speaking
 // thread does (pipeline.md §7).
 func (pipeline *Pipeline) Initialize() {
-	pipeline.Settings = defaultSettings
-	pipeline.SettingsSpeed = defaultSpeed
+	pipeline.DefaultSettings()
 	pipeline.SettingsLevels = pipeline.tables.GeneratedFrame
 	pipeline.ResetStages()
 }

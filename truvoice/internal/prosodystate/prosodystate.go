@@ -39,7 +39,7 @@ func Fields(stage *prosody.Stage) []threadstate.Field {
 		at(0x1c74, "words", &stage.Words), at(0x1c78, "sentence words", &stage.SentenceWords),
 		flag(0x1d44, "slow speech", &stage.SlowSpeech, 1), flag(0x1d45, "first phrase", &stage.FirstPhrase, 1),
 		at(0x1d48, "presets", &stage.Presets), at(0x1d4c, "previous presets", &stage.PreviousPresets),
-		at(0x1d50, "preset duration", &stage.PresetDuration), flag(0x1d55, "prosody off", &stage.ProsodyOff, 0x20),
+		at(0x1d50, "preset duration", &stage.PresetDuration),
 		at(0x1d58, "countdown", &stage.Countdown), at(0x1d5c, "phrase limit", &stage.PhraseLimit),
 		at(0x1d64, "sentence phonemes", &stage.SentencePhonemes), at(0x1d68, "padding", &stage.Padding),
 		at(0x1d6c, "scan result", &stage.ScanResult), flag(0x1d70, "no phrasing", &stage.NoPhrasing, 1),

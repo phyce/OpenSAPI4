@@ -27,6 +27,7 @@ const (
 	SavedRate      = 0x1ae4
 	NumberWord     = 0x1c1c
 	ShortPhrase    = 0x1d54
+	ProsodyOff     = 0x1d55
 	Levels         = 0x1f98
 	Engine         = 0x20f4
 	Pitch          = 0x20f8
@@ -318,7 +319,8 @@ func PipelineFields(state *pipeline.Pipeline) []Field {
 	fields := []Field{At(Pitch, "pitch", &state.Pitch), At(Speed, "speed", &state.Speed),
 		At(Volume, "volume", &state.Volume), At(Character, "character", &state.Character),
 		At(ResetValue, "reset value", &state.ResetValue), At(SavedRate, "saved rate", &state.SavedRate),
-		At(ShortPhrase, "short phrase", &state.ShortPhrase), At(ParsedReset, "parsed reset", &state.ParsedReset),
+		At(ShortPhrase, "short phrase", &state.ShortPhrase), FlagAt(ProsodyOff, "prosody off", &state.ProsodyOff, 0x20),
+		At(ParsedReset, "parsed reset", &state.ParsedReset),
 		At(NumberWord, "number word", &state.NumberWord),
 		At(ResetRequested, "reset requested", &state.ResetRequested)}
 	for track := range datapack.TrackCount {
