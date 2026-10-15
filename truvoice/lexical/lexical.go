@@ -81,6 +81,7 @@ type class int32
 const (
 	syllabic    class = 0x001
 	sonorant    class = 0x002
+	voiced      class = 0x004
 	wordMark    class = 0x008
 	nasal       class = 0x010
 	stop        class = 0x020
@@ -100,6 +101,7 @@ const (
 	palatal     class = 0x304
 	rounded     class = 0x320
 	yGlide      class = 0x340
+	high        class = 0x401
 	rColoured   class = 0x402
 	reduced     class = 0x440
 )
@@ -110,10 +112,11 @@ func (stage *Stage) hasClass(symbol byte, kind class) bool {
 }
 
 // The places of a node's bytes in its data: the byte the stages before set on a word (lexical.md §1.1), the
-// syllable's number and the word class.
+// syllable's number, the stop a flap stands for and the word class.
 const (
 	markByteOffset  = 0x14 - 8
 	syllableOffset  = 0x17 - 8
+	originalOffset  = 0x18 - 8
 	wordClassOffset = 0x19 - 8
 )
 
