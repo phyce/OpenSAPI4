@@ -1,8 +1,8 @@
 package effects
 
 import (
+	"github.com/phyce/OpenSAPI4/internal/locale"
 	"github.com/phyce/OpenSAPI4/whistler/datapack"
-	"github.com/phyce/OpenSAPI4/whistler/internal/locale"
 	"github.com/phyce/OpenSAPI4/whistler/internal/numeric"
 )
 
@@ -104,7 +104,7 @@ func (monotone *Monotone) On() bool {
 
 // Character takes a name of the front end's, which compares as lstrcmpiA does.
 func (monotone *Monotone) Character(name string) {
-	switch locale.TagKey([]byte(name)) {
+	switch locale.Key([]byte(name)) {
 	case `"normal"`:
 		monotone.Reset()
 	case `"monotone"`:

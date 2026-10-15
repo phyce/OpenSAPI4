@@ -13,9 +13,12 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
 
-// The places of the command ring and the text being read in the thread state. The escape parser's own ring,
-// 0x8070 to 0x8177, holds no character between two calls of the parser: each is parsed as it comes.
+// The places of the input ring, the command ring and the text being read in the thread state. The escape
+// parser's own ring, 0x8070 to 0x8177, holds no character between two calls of the parser: each is parsed as it
+// comes.
 const (
+	Input       = 0x7068
+	InputEnd    = 0x8068
 	Commands    = 0x8178
 	CommandsEnd = 0x9178
 	Text        = 0x2138
@@ -43,17 +46,25 @@ func ParserFields(stage *input.Stage) []threadstate.Field {
 	return fields
 }
 
+// RingFields lists where the tokenizer reads the input ring and the feeder writes it, whether the tokenizer has
+// found it empty and whether the text being fed is all in it, with their places in the thread state.
+func RingFields(stage *input.Stage) []threadstate.Field {
+	return []threadstate.Field{threadstate.At(0x8068, "input read", &stage.InputRead),
+		threadstate.At(0x806c, "input written", &stage.InputWritten),
+		threadstate.FlagAt(0x2111, "drained", &stage.Drained, 1), threadstate.FlagAt(0x20ed, "all fed", &stage.AllFed, 1)}
+}
+
 // Fields lists the input side's values with their places in the thread state.
 func Fields(stage *input.Stage) []threadstate.Field {
 	at := threadstate.At
-	return append(ParserFields(stage), at(0x1ae8, "flags", &stage.Flags), at(0x1aec, "input flags", &stage.InputFlags),
-		at(0x9178, "read", &stage.Read), at(0x9180, "pending", &stage.Pending))
+	return append(append(ParserFields(stage), RingFields(stage)...), at(0x1ae8, "flags", &stage.Flags),
+		at(0x1aec, "input flags", &stage.InputFlags), at(0x9178, "read", &stage.Read), at(0x9180, "pending", &stage.Pending))
 }
 
-// LoadParser gives the escape parser, and the pipeline's settings, the thread state's values, with the command
-// ring's characters and the text being read.
+// LoadParser gives the escape parser, the input ring and the pipeline's settings the thread state's values,
+// with the rings' characters and the text being read.
 func LoadParser(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
-	mapping.LoadFields(ParserFields(stage), state)
+	mapping.LoadFields(append(ParserFields(stage), RingFields(stage)...), state)
 	loadRing(mapping, stage, state)
 }
 
@@ -64,6 +75,7 @@ func Load(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 }
 
 func loadRing(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
+	copy(stage.Input[:], state[Input:InputEnd])
 	copy(stage.Commands[:], state[Commands:CommandsEnd])
 	stage.Text = nil
 	if pointer := threadstate.Dword(state, Text); pointer != 0 && mapping.Text != nil {
@@ -77,6 +89,7 @@ func loadRing(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 // is the speaking thread's, which the input side doesn't write.
 func Store(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 	mapping.StoreFields(Fields(stage), state)
+	copy(state[Input:InputEnd], stage.Input[:])
 	copy(state[Commands:CommandsEnd], stage.Commands[:])
 }
 
@@ -84,6 +97,9 @@ func Store(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 var Names = sync.OnceValue(func() map[int]string {
 	stage := input.New(nil, pipeline.New(nil, new(synthesizer.Synthesizer), nil, nil))
 	names := threadstate.Names(Fields(stage), threadstate.PipelineFields(stage.Pipeline))
+	for offset := Input; offset < InputEnd; offset++ {
+		names[offset] = fmt.Sprintf("input ring %d", offset-Input)
+	}
 	for offset := Commands; offset < CommandsEnd; offset++ {
 		names[offset] = fmt.Sprintf("command ring %d", offset-Commands)
 	}

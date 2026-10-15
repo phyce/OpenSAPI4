@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"strconv"
 
+	"github.com/phyce/OpenSAPI4/internal/locale"
 	"github.com/phyce/OpenSAPI4/whistler/datapack"
-	"github.com/phyce/OpenSAPI4/whistler/internal/locale"
 )
 
 type token int
@@ -119,7 +119,7 @@ func (cursor *tagCursor) readWord(size int) (token, []byte) {
 			return tokenEnd, word
 		}
 		if character == ',' || value > 0x39 && (value < 0x3C || character == '=' || character == '\\') {
-			if kind, found := tagKeywords[locale.TagKey(word)]; found {
+			if kind, found := tagKeywords[locale.Key(word)]; found {
 				return kind, word
 			}
 			return tokenUnknown, word
@@ -438,7 +438,7 @@ func (scanner *tagScanner) scan(ansi []byte, tagged bool, characterSet Character
 
 func (scanner *tagScanner) applyContext(name []byte, address bool) bool {
 	for _, context := range scanner.tables.Contexts {
-		if locale.TagKey([]byte(context.Name)) != locale.TagKey(name) {
+		if locale.Key([]byte(context.Name)) != locale.Key(name) {
 			continue
 		}
 		if context.Value == addressContext {
@@ -459,7 +459,7 @@ func (scanner *tagScanner) applyContext(name []byte, address bool) bool {
 // again, or nothing if there is none yet (text.md §10).
 func (scanner *tagScanner) applyPartOfSpeech(value []byte) {
 	for _, part := range scanner.tables.PartsOfSpeech {
-		if locale.TagKey([]byte(part.Value)) == locale.TagKey(value) {
+		if locale.Key([]byte(part.Value)) == locale.Key(value) {
 			scanner.formatted = []byte(part.Escape)
 			break
 		}

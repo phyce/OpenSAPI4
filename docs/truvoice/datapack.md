@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), and the escape parser's tables ([input.md](input.md) §1). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), and the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -200,3 +200,15 @@ A **word** here is a string of symbols 1 to 127, and in `homographs`, `nounBefor
 | `highCharacters` | 64 strings | The letters the escape parser writes for each character from 192 to 255 in text ([input.md](input.md) §1.2): one or two characters from 32 to 126 |
 | `filterRates` | 10 numbers, 0 to 25 | The highest rate index each filter value allows ([input.md](input.md) §1.4, `f`, `r` and `v`) |
 | `levelLimits` | 22 numbers, 0 to 255 | The highest level the `l` command gives each track |
+| `tokenClasses` | 256 numbers, 0 to 255 | Each character's token classes ([input.md](input.md) §4.1): bit 0x01 separator, 0x02 trailing, 0x04 letter, 0x08 digit, 0x10 (not read), 0x20 punctuation, 0x40 read again |
+| `symbols` | 13 pairs | The symbols, each a character from 128 to 255 and the word the tokenizer says for it ([input.md](input.md) §4.4, rule 4) |
+| `minus` | string | What a minus sign before a number says (rule 1) |
+| `splitWords` | 2 pairs | The words the tokenizer splits and what they say (rule 5) |
+| `meridiem` | pair | `am` and what it says after a number (rule 6) |
+| `months` | 2 pairs | The months the tokenizer writes out and what they say (rule 7) |
+| `exclamation` | string | The command the tokenizer puts before a quoted exclamation (rule 8) |
+| `wordStart` | string | The token word start puts before a word ([input.md](input.md) §4.4) |
+| `quoteMarks` | string | The quote marks of quote mode ([input.md](input.md) §4.6) |
+| `quoteStart`, `quoteEnd` | strings | What quote mode says at the start and the end of quoted text |
+
+The tokenizer's words are ASCII, without NUL; `exclamation` holds the escape character.

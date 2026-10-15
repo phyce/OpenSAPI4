@@ -1,15 +1,16 @@
 # TruVoice: the input side
 
-How L&H TruVoice (`tv_enua.dll`) reads the text it speaks into the pipeline's nodes. The speaking thread's input side ([pipeline.md](pipeline.md) §8.2) feeds the text, and the **escape parser** reads it a character at a time: it keeps the text's characters and turns its commands, escape sequences such as `ESC[150p`, into a stream of characters and commands in the **command ring**. In the scheduler's steps ([pipeline.md](pipeline.md) §6), the **input stage** makes the nodes of a word at a time from the command ring and hands them to the normalizer.
+How L&H TruVoice (`tv_enua.dll`) reads the text it speaks into the pipeline's nodes. The speaking thread's input side ([pipeline.md](pipeline.md) §8.2) feeds the text into the **input ring**, and pumps it through the **TextIn tokenizer**, which splits it into tokens and expands some of them, such as `£` into ` pound `. The **escape parser** reads what the tokenizer gives it a character at a time: it keeps the text's characters and turns its commands, escape sequences such as `ESC[150p`, into a stream of characters and commands in the **command ring**. In the scheduler's steps ([pipeline.md](pipeline.md) §6), the **input stage** makes the nodes of a word at a time from the command ring and hands them to the normalizer.
 
-This spec covers the escape parser (section 1), the input stage (section 2) and their reset (section 3). The feeder and the TextIn tokenizer, which give the escape parser the text's characters, are added with the parts that port them.
+This spec covers the escape parser (section 1), the input stage (section 2), their reset (section 3) and the TextIn tokenizer (section 4). The feeder, which writes the text into the input ring, is added with the part that ports it.
 
 **In short.**
 - The escape parser makes line ends and tabs spaces and drops the other control characters. In text it keeps the characters below 128, drops 128 to 191, and writes 192 to 255 as one or two letters: `é` as `ay`, `ß` as `ss`, `Ñ` as `Nj`.
 - A command is `ESC[`, up to 16 decimal values separated by `;`, and a letter. The parser keeps its values within their ranges, updates its settings, and writes the command with the values it carries. A value over 255 or more than 16 values make it a command of letter 0. Some commands act at once and aren't written: hold, a reset, the defaults.
 - The input stage reads a word: its characters up to the spaces after them, at most 10 nodes. A character becomes a node of type 1, a command a control node; `[` and `]` become phonetic input commands when input flag 6 is on. The nodes of bookmarks and words carry the text being read.
+- The tokenizer reads up to 210 tokens: words, numbers, punctuation, symbols, line ends and escape sequences. It splits words at letters next to digits and at dots: `abc123` is `abc` and `123`. It says the symbols `¢ £ ¥ § © ® ± ¶ ¼ ½ ¾ × ÷` as words, `-5` as `minus 5`, `aaa` as `AAA`, `unknown` and `unsent` as `un known` and `un sent`, `am` after a number as `AM`, and `jan` and `mar` next to a number as `January` and `March`, and puts `ESC[C` before a quoted exclamation. It keeps the hundred tokens before the one it expands, and gives the parser what the tokens before them say, or all of them at the text's end. In a mode only escape sequences turn on, it announces quoted text in German.
 
-**Exactness.** Ported from the original's code, and checked against it by replaying every call of its escape parser and input stage recorded in 112 runs: the 88 runs of the check set (6 sentences at every mode, tagged texts, other formats and gains, attributes and an untagged tag), 20 texts with every command letter, without values, with one value and with more, at the ends of their ranges and past them, the flags' commands with `[` and `]` and without, hold and continue, the defaults, letters no command has, values over 255, more than 16 values, an empty first or last value, a digit after the 16th semicolon, leading zeros, characters next to the digits among a command's values, escape characters inside a command and not followed by `[`, control characters, tabs and line ends, commands inside words, long words and runs of spaces, the characters 128 to 255 in text and in phonetic input, a long text, and two texts in one speaking thread. Each call left the speaking thread's state byte-identical to the original's: the 31,119 characters given to the parser and the 3,517 steps of the input stage. Of the parser's characters, 10,558 went into the command ring as they were and 79 of 192 and up as their letters, 24 of them as two; 45 of 128 to 191 and 5 control characters were dropped, and 3 line ends and tabs became spaces. 2,076 escape characters started 2,074 commands, 2 of them among another's values: 2,057 of 22 command letters, all but `S`, `x` and `n`, with their values in and out of their ranges, 4 of letter 0, from two values over 255 and two of 17 values, and 13 of 11 letters that are no command; the one digit for the 17th value came. The input stage made 12,733 nodes, 10,655 of them characters and 2,078 control nodes, 1,641 of them words and 130 bookmarks; 6 of the 10 `[` and `]` it read became phonetic input commands; it stopped 113 words at ten nodes and found the ring empty 226 times.
+**Exactness.** Ported from the original's code, and checked against it by replaying every call of its escape parser and input stage recorded in 150 runs: the 88 runs of the check set (6 sentences at every mode, tagged texts, other formats and gains, attributes and an untagged tag), the tokenizer's 38 runs (section 4), 20 texts with every command letter, without values, with one value and with more, at the ends of their ranges and past them, the flags' commands with `[` and `]` and without, hold and continue, the defaults, letters no command has, values over 255, more than 16 values, an empty first or last value, a digit after the 16th semicolon, leading zeros, characters next to the digits among a command's values, escape characters inside a command and not followed by `[`, control characters, tabs and line ends, commands inside words, long words and runs of spaces, the characters 128 to 255 in text and in phonetic input, a long text, and two texts in one speaking thread. Each call left the speaking thread's state byte-identical to the original's: the 135,585 characters given to the parser and the 15,587 steps of the input stage. Of the parser's characters, 87,333 went into the command ring as they were and 89 of 192 and up as their letters, 31 of them as two; 60 of 128 to 191 and 7 control characters were dropped, and 247 line ends and tabs became spaces. 4,760 escape characters started 4,758 commands, 2 of them among another's values: 4,356 of 22 command letters, all but `S`, `x` and `n`, with their values in and out of their ranges, 5 of letter 0, from three values over 255 and two of 17 values, and 397 of 12 letters that are no command; the one digit for the 17th value came. In the runs of long words the command ring ran out of room: 41 commands and 6,328 characters weren't written. The input stage made 85,840 nodes, 81,119 of them characters and 4,721 control nodes, 3,779 of them words and 186 bookmarks; 6 of the 14 `[` and `]` it read became phonetic input commands; it stopped 5,202 words at ten nodes and found the ring empty 877 times.
 
 The input stage was also checked as a whole, in the pipeline, in the 923 recorded runs of the stages after it ([lexical.md](lexical.md), [prosody.md](prosody.md), [parameters.md](parameters.md)), with what the escape parser and the normalizer wrote taken from the recordings: each of its 33,795 steps started from the original's state, reported the same and left the speaking thread's whole state the same, and the audio was the original's PCM in every run. 672 of the 679 `[` and `]` it read became phonetic input commands.
 
@@ -73,7 +74,7 @@ At the letter, the command has `n` values: none when the value the digits go to 
 | `a` | `n` < 2 | `v` is kept from 0 to 16. The attenuation setting becomes `v` | `v` |
 | `c` | `n` < 2 | `v` outside 0 to 2 becomes 0 | `v` |
 | `f` | `n` < 2 | `v` is kept from 0 to 9. The filter setting becomes `v`, and the rate index setting at most the data pack's `filterRates[v]` | `v` and the rate index setting |
-| `g`, `s` | `n` < 2 | `v` below 0 becomes 100, 0 becomes 1, and above 255 255 (section 4) | `v` |
+| `g`, `s` | `n` < 2 | `v` below 0 becomes 100, 0 becomes 1, and above 255 255 (section 5) | `v` |
 | `i`, `n`, `z` | `n` < 5 | `v` below 0 becomes 1, and `n` 1 | The `n` values |
 | `l` | `v` isn't empty, `n` < 3 and `v` < 22 | The second value, empty, becomes the generated frame's level of track `v` ([datapack.md](datapack.md) `generatedFrame`), and otherwise at most the data pack's `levelLimits[v]`. The track level setting `v` becomes it | `v` and the second value |
 | `p` | `n` < 2 | `v` below 0 becomes 42 and the pitch setting 84 Hz; `v` below 25 becomes 25 and the pitch 50 Hz; otherwise `v` is at most 200 and the pitch `2v` Hz | `v` |
@@ -90,7 +91,7 @@ A command is written as the escape character, the letter, the number of values i
 
 ### 2.1 The command ring
 
-The command ring holds 4,096 bytes: the escape parser writes at its write position and the input stage reads at its read position, each moving on by one and back to 0 after 4,095. Its **room** is `read − write − 1`, plus 4,095 when that is negative: 4,094 bytes less those it holds while the write position is at or after the read position, 4,095 less those while it is before. A byte goes in only if there is room for it. Taking a byte from the ring gives it, or −1 when the ring is empty.
+The command ring holds 4,096 bytes: the escape parser writes at its write position and the input stage reads at its read position, each moving on by one and back to 0 after 4,095. Its **room** is `read − write − 1`, plus 4,096 when that is negative: 4,095 bytes less those it holds. A byte goes in only if there is room for it. Taking a byte from the ring gives it, or −1 when the ring is empty.
 
 The input stage also keeps the **pending** character, which it took from the ring and hasn't made a node of, or −1, and its own copies of the **flags** and **input flags**, which the nodes of its `N` and `A` commands set.
 
@@ -122,15 +123,120 @@ With 1 or 4 values, the node of an `i` (a bookmark) or a `z` (a word) carries th
 
 ## 3. The reset
 
-At the pipeline's reset ([pipeline.md](pipeline.md) §7) the escape parser reads text, the command ring is emptied (both positions 0), no character is pending, and the input stage's flags become 0x17c0 and its input flags 0x41. The parser's values, the value its digits go to and the overflow flag keep theirs.
+At the pipeline's reset ([pipeline.md](pipeline.md) §7) the input ring is emptied (both positions 0) and marked drained, the escape parser reads text, the command ring is emptied, no character is pending, and the input stage's flags become 0x17c0 and its input flags 0x41. The parser's values, the value its digits go to and the overflow flag keep theirs, and the tokenizer keeps its tokens and modes: a new text empties its list (section 4.5).
 
-## 4. What the recorded runs don't reach
+## 4. The TextIn tokenizer
 
-- An escape character followed by anything but `[`, and an escape character after an escape character: the input side before the parser drops them, and passes only escape characters followed by `[` (its part will say how). An escape character among a command's values starts a new command: the runs have one.
-- Escape sequences of more than 20 characters, counting the escape character: they crash the original before they reach the parser, in its TextIn tokenizer (its part will say where). So a value's digits never go past the 17th value, and the 8-bit count of semicolons never wraps.
+Between the input ring and the escape parser, the text passes through the TextIn tokenizer. Each time the speaking thread pumps the input ring ([pipeline.md](pipeline.md) §8.2), the tokenizer reads tokens into a list, expands some of them and gives the escape parser what the tokens before the last hundred say (section 4.5).
+
+The original reads a registry setting that can turn the tokenizer off: the escape parser then gets the input ring's characters as they are, up to 400 at a time. Without the setting, as in the port, the tokenizer is on.
+
+**Exactness.** Ported from the original's code, and checked against it by replaying, in each of the 150 recorded runs, every pump of the input ring in order through one Go tokenizer, made new at each start of the speaking thread as the original makes its own: each of the 998 pumps gave the escape parser the original's characters and left the speaking thread's state the original's. The tokenizer's 38 runs are 16 texts for its rules (the symbols, negative numbers, repeated vowels, the split words, `am`, the months, exclamations in quotes, splits, punctuation, spaces and control characters, the characters 128 to 255, the modes, long words and escape sequences, escape sequences right after punctuation, and 700 and 300 tokens), a tagged text, 9 runs with texts given without a notification sink, which have no word marks (quote mode with each kind of prefix, a text's first tokens, two texts in quote mode), and 12 runs of long lines of long words, which the feeder cuts so that the input ring runs dry inside words and escape sequences. The tokenizer read 11,270 tokens, 5,199 of them without characters, 239 line ends and 52 symbols, and 4,566 escape sequences; it dropped 361 escape characters not followed by `[`, cut 4 tokens at 100 characters, took 624 trailing characters off and gave 839 characters back; the ring ran dry inside a token twice, inside an escape sequence twice and after an escape character 13 times. It split 1,609 tokens into 1,634 more, kept marks that split nothing in 577, and made 329 numbers as it read them and 1,600 as it split. It expanded 51 symbols, 20 minus signs, 18 repeated vowels, 15 split words, 13 `am` and 17 months (5 after a number and 12 before one, 3 of those with a dot or hyphen made a space), and put 11 exclamation commands and 11 word starts; 8 tokens `-$` became `-` with `$`; escape sequences set quote mode 10 times, phonetic mode 14 times and word start 14 times; it kept 25 tokens from expansion in phonetic mode and 37 held ones. It checked 207 lines for quotes, announced 38 quoted texts and 37 ends (one text ended in quoted text), and made 7 quotes spaces. 815 of its pumps expanded ten tokens and 183 ended a text.
+
+### 4.1 The input ring and the token classes
+
+The input ring holds 4,096 characters, as the command ring does (section 2.1): the feeder writes at its write position and the tokenizer reads at its read position. Taking a character gives it, or −1 when the ring is empty, which marks the ring **drained**. Giving a character back moves the read position back by one: whatever character was taken last is taken again.
+
+Each character has **token classes**, the data pack's `tokenClasses` ([datapack.md](datapack.md) §10):
+
+| Bit | Class | Characters |
+|---|---|---|
+| 0x01 | separator | tab, line feed, carriage return, space |
+| 0x02 | trailing | tab, space, the escape character, `! " ' , . : ; ?` and `` ` `` |
+| 0x04 | letter | `A` to `Z`, `a` to `z`, and 0xC0 to 0xFF but `×` and `÷` |
+| 0x08 | digit | `0` to `9` |
+| 0x10 | (not read) | `* + - / < = >` |
+| 0x20 | punctuation | `! " % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _` `` ` `` `{ \| }` and the symbols |
+| 0x40 | read again | line feed, carriage return, the escape character, `@`, `\` and the symbols |
+
+The **symbols** are the characters the data pack's `symbols` give a word: `¢ £ ¥ § © ® ± ¶ ¼ ½ ¾ × ÷`. The other characters, `#`, `$` and `~` among them, have no class.
+
+### 4.2 Reading a token
+
+A **token** has characters, up to 100 but in an escape sequence (a NUL among them ends what it says of them), its **length**, a **replacement** it says instead of its characters, its **delimiter**, the character it says after them, or none, the **marks** of its characters, which say where it splits, and whether it is a **number**, an **escape sequence**, or **held** from expansion. The tokenizer keeps a list of tokens, from the first to the last, the **current** one, which it expanded last, and how many there are.
+
+To read a token, the tokenizer takes characters from the input ring into a new one:
+1. With 100 characters, the token ends.
+2. If the ring is empty, the token ends, and with no characters there is no token.
+3. The escape character ends a token that has characters. At a token's start, the tokenizer reads escape sequences (below) and goes on with the character after them; with none, there is no token.
+4. A symbol at a token's start is its only character and ends it. Otherwise the symbol is given back, and ends the token.
+5. A line feed at a token's start is its only character and ends it. Otherwise it ends the token.
+6. A separator ends the token: at its start, it is a token without characters.
+7. A dot in a **word**, a token that began with a letter, is marked as a dot. Otherwise punctuation ends a word or a number, a token that began with a digit; in other tokens it is **leading** punctuation.
+8. A digit at a token's start makes it a number. Elsewhere, it ends the token after leading punctuation or right after punctuation; right after a letter, it is marked as a split. A digit makes the token no longer a word.
+9. A letter at a token's start makes it a word. Elsewhere, it ends the token after leading punctuation; right after a digit, it is marked as a split. A letter makes the token no longer a number.
+10. Any other character, or one that didn't end the token, goes into it.
+
+The character that ended the token is its **ending**, but at steps 1, 2 and 4, and at a line feed at the token's start, which leave none. When the token has ended, unless all its characters are leading punctuation, each trailing character at its end is taken off and given back: the read position moves back by one for each, and the token's delimiter becomes the last one taken off. Then, if the class of the ending (or of the last character taken off) has bit 0x04, 0x08 or 0x40, the read position moves back by one more and the token has no delimiter; otherwise that character is its delimiter. The token goes at the end of the list. A token `-$` without delimiter becomes `-` with `$` as its delimiter. A token that began with a digit and met no letter is a number; any other token keeps its marks, if a dot or a split was marked.
+
+So `ab.` before a space is the token `ab`, said with `.`, and `ab..` the token `ab` with `.`, then the token `.`, as the second dot is taken again. `ab.£` is `ab` with `.`, then `.` and `£`: the dot is said twice.
+
+**Escape sequences.** After an escape character, the tokenizer:
+1. takes the next character; another escape character is skipped, and the one after it taken;
+2. if the character isn't `[`, it is the character after the escape sequences;
+3. takes the characters up to one with class 0x04: `ESC[`, they and that letter make a token at the end of the list, an escape sequence, whose length is its number of characters;
+4. takes the next character: if it is the escape character, goes back to step 1; otherwise it is the character after the escape sequences.
+
+If the ring runs out on the way, there is no character after them. So an escape character followed by anything but `[` is dropped, and the escape parser only ever gets escape sequences that begin with `ESC[`. Escape sequences of more than 20 characters crash the original (section 5).
+
+### 4.3 Splits
+
+A token with marks is split: going through its characters, at a character marked as a split, the characters since the last split become a new token before it, without delimiter; at a dot, they become a new token before it with the dot as its delimiter, and the dot is dropped. The token keeps the characters after the last split, and its marks go. If it split, it and the new tokens whose characters (up to a NUL) are all digits `0` to `9` become numbers.
+
+So `abc123def` is `abc`, the number `123` and `def`, `U.S.A` is `U` and `S`, each said with `.`, and `A`, and `7am` is the number `7` and `am`.
+
+The original also checks every token it reads for being all digits, and clears the mark of the character after a dot. A token of digits began with a digit and met no letter, so it is a number already (section 4.2), and the character after a dot is never marked: a digit there ends the token. The port does neither. The original also classifies each token with flags no rule reads: its capitals, vowels, punctuation and operators, a number's place in a date or a time, and the lines of quoted text whose quote is the whole token (section 4.6).
+
+### 4.4 Expanding a token
+
+To **expand**, the tokenizer takes the token after the current one, or the first token when there is no current one; with none, there is nothing to expand. The token becomes the current one. In **phonetic mode** only escape sequences are expanded, and a held token isn't. When **word start** is on and the token's first character is an ASCII letter, a token of the data pack's `wordStart`, `~`, of length 1, goes before it, and word start goes off. Then the token is expanded by these rules, in order (a token's characters are those up to a NUL):
+
+1. A token `-` without delimiter or with `$`, followed by a number, says the data pack's `minus`, `minus `, when there is no token before it, or the one before it has a space as its delimiter, or is a line end without delimiter.
+2. A token of three or more of the same lowercase vowel `a`, `e`, `i`, `o`, `u` or `y` says them in capitals: `aaa` says `AAA`.
+3. An escape sequence whose fourth character is `X`, `I` or `e`: with `X` the **quote mode** becomes its third character's value, as a signed byte, minus 48 (`0`), with `I` the phonetic mode, and with `e` word start goes on. So `ESC[4X` sets quote mode 4, and `ESC[1I` phonetic mode 1, which `ESC[0I` ends: phonetic mode is on while it is 1.
+4. A token of one symbol says its word: `£` says ` pound `.
+5. A token `unknown` or `unsent` (the data pack's `splitWords`) says `un known` or `un sent`.
+6. A token of length 2 that is `am` (`meridiem`) says `AM` when the token before it is a number with a space or no delimiter, skipping escape sequences and tokens of length 0 with a space or no delimiter.
+7. A token of length 3 that is `jan` or `mar` (`months`) says `January` or `March` next to a number: when the token before it, skipping escape sequences and tokens of length 0 with a space as delimiter, is a number with a space, a hyphen or no delimiter; or else when the token after it, skipped the same way, is a number and the month has a space, hyphen, dot or no delimiter, a hyphen or dot then becoming a space. So `12 mar` says `12 March` and `jan-5` `January 5`.
+8. A token with `!` as its delimiter: going back from the token before it, until a token with `.`, `!` or `?` as its delimiter, the first token of length 1 whose character is `"`, `\` or `(` gets the data pack's `exclamation`, `ESC[C`, after it as a token of length 0. So `"Hello!"` gives the parser `"ESC[CHello!"`, which clears the synthesizer's hold (section 1.4).
+
+The words are compared as Windows' `lstrcmpiA` compares them on a system with code page 1252 ([whistler/text.md](../whistler/text.md) §3.3): ASCII case doesn't count, and nor do soft hyphens (0xAD), so `UNKNOWN`, and `unknown` with a soft hyphen in it, say `un known`.
+
+### 4.5 A pump
+
+The speaking thread pumps the input ring, with a new text or not:
+1. With a new text, the list is emptied (there is no current token), the stored quote prefix forgotten and quoted text ended (section 4.6). The modes stay.
+2. The tokenizer reads tokens while the list holds fewer than 210, or until there is none. It splits each (section 4.3), and in quote mode 4 checks for quoted text at a token read right after a line end (section 4.6).
+3. Unless the input ring is drained and the text is all fed, it expands ten tokens, and says the tokens more than a hundred before the current one.
+4. Otherwise it expands all the tokens left and says them all.
+
+A token says its replacement, or else its characters up to a NUL, then its delimiter, if any. The tokenizer drops the tokens it says. Each character it says goes to the escape parser (section 1); when there were any, the scheduler is no longer out of input ([pipeline.md](pipeline.md) §6). With no current token, it says nothing.
+
+### 4.6 Quote mode
+
+In quote mode 4 the tokenizer announces quoted text: lines that begin with the same **quote marks**, the data pack's `quoteMarks`, `! @ # % * + | > < :`, as in quoted e-mail. Since the engine puts a word's command, an escape sequence, before each word of a text given with a notification sink (the engine's spec will say how), only a text given without one has a token right after a line end that isn't an escape sequence.
+
+The tokenizer stores a **quote prefix** of up to 7 characters, ending at a NUL, how many of them a line's quote takes, and how many lines have **repeated** it, and whether it is in **quoted** text. It looks at the first five characters of a token read right after a line end, or at all of them and at its delimiter, in the place after them, when it has fewer than five:
+- **matched** counts the places whose character is the stored prefix's at the same place, and the **last quoted** place is the last place with a quote mark (or a NUL among the characters) at which every place so far matched;
+- a token without characters forgets the prefix (its first character becomes NUL);
+- without a quote mark (or a NUL among the characters), the prefix is forgotten;
+- with a stored prefix and a last quoted place, the line's quote takes the places up to it;
+- otherwise the token's characters and delimiter become the prefix, and the repeats become 0.
+
+Outside quoted text, a last quoted place adds 1 to the repeats, and when that makes them more than 1 the quoted text starts: from the token, three times, the tokenizer goes back to the first token of its line, makes the line's quote spaces in it if the token is longer than the quote, and goes back to the token before. Before the token it is at, it puts a token saying the data pack's `quoteStart`, `. Achtung: Anfang des eingesetzten textes.  `, with a space as its delimiter.
+
+In quoted text, a line without a last quoted place ends it: a held token saying `quoteEnd`, `. Achtung: Ende des eingesetzten textes.  `, with a space as its delimiter, goes before the token, and the repeats become 0. A line with one has its quote made spaces in the token, if the token is longer than the quote. The original also makes the repeats 0 at a token without characters, and with a new prefix stores how many places the quote takes, up to the last quote mark: neither is read before it is set again.
+
+So when the third line in a row beginning with `> ` is read, the quoted text is announced before the line end before the first, and the next line without the quote is announced as its end.
+
+## 5. What the recorded runs don't reach
+
+- An escape character followed by anything but `[` at the escape parser: the tokenizer drops them, and passes only escape sequences that begin with `ESC[` (section 4.2). An escape character among a command's values starts a new command: the runs have two. One followed by anything but `[` among a command's values would be dropped with that character.
+- Escape sequences of more than 20 characters, counting the escape character: the tokenizer copies a sequence onto the stack, into 20 bytes, with a NUL after it, and with 21 or more the original crashes. The port reads them whole. So a value's digits never go past the 17th value, and the 8-bit count of semicolons never wraps.
 - A digit for the 17th value (after 16 semicolons): the original tests whether the 32-bit word after the 16 values is −1 and writes 0 there if it is. In the speaking thread's state that word is the normalizer's position in its program, which is never −1, so the digit does nothing; the port does nothing. The runs have one.
-- The command ring without room: it held at most 1,164 bytes, as the input side gives the parser more of the text only after the input stage has found the ring empty ([pipeline.md](pipeline.md) §8.2). Without values, the original checks for room for 2 bytes and writes 3, so that with room for 2 only the escape character and the letter would go in.
+- A command written without values with room for exactly 2 bytes in the command ring: the original checks for room for 2 bytes and writes 3, so that only the escape character and the letter would go in.
 - The commands that make the original drop the rest of the text without reporting it done: `S` and `x` ([pipeline.md](pipeline.md) §9), and bookmarks and words whose node has flag bit 5, from a first value with bit 2 among three; and `ESC[0i`, a bookmark of value 0, which marks a text's end ([pipeline.md](pipeline.md) §4.1).
 - The command `n` from the text: its value is the address of a pronunciation the engine's `\Prn=\` tag makes, which the normalizer reads. The user lexicon's part will say how.
 - The limits of 255 of `g`, `s` and the second value of `t`: a value over 255 has overflowed, which makes the command one of letter 0.
 - Hold set while the scheduler steps: the runs set it only with `ESC[H` and clear it with `ESC[C` before the next step.
+- The tokenizer's own cases the speaking thread doesn't give it: a pump with no tokens, and a pump without a new text after the end of a text (the original's list then still has its last token, which it has freed; the thread waits for a new text, [pipeline.md](pipeline.md) §8.2). The feeder never puts a NUL or a carriage return into the input ring: the original's tokenizer would read them as spaces. Giving a character back when the input ring has no room: the original then leaves the read position, but it has always just taken a character.

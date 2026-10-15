@@ -297,7 +297,7 @@ The attributes keep their constructed values: the loop applies the engine's befo
 
 Each time round, the thread:
 1. waits while the engine is paused, and ends if the engine is reset (the engine's spec will say how);
-2. feeds the input (the input stage's spec will say what feeding and pumping do):
+2. feeds the input (pumping is [input.md](input.md) §4.5; the feeder's part will say what feeding does):
    - if the current text isn't all fed and the input ring has more than 2048 bytes free, it feeds more of the text;
    - otherwise, if the current text is all fed, the scheduler is out of input (section 6) and the input ring is drained, it takes the next queued text, tells the engine's window the text has started, feeds it and pumps the input ring into the escape parser's; the thread is **busy**. Without a queued text, a thread that isn't busy ends (section 8.5);
    - otherwise, if the scheduler is out of input, it pumps the input ring into the escape parser's; the thread is busy;

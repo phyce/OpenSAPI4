@@ -50,26 +50,37 @@ type Stage struct {
 	Flags, InputFlags uint32
 	Text              *pipeline.Text
 
-	tables *datapack.Input
+	// The input ring (input.md §4.1): the text the speaking thread feeds, which the tokenizer reads from
+	// InputRead up to InputWritten. Drained is set when the tokenizer has found it empty, AllFed while the text
+	// being fed is all in it.
+	Input                   [inputRingSize]byte
+	InputRead, InputWritten int32
+	Drained, AllFed         bool
+
+	tokenizer tokenizer
+	output    []byte
+	tables    *datapack.Input
 }
 
 func New(tables *datapack.Input, pipeline *pipeline.Pipeline) *Stage {
 	return &Stage{Pipeline: pipeline, tables: tables}
 }
 
-// Reset empties the command ring and starts the escape parser on text (input.md §3).
+// Reset empties the input ring and the command ring, and starts the escape parser on text (input.md §3).
 func (stage *Stage) Reset() {
+	stage.InputRead, stage.InputWritten = 0, 0
+	stage.Drained = true
 	stage.Parsing = parsingText
 	stage.Read, stage.Written = 0, 0
 	stage.Pending = nothing
 	stage.Flags, stage.InputFlags = defaultFlags, defaultInputFlags
 }
 
-// room is the room the command ring has left, as the original counts it: one less when Written is past Read.
+// room is the room the command ring has left: 4,095 bytes less those it holds.
 func (stage *Stage) room() int32 {
 	room := stage.Read - stage.Written - 1
 	if room < 0 {
-		room += commandRingSize - 1
+		room += commandRingSize
 	}
 	return room
 }
