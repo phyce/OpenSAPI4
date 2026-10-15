@@ -20,7 +20,7 @@ The speaking thread, the scheduler, the output stage and the reset were also che
 - each step ran the same stages (3,787 input steps, 7,899 normalizer, 8,848 lexical, 11,138 prosody and 15,293 parameter generator steps, 98,430 synthesizer steps), reported the same and left the same flags, free nodes, ring and output cursor;
 - the audio handed over, 8,300,290 samples in 7,451 hand-overs, was the original's PCM in every run, and each of the 1,711 words and 4 bookmarks came at the sample where the original reported it.
 
-The scheduler, the output stage and the synthesizer were checked again with the Go input stage, lexical stage, prosody stage and parameter generator, from what the escape parser and the normalizer wrote, in 923 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md), [input.md](input.md)): all 433,995 steps, and the audio, were the original's.
+The scheduler, the output stage, the synthesizer and the speaking thread's loop were checked again with the Go input side, lexical stage, prosody stage and parameter generator, from the texts and what the normalizer wrote, in 1,005 recorded runs ([parameters.md](parameters.md), [prosody.md](prosody.md), [lexical.md](lexical.md), [input.md](input.md) §6): all 894,238 steps, the threads' ends, and the audio, were the original's.
 
 ## 1. The state
 
@@ -282,13 +282,13 @@ The engine starts a **speaking thread** when it is given a text and none runs. T
 
 ### 8.1 Construction and start
 
-A new pipeline's attributes are pitch 85 Hz, speed 150 words a minute, volume 65535, the normal character (0) and voice 0. The voice is also the synthesizer's output-filter voice. The synthesizer's gain is 1 and its sample rate 8000 Hz. The engine's conversion of text to phonemes constructs its pipeline the same way.
+A new pipeline's attributes are pitch 85 Hz, speed 150 words a minute, volume 65535, the normal character (0) and voice 0. The voice is also the synthesizer's output-filter voice. The synthesizer's gain is 1 and its sample rate 8000 Hz. Its input side starts as if its last text were all fed ([input.md](input.md) §6). The engine's conversion of text to phonemes constructs its pipeline the same way.
 
 The speaking thread then starts its pipeline:
 1. The sample rate becomes the engine's.
 2. If the engine's output gain is 1 to 4, it becomes the synthesizer's gain ([synthesizer.md](synthesizer.md) §5.4).
 3. The synthesizer renders ([synthesizer.md](synthesizer.md) §5.2), and the visual events are on: the parameter generator queues them ([parameters.md](parameters.md) §6).
-4. The input side takes the engine's settings for the pre-formatter and the TextIn tokenizer, and the tokenizer is created if it is on (the input stage's spec will say how).
+4. The input side's TextIn tokenizer is made, without tokens ([input.md](input.md) §4). The original makes it only when the engine's setting for it is on, and takes the setting for the feeder's lines too ([input.md](input.md) §5.2); the port has both on.
 5. Initialize the pipeline (section 7).
 
 The attributes keep their constructed values: the loop applies the engine's before the first step (section 8.3). So Peter (voice 0, 85 Hz, 150 words a minute) at full volume has no attribute applied at the start.
@@ -297,10 +297,7 @@ The attributes keep their constructed values: the loop applies the engine's befo
 
 Each time round, the thread:
 1. waits while the engine is paused, and ends if the engine is reset (the engine's spec will say how);
-2. feeds the input (pumping is [input.md](input.md) §4.5; the feeder's part will say what feeding does):
-   - if the current text isn't all fed and the input ring has more than 2048 bytes free, it feeds more of the text;
-   - otherwise, if the current text is all fed, the scheduler is out of input (section 6) and the input ring is drained, it takes the next queued text, tells the engine's window the text has started, feeds it and pumps the input ring into the escape parser's; the thread is **busy**. Without a queued text, a thread that isn't busy ends (section 8.5);
-   - otherwise, if the scheduler is out of input, it pumps the input ring into the escape parser's; the thread is busy;
+2. runs its input side ([input.md](input.md) §6): it takes the next queued text once the last has gone through, feeds more of the text into the input ring, or pumps the ring into the escape parser, which makes the thread **busy**. Without a queued text, a thread that isn't busy ends (section 8.5);
 3. applies the attributes (section 8.3);
 4. runs a step (section 6);
 5. hands the buffer over if the step reports a hand-over (section 8.4);

@@ -82,7 +82,9 @@ func (run *Run) UnmarshalJSON(data []byte) error {
 }
 
 // A Record is a recorded call of one of the original's functions or its return, with the thread state's runs
-// that changed since the previous record, and the global variables' when they are recorded.
+// that changed since the previous record, and the global variables' when they are recorded. A feed record holds
+// a text's number and the text, in hex, as the engine hands it to the speaking thread, which is about to start
+// feeding it, and whether it has no notification sink.
 type Record struct {
 	Kind      string   `json:"kind"`
 	Function  string   `json:"function"`
@@ -94,6 +96,14 @@ type Record struct {
 	Base      uint32   `json:"base"`
 	Diff      []Run    `json:"diff"`
 	Globals   []Run    `json:"globals"`
+	Text      int      `json:"text"`
+	Bytes     string   `json:"bytes"`
+	Sinkless  bool     `json:"sinkless"`
+}
+
+// Fed returns the text of a feed record.
+func (record *Record) Fed() ([]byte, error) {
+	return hex.DecodeString(record.Bytes)
 }
 
 // A Case is a recorded run, with the words and pronunciations its user lexicon was given before its texts.

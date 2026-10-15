@@ -15,13 +15,15 @@ import (
 
 // The places of the input ring, the command ring and the text being read in the thread state. The escape
 // parser's own ring, 0x8070 to 0x8177, holds no character between two calls of the parser: each is parsed as it
-// comes.
+// comes. The feeder's lines, 0x1a40 to 0x1adf, are only read in the call that writes them.
 const (
 	Input       = 0x7068
 	InputEnd    = 0x8068
 	Commands    = 0x8178
 	CommandsEnd = 0x9178
 	Text        = 0x2138
+	Lines       = 0x1a40
+	LinesEnd    = 0x1ae0
 )
 
 // ParserFields lists the escape parser's values, and the pipeline's it sets, with their places in the thread
@@ -47,11 +49,13 @@ func ParserFields(stage *input.Stage) []threadstate.Field {
 }
 
 // RingFields lists where the tokenizer reads the input ring and the feeder writes it, whether the tokenizer has
-// found it empty and whether the text being fed is all in it, with their places in the thread state.
+// found it empty and whether the text being fed is all in it, and the feeder's position and whether its last
+// line ended with a line end, with their places in the thread state.
 func RingFields(stage *input.Stage) []threadstate.Field {
 	return []threadstate.Field{threadstate.At(0x8068, "input read", &stage.InputRead),
 		threadstate.At(0x806c, "input written", &stage.InputWritten),
-		threadstate.FlagAt(0x2111, "drained", &stage.Drained, 1), threadstate.FlagAt(0x20ed, "all fed", &stage.AllFed, 1)}
+		threadstate.FlagAt(0x2111, "drained", &stage.Drained, 1), threadstate.FlagAt(0x20ed, "all fed", &stage.AllFed, 1),
+		threadstate.At(0x1ae0, "position", &stage.Position), threadstate.FlagAt(0x20ef, "after line end", &stage.AfterLineEnd, 1)}
 }
 
 // Fields lists the input side's values with their places in the thread state.
@@ -61,20 +65,10 @@ func Fields(stage *input.Stage) []threadstate.Field {
 		at(0x1aec, "input flags", &stage.InputFlags), at(0x9178, "read", &stage.Read), at(0x9180, "pending", &stage.Pending))
 }
 
-// LoadParser gives the escape parser, the input ring and the pipeline's settings the thread state's values,
-// with the rings' characters and the text being read.
-func LoadParser(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
-	mapping.LoadFields(append(ParserFields(stage), RingFields(stage)...), state)
-	loadRing(mapping, stage, state)
-}
-
-// Load gives the input side, and the pipeline's settings, the thread state's values.
+// Load gives the input side, and the pipeline's settings, the thread state's values, with the rings' characters and
+// the text being read.
 func Load(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 	mapping.LoadFields(Fields(stage), state)
-	loadRing(mapping, stage, state)
-}
-
-func loadRing(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 	copy(stage.Input[:], state[Input:InputEnd])
 	copy(stage.Commands[:], state[Commands:CommandsEnd])
 	stage.Text = nil
@@ -85,8 +79,8 @@ func loadRing(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 	}
 }
 
-// Store writes the input side's values, and the pipeline's settings, into the thread state. The text being read
-// is the speaking thread's, which the input side doesn't write.
+// Store writes the input side's values, and the pipeline's settings, into the thread state, but for the text being
+// read: the tests that change it compare its pointer themselves.
 func Store(mapping threadstate.Mapping, stage *input.Stage, state []byte) {
 	mapping.StoreFields(Fields(stage), state)
 	copy(state[Input:InputEnd], stage.Input[:])

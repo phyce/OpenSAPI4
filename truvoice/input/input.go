@@ -57,13 +57,22 @@ type Stage struct {
 	InputRead, InputWritten int32
 	Drained, AllFed         bool
 
+	// The feeder (input.md §5): how far it has fed the text, and whether the last line it fed ended with a line
+	// end. Busy is set while the speaking thread has pumped text its steps haven't finished (input.md §6).
+	Position     int32
+	AfterLineEnd bool
+	Busy         bool
+
+	feeding   []byte
 	tokenizer tokenizer
 	output    []byte
 	tables    *datapack.Input
 }
 
+// New returns the input side as the speaking thread constructs it: as if the last text were all fed, so that the
+// thread takes a text first.
 func New(tables *datapack.Input, pipeline *pipeline.Pipeline) *Stage {
-	return &Stage{Pipeline: pipeline, tables: tables}
+	return &Stage{Pipeline: pipeline, tables: tables, AllFed: true}
 }
 
 // Reset empties the input ring and the command ring, and starts the escape parser on text (input.md §3).
@@ -78,7 +87,13 @@ func (stage *Stage) Reset() {
 
 // room is the room the command ring has left: 4,095 bytes less those it holds.
 func (stage *Stage) room() int32 {
-	room := stage.Read - stage.Written - 1
+	return ringRoom(stage.Read, stage.Written)
+}
+
+// ringRoom is the room a ring of 4,096 bytes has left, from where it is read and written: 4,095 bytes less those
+// it holds.
+func ringRoom(read, written int32) int32 {
+	room := read - written - 1
 	if room < 0 {
 		room += commandRingSize
 	}

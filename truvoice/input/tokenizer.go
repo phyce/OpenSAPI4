@@ -150,6 +150,9 @@ func (stage *Stage) readToken() *token {
 			character, class = 0, 0
 			break
 		}
+		if character == 0 {
+			character = ' '
+		}
 		class = classes[character]
 		marks[length] = markNone
 		if character == '\n' {

@@ -82,8 +82,8 @@ func (data *testData) reload(stage *input.Stage, call *threadstate.Call) *run {
 }
 
 // finish reports the first difference of a replayed call: the state the call left, written over the state it
-// started from. The escape parser's own ring is taken from the state the call left: the parser has read every
-// character the call put in it.
+// started from. The escape parser's own ring is taken from the state the call left, as the parser has read every
+// character the call put in it, and so are the feeder's lines, which it reads only in the call that writes them.
 func (run *run) finish(call *threadstate.Call) error {
 	state := slices.Clone(call.Before)
 	run.mapping.StorePipeline(state)
@@ -95,6 +95,7 @@ func (run *run) finish(call *threadstate.Call) error {
 		}
 	}
 	copy(state[parserRing:parserRingEnd], call.After[parserRing:parserRingEnd])
+	copy(state[inputstate.Lines:inputstate.LinesEnd], call.After[inputstate.Lines:inputstate.LinesEnd])
 	return threadstate.Differences(state, call.After, inputstate.Describe)
 }
 
@@ -174,6 +175,47 @@ func TestTokenizer(t *testing.T) {
 		t.Errorf("calls replayed: %v", counts)
 	}
 	t.Logf("calls replayed: %v", counts)
+}
+
+// TestFeeder replays every recorded feeding of a text into the input ring by the speaking thread, with the text
+// the thread was given. The first feeding of a text starts it at its beginning.
+func TestFeeder(t *testing.T) {
+	data := loadTestData(t)
+	counts := threadstate.Replay(t, "input.jsonl.gz", map[string]threadstate.Replayer{
+		"Pipeline::FeedText": func(call *threadstate.Call) error {
+			text, first, err := fed(call)
+			if err != nil {
+				return err
+			}
+			run := data.load(call)
+			if first {
+				run.stage.Position = 0
+			}
+			run.stage.Feed(text)
+			return run.finish(call)
+		},
+	})
+	if counts["Pipeline::FeedText"] == 0 {
+		t.Errorf("calls replayed: %v", counts)
+	}
+	t.Logf("calls replayed: %v", counts)
+}
+
+// fed returns the text a feeding call feeds, from the last feed record before it, and whether it is the first
+// call for it: the feed record comes right before it.
+func fed(call *threadstate.Call) ([]byte, bool, error) {
+	records := call.Case.Records
+	index := 0
+	for &records[index] != call.Record {
+		index++
+	}
+	for previous := index - 1; previous >= 0; previous-- {
+		if records[previous].Kind == "feed" {
+			text, err := records[previous].Fed()
+			return text, previous == index-1, err
+		}
+	}
+	return nil, false, fmt.Errorf("no text was fed before")
 }
 
 // parsed returns the characters the original gave the escape parser during a call: the arguments of the calls of

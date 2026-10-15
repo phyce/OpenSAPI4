@@ -31,7 +31,7 @@ func (stage *Stage) expand(token *token) {
 		strings.Count(string(token.text[:token.length]), string(token.text[0])) == token.length:
 		token.replacement = strings.ToUpper(string(text))
 	case token.command:
-		switch byteAt(token.text, 3) {
+		switch byteAt(text, 3) {
 		case 'X':
 			tokenizer.quoting = int32(int8(token.text[2])) - '0'
 		case 'I':
