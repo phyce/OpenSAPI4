@@ -111,6 +111,10 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 		pipeline.resetFrom(node, value)
 	case 'l':
 		pipeline.Levels[value] = byte(second)
+	case 'n':
+		if stage == Normalizer && engine != nil && engine.Pronounce != nil {
+			engine.Pronounce(value)
+		}
 	case 'p':
 		cursor.Pitch = int32(value * 2)
 		if stage == Prosody {

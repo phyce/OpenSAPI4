@@ -183,12 +183,13 @@ Running the current cursor's `scan` node:
 | `g`, `s`, `t` | | Prosody: the node becomes a generated segment (flag bit 1 cleared, bits 0 and 2 set) |
 | `i` | | Parameter generator: a bookmark (section 4.1) |
 | `l` | track level `value` = second | |
+| `n` | | Normalizer, with an engine: the `\Prn=` record `value` adds its word to the user lexicon or removes it ([engine.md](engine.md) §7.3) |
 | `p` | pitch = value · 2 | Prosody: the attribute pitch = the cursor's pitch. With an engine, the engine's pitch becomes the same and a pitch message is posted |
 | `r`, `v` | rate index = value | Prosody: the attribute speed = `trunc((value · 8 + 50) / 10) · 10`. With an engine, the engine's speed becomes the same and a speed message is posted |
 | `x` | | Output: request a reset with value 0. Normalizer: take a node of type 0, symbol `C`, after it |
 | `z` | | Parameter generator: a word (section 4.1) |
 
-Other letters do nothing. The command `n`, a pronunciation the text adds to the user lexicon, is specified with the user lexicon.
+Other letters do nothing.
 
 The voices' own pitch, rate index and speed:
 

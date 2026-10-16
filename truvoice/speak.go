@@ -147,6 +147,7 @@ func (data *Data) newThread(state *pipeline.Engine, sampleRate int) *thread {
 	thread.input = input.New(data.input, thread.pipeline)
 	thread.normalizer = normalizer.New(data.normalizer, data.parameters, thread.pipeline)
 	thread.lexical = lexical.New(data.lexical, data.dictionary, data.parameters, thread.pipeline)
+	thread.lexical.Lexicon = data.userLexicon
 	thread.prosody = prosody.New(data.prosody, data.parameters, thread.pipeline)
 	thread.prosody.Shared = data.shared
 	return thread

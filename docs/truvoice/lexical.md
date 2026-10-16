@@ -306,7 +306,7 @@ So `to record` takes the verb's entry and `the record` the noun's, `one records`
 
 ## 7. The user lexicon
 
-The **user lexicon** holds words with their pronunciations, which an application gives the engine; the interface's spec will say how it adds, removes, saves and reads them. Its words are in capitals, of letters only, and its pronunciations are of the symbols `A` to `Z`, `a` to `z`, `1` to `5`, `@`, `|`, `~` and `&`. The lookup (section 9) looks up the whole word in the user lexicon before the dictionary, and so the stem a suffix leaves; the stem a prefix leaves only in the dictionary. The lexicon can change while the engine speaks: the search and the copy of the pronunciation it finds are made under the lexicon's lock.
+The **user lexicon** holds words with their pronunciations, which an application gives the engine ([engine.md](engine.md) §7 says how it adds, removes, saves and reads them). Its words are in capitals, of letters only, and its pronunciations are of the symbols `A` to `Z`, `a` to `z`, `1` to `5`, `@`, `|`, `~` and `&`. The lookup (section 9) looks up the whole word in the user lexicon before the dictionary, and so the stem a suffix leaves; the stem a prefix leaves only in the dictionary. The lexicon can change while the engine speaks: the search and the copy of the pronunciation it finds are made under the lexicon's lock.
 
 ### 7.1 The lookup
 

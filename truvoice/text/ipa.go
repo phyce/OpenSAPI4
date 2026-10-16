@@ -46,21 +46,36 @@ func (converter *Converter) ipa(characters []uint16, tagged bool) []byte {
 			position = end
 			continue
 		}
-		if rule := converter.longestRule(characters, position); rule != nil {
-			converted = append(converted, rule.Phonemes...)
-			position += len(rule.Sequence)
-		} else {
-			position++
-		}
+		converted, position = convertIPA(converter.tables, converted, characters, position)
 	}
 	return append(converted, phoneticEnd...)
 }
 
+// IPAToEnginePhonemes converts IPA to engine phonemes as section 1.5 of engine.md says, without the phonetic
+// commands: each IPA sequence the rules know gives its phonemes, the longest first, and a character that starts
+// none gives nothing.
+func IPAToEnginePhonemes(tables *datapack.Text, characters []uint16) []byte {
+	converted := []byte{}
+	for position := 0; position < len(characters); {
+		converted, position = convertIPA(tables, converted, characters, position)
+	}
+	return converted
+}
+
+// convertIPA appends the phonemes of the longest rule at position, and returns the position after its sequence, or
+// after the character when no rule starts there.
+func convertIPA(tables *datapack.Text, converted []byte, characters []uint16, position int) ([]byte, int) {
+	if rule := longestRule(tables, characters, position); rule != nil {
+		return append(converted, rule.Phonemes...), position + len(rule.Sequence)
+	}
+	return converted, position + 1
+}
+
 // longestRule is the longest IPA rule whose sequence the characters have at position, or nil.
-func (converter *Converter) longestRule(characters []uint16, position int) *datapack.IPARule {
+func longestRule(tables *datapack.Text, characters []uint16, position int) *datapack.IPARule {
 	var longest *datapack.IPARule
-	for index := range converter.tables.IPARules {
-		rule := &converter.tables.IPARules[index]
+	for index := range tables.IPARules {
+		rule := &tables.IPARules[index]
 		sequence := rule.Sequence
 		if position+len(sequence) <= len(characters) && slices.Equal(characters[position:position+len(sequence)], sequence) &&
 			(longest == nil || len(sequence) > len(longest.Sequence)) {

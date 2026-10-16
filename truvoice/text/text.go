@@ -82,12 +82,23 @@ type Converter struct {
 	// Voice is the engine's voice, which the first \Vce\ in the process saves for \Rst\.
 	Voice    int32
 	Defaults Defaults
-	// Pronunciations are the \Prn=\ tags' records, in order: the text refers to the first as 1.
-	Pronunciations []Pronunciation
+	// pronunciations are the \Prn=\ tags' records the normalizer hasn't taken, by their numbers: the text refers
+	// to the first as 1.
+	pronunciations     map[uint32]Pronunciation
+	pronunciationCount uint32
 }
 
 func New(tables *datapack.Text, modes *datapack.Modes, process *Process, voice int32, defaults Defaults) *Converter {
-	return &Converter{tables: tables, modes: modes, process: process, WideOffsets: true, Voice: voice, Defaults: defaults}
+	return &Converter{tables: tables, modes: modes, process: process, WideOffsets: true, Voice: voice, Defaults: defaults,
+		pronunciations: map[uint32]Pronunciation{}}
+}
+
+// TakePronunciation returns the \Prn=\ record a text refers to by its number, once: the original frees it when the
+// normalizer runs the command (engine.md §7.3).
+func (converter *Converter) TakePronunciation(number uint32) (Pronunciation, bool) {
+	record, found := converter.pronunciations[number]
+	delete(converter.pronunciations, number)
+	return record, found
 }
 
 // Wide converts a text as TextData of the wide interface does: characters are UTF-16 code units, the whole

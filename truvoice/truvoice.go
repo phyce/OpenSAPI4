@@ -3,10 +3,12 @@
 package truvoice
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
+	"github.com/phyce/OpenSAPI4/truvoice/lexicon"
 	"github.com/phyce/OpenSAPI4/truvoice/pipeline"
 	"github.com/phyce/OpenSAPI4/truvoice/prosody"
 	"github.com/phyce/OpenSAPI4/truvoice/text"
@@ -28,7 +30,7 @@ var (
 )
 
 // Data is what the engines of one data pack share: its tables, and what the original keeps for the whole process,
-// the prosody stage's shared state and the voice \Rst\ goes back to.
+// the prosody stage's shared state, the voice \Rst\ goes back to and the user lexicon.
 type Data struct {
 	Modes       *datapack.Modes
 	pipeline    *datapack.Pipeline
@@ -43,8 +45,9 @@ type Data struct {
 	text        *datapack.Text
 	engine      *datapack.Engine
 
-	process *text.Process
-	shared  *prosody.Shared
+	process     *text.Process
+	shared      *prosody.Shared
+	userLexicon *lexicon.Lexicon
 }
 
 func Load(pack *datapack.Pack) (*Data, error) {
@@ -69,7 +72,16 @@ func Load(pack *datapack.Pack) (*Data, error) {
 			return nil, err
 		}
 	}
+	data.userLexicon = lexicon.New(data.text, data.engine, func(value []byte) []byte {
+		return data.listing(append(bytes.Clone(value), 0), false)
+	})
 	return data, nil
+}
+
+// Lexicon is the user lexicon every engine of the data looks words up in, as every engine of the original's process
+// does (engine.md §7). It starts empty; Read fills it from a file.
+func (data *Data) Lexicon() *lexicon.Lexicon {
+	return data.userLexicon
 }
 
 // Format is a PCM format: mono, SampleRate samples a second, and Bits 16 (signed, little-endian) or 8
@@ -134,7 +146,7 @@ func (data *Data) NewEngineAccepting(voice int, accept AcceptFormat) (*Engine, e
 	defaults := data.pipeline.Voices[voice]
 	engine := &Engine{data: data, format: format}
 	engine.state = pipeline.Engine{Pitch: uint16(defaults.Pitch), Speed: uint32(defaults.Speed), Volume: initialVolume,
-		Voice: int32(voice), SampleRate: format.SampleRate, Gain: initialGain}
+		Voice: int32(voice), SampleRate: format.SampleRate, Gain: initialGain, Pronounce: engine.pronounce}
 	engine.converter = text.New(data.text, data.Modes, data.process, int32(voice),
 		text.Defaults{Pitch: uint16(defaults.Pitch), Speed: uint32(defaults.Speed), Volume: initialVolume})
 	return engine, nil

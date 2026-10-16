@@ -1,6 +1,7 @@
 package truvoice
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,19 +17,24 @@ import (
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/truvoice/internal/conformance"
+	"github.com/phyce/OpenSAPI4/truvoice/lexicon"
 	"github.com/phyce/OpenSAPI4/truvoice/text"
 )
 
 type goldenStep struct {
-	Call         string  `json:"call"`
-	Text         *string `json:"text"`
-	Sinkless     bool    `json:"sinkless"`
-	ANSI         bool    `json:"ansi"`
-	CharacterSet uint32  `json:"characterSet"`
-	Flags        *uint32 `json:"flags"`
-	Uncounted    bool    `json:"uncounted"`
-	Tolerant     bool    `json:"tolerant"`
-	Value        int64   `json:"value"`
+	Call          string  `json:"call"`
+	Text          *string `json:"text"`
+	Sinkless      bool    `json:"sinkless"`
+	ANSI          bool    `json:"ansi"`
+	CharacterSet  uint32  `json:"characterSet"`
+	Flags         *uint32 `json:"flags"`
+	Uncounted     bool    `json:"uncounted"`
+	Tolerant      bool    `json:"tolerant"`
+	Value         int64   `json:"value"`
+	Wide          bool    `json:"wide"`
+	Word          string  `json:"word"`
+	Pronunciation string  `json:"pronunciation"`
+	Size          uint32  `json:"size"`
 }
 
 type goldenCase struct {
@@ -39,6 +45,8 @@ type goldenCase struct {
 	Untagged     bool            `json:"untagged"`
 	Inject       string          `json:"inject"`
 	Lexicon      json.RawMessage `json:"lexicon"`
+	File         *string         `json:"file"`
+	LexiconFile  json.RawMessage `json:"lexiconFile"`
 	Racy         bool            `json:"racy"`
 	Unstable     bool            `json:"unstable"`
 	PreFormatter *bool           `json:"preFormatter"`
@@ -63,12 +71,12 @@ type goldenRuns struct {
 
 // The sets whose runs the engine's test replays.
 var engineSets = []string{"affixes", "conversion", "dictionary", "durations", "inject", "input", "letters", "lexical",
-	"lexicon", "normalizer", "parameters", "pause", "phoneme", "pipeline", "positions", "postlexical", "prosody", "stage",
-	"synthesizer"}
+	"lexicon", "normalizer", "parameters", "pause", "phoneme", "pipeline", "positions", "postlexical", "prosody",
+	"pronounce", "stage", "synthesizer"}
 
 // The calls besides Speak and Queue the test makes.
 var portedCalls = []string{"Inject", "PitchGet", "PitchSet", "SpeedGet", "SpeedSet", "VolumeGet", "VolumeSet", "ModeGet",
-	"Limit", "Pump", "AudioPause", "AudioResume", "AudioReset", "Phoneme"}
+	"Limit", "Pump", "AudioPause", "AudioResume", "AudioReset", "Phoneme", "Add", "Get", "Remove"}
 
 // recorder is a sink that keeps the audio and the events as the golden data writes them. Like the recorded runs'
 // destination, it takes at most limit bytes in all (none when limit is negative): it pauses the engine at the
@@ -84,6 +92,7 @@ type recorder struct {
 	numbers      map[int]int
 	limit        int64
 	pausedBySink bool
+	lexiconFile  *string
 	err          error
 }
 
@@ -168,7 +177,29 @@ const (
 	unwrittenSize = 0xdeadbeef
 	// PitchGet writes a WORD, and the recorded runs read a DWORD they filled with 0xDEADBEEF first.
 	pitchGetFill = 0xdead0000
+	// What the recorded runs fill a Get's needed size and part of speech with, and its buffer, which has some bytes
+	// more than the size it is given.
+	unwritten   = 0xdeadbeef
+	bufferFill  = 0xcc
+	bufferSlack = 16
+	// The message box the original shows once when its lexicon file has invalid entries: MB_OK | MB_ICONEXCLAMATION
+	// | MB_TASKMODAL.
+	invalidEntriesBox = 0x2030
+	// bufferTooSmall is LEXERR_PRNBUFTOOSMALL.
+	bufferTooSmall = "0x80040807"
 )
+
+// lexiconResults are the HRESULTs of the lexicon's errors.
+var lexiconResults = map[error]string{lexicon.ErrInvalidArgument: invalidArgument, lexicon.ErrInvalidWord: "0x80040801",
+	lexicon.ErrNotInLexicon: "0x80040803", lexicon.ErrInvalidPronunciation: "0x80040805",
+	lexicon.ErrAlreadyInLexicon: "0x80040806"}
+
+func lexiconResult(err error) string {
+	if err == nil {
+		return succeeded
+	}
+	return lexiconResults[err]
+}
 
 // call makes a call of a golden step other than Speak and Queue and records it in the calls stream, before the
 // attribute changes it made.
@@ -218,6 +249,8 @@ func (recorder *recorder) call(engine *Engine, step goldenStep) error {
 		engine.Reset(recorder)
 		recorder.pausedBySink = false
 		values = append(values, len(recorder.pcm))
+	case "Add", "Get", "Remove":
+		values = lexiconCall(engine.data.Lexicon(), step, values)
 	case "Phoneme":
 		tagged := step.Flags == nil || *step.Flags == text.Tagged
 		characterSet := text.CharacterSet(step.CharacterSet)
@@ -243,6 +276,92 @@ func (recorder *recorder) call(engine *Engine, step goldenStep) error {
 	}
 	recorder.calls = slices.Insert(recorder.calls, position, entry(values...))
 	return nil
+}
+
+// lexiconCall makes an ILexPronounce call of a golden step on the user lexicon. A Get records what it gives as the
+// recorded runs do: its buffer, with the pronunciation and its NUL, or untouched; the size it needs, which it writes
+// only when the buffer is too small (in characters, but in bytes for IPA); and the part of speech, 0 when it found the
+// word. An ANSI Get whose wide Get fails converts what its own buffer held; its buffer isn't recorded.
+func lexiconCall(user *lexicon.Lexicon, step goldenStep, values []any) []any {
+	characterSet := text.CharacterSet(step.CharacterSet)
+	var err error
+	switch step.Call {
+	case "Add":
+		if step.Wide {
+			err = user.Add(characterSet, wideString(step.Word), wideString(step.Pronunciation))
+		} else {
+			err = user.AddANSI(characterSet, ansiString(step.Word), ansiString(step.Pronunciation))
+		}
+	case "Remove":
+		if step.Wide {
+			err = user.Remove(wideString(step.Word))
+		} else {
+			err = user.RemoveANSI(ansiString(step.Word))
+		}
+	case "Get":
+		var written []byte
+		var needed uint32
+		if step.Wide {
+			var pronunciation []uint16
+			pronunciation, err = user.Get(characterSet, wideString(step.Word))
+			for _, unit := range append(pronunciation, 0) {
+				written = append(written, byte(unit), byte(unit>>8))
+			}
+			needed = uint32(len(pronunciation) + 1)
+			if characterSet == text.IPA {
+				needed *= 2
+			}
+		} else {
+			var pronunciation []byte
+			pronunciation, err = user.GetANSI(characterSet, ansiString(step.Word))
+			written = append(pronunciation, 0)
+			needed = uint32(len(written))
+		}
+		buffer := bytes.Repeat([]byte{bufferFill}, int(step.Size)+bufferSlack)
+		result, neededValue, partOfSpeech := lexiconResult(err), any(uint32(unwritten)), uint32(unwritten)
+		if err == nil && step.Size < needed {
+			result, neededValue = bufferTooSmall, needed
+		} else if err == nil {
+			copy(buffer, written)
+			partOfSpeech = 0
+		}
+		values[2] = result
+		var recorded any = hex.EncodeToString(buffer)
+		if !step.Wide && result != succeeded {
+			recorded = nil
+		}
+		return append(values, neededValue, partOfSpeech, recorded)
+	}
+	values[2] = lexiconResult(err)
+	return values
+}
+
+// wideString is a lexicon call's word or pronunciation for the wide interface, with its NUL.
+func wideString(value string) []uint16 {
+	return append(utf16.Encode([]rune(value)), 0)
+}
+
+// ansiString is a lexicon call's word or pronunciation for the ANSI interface: each character's code as a byte, with
+// a NUL.
+func ansiString(value string) []byte {
+	characters := []rune(value)
+	data := make([]byte, len(characters)+1)
+	for index, character := range characters {
+		data[index] = byte(character)
+	}
+	return data
+}
+
+// savedLexicon is the user lexicon file after a run in hexadecimal: the one the original writes when it is released
+// after a change, or else the file it read, if any.
+func savedLexicon(user *lexicon.Lexicon, file *string) *string {
+	if !user.Changed() {
+		return file
+	}
+	var saved bytes.Buffer
+	user.Write(&saved)
+	written := hex.EncodeToString(saved.Bytes())
+	return &written
 }
 
 // expected writes the golden events as the recorder does.
@@ -272,8 +391,6 @@ func leftOut(golden goldenCase) string {
 	switch {
 	case golden.Racy:
 		return "racy"
-	case golden.Lexicon != nil:
-		return "user lexicon"
 	}
 	for _, step := range golden.Steps {
 		if step.Call != "Speak" && step.Call != "Queue" && !slices.Contains(portedCalls, step.Call) {
@@ -289,9 +406,6 @@ func leftOut(golden goldenCase) string {
 	}
 	for _, value := range golden.texts() {
 		lowered := strings.ToLower(value)
-		if strings.Contains(lowered, `\prn=`) {
-			return "pronunciation"
-		}
 		if golden.PreFormatter == nil && strings.Contains(lowered, "ctx=") && (strings.Contains(lowered, "address") ||
 			strings.Contains(lowered, "mail") || strings.Contains(lowered, "spreadsheet")) {
 			return "pre-formatter"
@@ -347,9 +461,10 @@ func acceptFormats(t *testing.T, list string) AcceptFormat {
 	}
 }
 
-// speak runs the golden case's calls on a new engine: the attributes and the Inject string, then its texts, all in
-// one session, or its steps, where a Speak waits for the speaking thread to end (the host waits after a Speak without
-// a notification sink too) and a Queue doesn't. Texts are numbered in the order they are queued.
+// speak runs the golden case's calls on a new engine: the user lexicon's file, the attributes, the Inject string and
+// the user lexicon's words, then its texts, all in one session, or each in a session of its own when it has a lexicon,
+// or its steps, where a Speak waits for the speaking thread to end (the recorded runs wait after a Speak without a
+// notification sink too) and a Queue doesn't. Texts are numbered in the order they are queued.
 func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, error) {
 	data, err := Load(pack)
 	if err != nil {
@@ -363,6 +478,28 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 		return nil, fmt.Errorf("format %v, expected %v", engine.Format(), golden.Format)
 	}
 	sink := &recorder{numbers: map[int]int{}, limit: -1}
+	if golden.File != nil {
+		file, err := hex.DecodeString(*golden.File)
+		if err != nil {
+			return nil, err
+		}
+		if err := data.Lexicon().Read(bytes.NewReader(file)); errors.Is(err, lexicon.ErrInvalidEntries) {
+			sink.calls = append(sink.calls, entry("messagebox", invalidEntriesBox))
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	var entries [][2]string
+	if golden.Lexicon != nil {
+		if err := json.Unmarshal(golden.Lexicon, &entries); err != nil {
+			return nil, err
+		}
+	}
+	for _, pair := range entries {
+		if err := data.Lexicon().Add(text.EnginePhonetic, utf16.Encode([]rune(pair[0])), utf16.Encode([]rune(pair[1]))); err != nil {
+			return nil, fmt.Errorf("lexicon %q: %v", pair, err)
+		}
+	}
 	engine.AttributeChanged = sink.attributeChanged
 	if golden.Pitch != nil {
 		engine.SetPitch(uint16(*golden.Pitch))
@@ -377,8 +514,12 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 		engine.Inject(golden.Inject)
 	}
 	steps := golden.Steps
+	call := "Queue"
+	if golden.Lexicon != nil {
+		call = "Speak"
+	}
 	for index := range golden.Texts {
-		steps = append(steps, goldenStep{Call: "Queue", Text: &golden.Texts[index]})
+		steps = append(steps, goldenStep{Call: call, Text: &golden.Texts[index]})
 	}
 	if golden.Steps == nil {
 		steps = append(steps, goldenStep{Call: "Run"})
@@ -428,7 +569,9 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 			}
 		}
 	}
-	return sink, engine.Run(sink)
+	err = engine.Run(sink)
+	sink.lexiconFile = savedLexicon(data.Lexicon(), golden.File)
+	return sink, err
 }
 
 // bytes is the step's text for the ANSI interface, with its NUL unless it is uncounted.
@@ -477,6 +620,15 @@ func compare(t *testing.T, pack *datapack.Pack, golden goldenCase) error {
 	if index := firstDifference(sink.visuals, visuals); index >= 0 {
 		return fmt.Errorf("%d visual events, expected %d; event %d: %s, expected %s", len(sink.visuals), len(visuals), index,
 			at(sink.visuals, index), at(visuals, index))
+	}
+	if golden.LexiconFile != nil {
+		var saved *string
+		if err := json.Unmarshal(golden.LexiconFile, &saved); err != nil {
+			return err
+		}
+		if (saved == nil) != (sink.lexiconFile == nil) || saved != nil && *saved != *sink.lexiconFile {
+			return fmt.Errorf("the lexicon file differs")
+		}
 	}
 	if golden.Calls == nil {
 		return nil
@@ -537,9 +689,9 @@ func at(values []string, index int) string {
 // TestEngine speaks the recorded runs of every set with the engine, each once, and compares the audio, the texts'
 // starts and ends, the words and bookmarks where they stand in the audio, the visual events where they stand, and,
 // for the runs that keep them, the calls with what they gave between the attribute changes and the texts' starts
-// and ends. It leaves out the runs that need what later parts of the port bring, the user lexicon and
-// pronunciations, the calls the engine doesn't have (RealTime, QueryInterface), an empty \Vol=\ given to Inject,
-// the racy runs and the runs with texts in the contexts of the pre-formatter, which isn't ported.
+// and ends, and the user lexicon's file. It leaves out the runs with calls the engine doesn't have (RealTime,
+// QueryInterface), an empty \Vol=\ given to Inject, the racy runs and the runs with texts in the contexts of the
+// pre-formatter, which isn't ported.
 func TestEngine(t *testing.T) {
 	pack := conformance.Pack(t)
 	seen := map[string]bool{}
@@ -562,7 +714,7 @@ func TestEngine(t *testing.T) {
 	for _, set := range engineSets {
 		conformance.EachLine(t, func(golden goldenCase) {
 			key, _ := json.Marshal([]any{golden.Mode, golden.Texts, golden.Steps, golden.Untagged, golden.Accept, golden.Pitch,
-				golden.Speed, golden.Volume, golden.Inject, golden.Lexicon})
+				golden.Speed, golden.Volume, golden.Inject, golden.Lexicon, golden.File})
 			lock.Lock()
 			defer lock.Unlock()
 			if seen[string(key)] {

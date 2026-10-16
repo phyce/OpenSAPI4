@@ -129,8 +129,9 @@ func (converter *Converter) pronunciation(converted, text []byte, position, clos
 		}
 		record.Pronunciation = string(text[start:position])
 	}
-	converter.Pronunciations = append(converter.Pronunciations, record)
+	converter.pronunciationCount++
+	converter.pronunciations[converter.pronunciationCount] = record
 	converted = append(converted, escape, '[')
-	converted = appendBytes(converted, uint32(len(converter.Pronunciations)))
+	converted = appendBytes(converted, converter.pronunciationCount)
 	return append(converted, 'n', ' ')
 }
