@@ -71,7 +71,7 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 			}
 			if engine != nil {
 				engine.Volume = pipeline.Volume
-				engine.Messages = append(engine.Messages, Message{Kind: AttributeChanged, Attribute: VolumeAttribute})
+				engine.Post(Message{Kind: AttributeChanged, Attribute: VolumeAttribute})
 			}
 		}
 	case 'c':
@@ -98,10 +98,11 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 		}
 		if engine != nil {
 			if value == 0 && node.Text != nil {
-				engine.Messages = append(engine.Messages, Message{Kind: TextDone, Text: node.Text})
+				engine.Post(Message{Kind: TextDone, Text: node.Text})
 			}
 			if node.Text != nil {
 				engine.Queue = append(engine.Queue, Item{Event: &Event{Kind: Mark, Text: node.Text, Value: value}})
+				engine.Flush()
 				if value == 0 {
 					node.Text = nil
 				}
@@ -116,7 +117,7 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 			pipeline.Pitch = uint32(cursor.Pitch)
 			if engine != nil {
 				engine.Pitch = uint16(pipeline.Pitch)
-				engine.Messages = append(engine.Messages, Message{Kind: AttributeChanged, Attribute: PitchAttribute})
+				engine.Post(Message{Kind: AttributeChanged, Attribute: PitchAttribute})
 			}
 		}
 	case 'r', 'v':
@@ -125,7 +126,7 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 			pipeline.Speed = (value*8 + 50) / 10 * 10
 			if engine != nil {
 				engine.Speed = pipeline.Speed
-				engine.Messages = append(engine.Messages, Message{Kind: AttributeChanged, Attribute: SpeedAttribute})
+				engine.Post(Message{Kind: AttributeChanged, Attribute: SpeedAttribute})
 			}
 		}
 	case 'x':
@@ -141,6 +142,7 @@ func (pipeline *Pipeline) ExecuteControl() bool {
 		}
 		if engine != nil && node.Text != nil {
 			engine.Queue = append(engine.Queue, Item{Event: &Event{Kind: WordPosition, Text: node.Text, Value: value}})
+			engine.Flush()
 		}
 		pipeline.resetFrom(node, value)
 	}

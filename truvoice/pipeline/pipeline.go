@@ -63,6 +63,10 @@ type Pipeline struct {
 	VisualEvents bool
 	PostedSpace  bool
 
+	// Prebuffering is whether the speaking thread still lets audio gather in the queue before a hand-over flushes
+	// it (pipeline.md §8.4).
+	Prebuffering bool
+
 	Synthesizer *synthesizer.Synthesizer
 	Engine      *Engine
 	tables      *datapack.Pipeline
@@ -70,8 +74,8 @@ type Pipeline struct {
 
 // Engine is the engine the pipeline speaks for (nil when it converts text to phonemes): the attributes its
 // API sets and reads, its sample rate and output gain, the texts it queued for the speaking thread, the queue
-// that carries the audio and the events to the destination in order, and the messages the pipeline posts to the
-// engine's window.
+// that carries the audio and the events to the destination in order, how many of the queue's items the engine's
+// window has flushed to the destination, and the messages the pipeline posts to the window.
 type Engine struct {
 	Pitch      uint16
 	Speed      uint32
@@ -82,6 +86,7 @@ type Engine struct {
 	Gain       uint32
 	Texts      []QueuedText
 	Queue      []Item
+	Flushed    int
 	Messages   []Message
 }
 
@@ -128,10 +133,24 @@ const (
 	VolumeAttribute = 3
 )
 
+// A Message is what the pipeline posts to the engine's window. Queued is how many items of the queue the window
+// had flushed when it was posted.
 type Message struct {
 	Kind      MessageKind
 	Attribute int
 	Text      *Text
+	Queued    int
+}
+
+// Post posts a message to the engine's window.
+func (engine *Engine) Post(message Message) {
+	message.Queued = engine.Flushed
+	engine.Messages = append(engine.Messages, message)
+}
+
+// Flush has the engine's window flush the queue: everything queued goes to the destination.
+func (engine *Engine) Flush() {
+	engine.Flushed = len(engine.Queue)
 }
 
 // The attributes, gain and sample rate a new pipeline starts with (pipeline.md §8.1).
@@ -148,8 +167,8 @@ func (pipeline *Pipeline) InitialFrame() [datapack.TrackCount]byte {
 	return pipeline.tables.InitialFrame
 }
 
-// PostVisual queues a visual event for a phoneme the parameter generator renders, unless it is a pause and so was
-// the last one (parameters.md §6.4).
+// PostVisual queues a visual event for a phoneme the parameter generator renders and flushes the queue, unless
+// the phoneme is a pause and so was the last one (parameters.md §6.4).
 func (pipeline *Pipeline) PostVisual(symbol byte) {
 	if pipeline.Engine == nil {
 		return
@@ -163,6 +182,7 @@ func (pipeline *Pipeline) PostVisual(symbol byte) {
 		pipeline.PostedSpace = false
 	}
 	pipeline.Engine.Queue = append(pipeline.Engine.Queue, Item{Event: &Event{Kind: Visual, Value: uint32(int8(symbol))}})
+	pipeline.Engine.Flush()
 }
 
 // New returns a pipeline as the speaking thread constructs it on its stack: its nodes all zero, its attributes

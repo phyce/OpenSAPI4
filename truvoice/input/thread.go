@@ -22,7 +22,7 @@ func (stage *Stage) Turn() bool {
 		stage.feeding, stage.Position = next.Characters, 0
 		stage.AllFed, stage.AfterLineEnd = false, true
 		stage.Text = next.Text
-		engine.Messages = append(engine.Messages, pipeline.Message{Kind: pipeline.TextStarted, Text: next.Text})
+		engine.Post(pipeline.Message{Kind: pipeline.TextStarted, Text: next.Text})
 		stage.feedText()
 		stage.Pump(true)
 		stage.Busy = true

@@ -209,7 +209,7 @@ With an engine, a **word** command whose node holds a text queues a word event w
 
 Then, with an engine or without, if the node's flag bit 5 is set, request a reset with the command's value.
 
-Events go into the engine's queue, behind the audio queued so far: the samples the synthesizer has rendered and not yet handed over come after them. Messages go to the engine's window, which handles them in its own time.
+Events go into the engine's queue, behind the audio queued so far: the samples the synthesizer has rendered and not yet handed over come after them. The queue is then flushed ([engine.md](engine.md) §2.3). Messages go to the engine's window, which handles them in its own time.
 
 ### 4.2 Volumes
 
@@ -322,11 +322,11 @@ The commands that change an attribute (section 4) set both the engine's attribut
 
 When a step reports a hand-over, the thread appends the buffer's samples to the engine's queue, behind the events the commands queued during the step, and empties the buffer. The destination therefore gets each event at the position where the last hand-over before it ended ([synthesizer.md](synthesizer.md) §5.3).
 
-The thread waits while the queue holds 10 buffers or more, and tells the engine's window when to start playing; the engine's spec will say how. Neither changes what is queued.
+The thread then flushes the queue, unless it is prebuffering and no more than six items were waiting before the buffer ([engine.md](engine.md) §2.3). A thread starts prebuffering, and the first hand-over that flushes ends it.
 
 ### 8.5 The end
 
-The thread ends when it isn't busy, the current text is all fed, the scheduler is out of input, the input ring is drained and no text is queued: after a step reported idle, no input came. It queues an end mark for the engine's window, tells the window, and drops its pipeline. The next text starts a new thread with a new pipeline, so the synthesizer's noise and filters start afresh.
+The thread ends when it isn't busy, the current text is all fed, the scheduler is out of input, the input ring is drained and no text is queued: after a step reported idle, no input came. It queues an end mark, flushes the queue ([engine.md](engine.md) §2.3), and drops its pipeline. The next text starts a new thread with a new pipeline, so the synthesizer's noise and filters start afresh.
 
 ## 9. What the recorded runs don't reach
 
@@ -339,4 +339,4 @@ The thread ends when it isn't busy, the current text is all fed, the scheduler i
 - The output stage's run at the start of a step (section 6 step 2) never changes anything: its window only grows in a parameter generator's step, which ends with a run of the output stage, and the markers only grow in the synthesizer's loop of that step.
 - The constructed gain and sample rate (section 8.1): the start always replaces them, because the engine's gain is 1 to 3 and its sample rate 11025 or 8000 Hz.
 - A voice of 10 or more at the thread (section 8.3): the engine's voice is always 0 to 9.
-- The queue's limit, the pause and the reset (sections 8.2 and 8.4) are the engine's: its spec will check them.
+- The pause and the reset (section 8.2) are the engine's, and come with its next part. The queue's limit is in [engine.md](engine.md) §2.7.

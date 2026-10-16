@@ -1,6 +1,6 @@
 # TruVoice: the engine
 
-How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking pipeline the other specs describe. This spec covers what TextData makes of a text before it queues it for the speaking thread (section 1). The engine's speaking, events, sessions, formats, modes, attributes and `Inject` come with the next parts.
+How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking pipeline the other specs describe. This spec covers what TextData makes of a text before it queues it for the speaking thread (section 1), and how the engine speaks the texts and reports what it speaks: the speaking threads, the audio's formats, the queue to the destination, the events and where they land, and pitch, speed and volume (section 2). The modes, the other attributes, `Inject`, pausing, resets and the user lexicon come with the next parts.
 
 **In short.**
 - TextData takes text, IPA and engine phonemes, from the wide interface and the ANSI one (which takes no IPA). Text is converted to code page 1252 with Windows' best fit: `ā` becomes `a`, `€` the byte 0x80, a character the code page lacks `?`. Engine phonemes go between `ESC[1I` and `ESC[0I`, and IPA is converted to engine phonemes between them.
@@ -9,8 +9,13 @@ How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking p
 - `\Ctx="..."\` sets the engine's context, which lasts from text to text. In a tagged text, the characters 128 and up become spaces, but `’ £ ¥ © ®`.
 - In the address, e-mail and spreadsheet contexts, the original pre-formats the text. The port doesn't, so it differs from the original there.
 - Some tags make the original read past the text's end or loop for ever. The port does something harmless there and section 1.6 says what.
+- A speaking thread speaks the queued texts one after another and ends when none is left; the next text starts a new one. The audio is 11025 or 8000 Hz, 16 or 8 bits, whichever the destination takes first.
+- The thread queues the audio and the events for the engine's window, which gives them to the destination when the thread **flushes** the queue: after each visual, word and bookmark event, and after a hand-over of audio once seven buffers have gathered at the thread's start, then after every one. A text's start and end, and a change of attribute that a tag makes, are reported where the window had flushed when they were posted: usually before the last audio queued.
+- Visual events report each phoneme's IPA character and mouth shape. Pitch is 50 to 400 Hz and speed 50 to 250 words a minute.
 
 **Exactness.** Ported from the original's code, and checked against it on every text it queued for the speaking thread in 1,367 recorded runs: the 24 runs of TextData's own set, which test every tag with values in and out of its range, word marks, tags in words, emphasis before words and at the end, spelling, voices, contexts, the characters 128 and up, best fit, IPA with every rule, engine phonemes, the ANSI interface, the character sets it refuses and sizes that leave out the NUL; and the texts of the input, normalizer and stage sets. Of their 2,376 texts, 2,361 were identical to the original's. Three were refused, as the original refused them. The other 12 have characters in the address, e-mail or spreadsheet context, whose pre-formatter isn't ported. Four runs that call `Inject` were left out (`Inject` comes with the next part).
+
+Section 2 was checked against the original's speaking in 1,760 recorded runs, every run of the sets but those that need the next parts (`Inject`, the user lexicon, pausing and resets), the 8 runs with the pre-formatter's contexts and 5 runs whose calls land wherever the speaking thread happens to be. In all of them the audio was the original's, 659,067,040 samples, in the format the destination took; the texts started and ended in the original's order, 5,104 times; and the 75,234 words and bookmarks and 573,209 visual events came at the original's samples, with its IPA characters, engine phonemes and mouth shapes. Where a text's start and end and an attribute change land varies from run to run in the original (section 2.4): in 34 runs that it spoke ten times each, the port put each of the 101 at the place most of its runs had it.
 
 ## 1. TextData's text
 
@@ -121,3 +126,68 @@ With the tagged flags, a tag is copied from its backslash to its closing backsla
   - in a `\Prn=` tag whose word of 19 characters is followed by neither `=` nor `\`, where the original's pronunciation is whatever memory held (the port's is empty).
 - **`\Vce=` keys without `=`.** A key that reaches the closing backslash, or 19 characters, without an `=` is read again for ever, and TextData never returns (checked: `\Vce=Speaker\` never returns). There are two exceptions: a key starting with a comma, and a key that stops at the text's 20th character. The port ends the tag there and chooses the voice as for the keys before.
 - **The pre-formatter** (section 1.4).
+
+## 2. Speaking
+
+### 2.1 Speaking threads and sessions
+
+TextData queues the converted text with its notification sink, if it has one, and starts a **speaking thread** if none runs ([pipeline.md](pipeline.md) §8). The thread speaks the queued texts one after another, each when the last has gone through, a text queued while it runs included, and ends when none is left. The next text starts a new thread, with a new pipeline. A **session** is what one thread speaks.
+
+When the thread takes a text, it posts a message to the engine's window that the text started ([input.md](input.md) §6); at the text's end mark, a message that it is done ([pipeline.md](pipeline.md) §4.1). The window reports both to the text's notification sink, with where the audio stands then (section 2.4); a text without a sink reports nothing, but its audio and its visual events are spoken as any other's.
+
+What a text changes lasts into the next one, in the same session or the next: the engine's attributes, which the commands also set ([pipeline.md](pipeline.md) §4), the voice, the context (section 1.4) and the doubling of the word marks' offsets (section 1.2).
+
+The port's engine has no thread of its own. `Queue` converts and queues a text, `Run` runs a speaking thread over the texts queued, and `Speak` is both. Texts the original's application queues while a thread speaks, the port's caller queues before `Run`. Whether such a text joins the session in the original depends on whether the thread has ended by then, and a new session starts with new noise and filters in the synthesizer ([pipeline.md](pipeline.md) §8.5).
+
+### 2.2 The audio's formats
+
+The engine offers its destination four formats, mono PCM, in this order, and takes the first the destination accepts: 11025 Hz with 16 bits, 11025 Hz with 8 bits, 8000 Hz with 16 bits, 8000 Hz with 8 bits. If the destination accepts none, selecting the mode fails with `TTSERR_WAVEFORMATNOTSUPPORTED`. The pipeline renders at the format's sample rate ([pipeline.md](pipeline.md) §8.1), always in 16 bits; in 8 bits, each sample is the high byte of the 16-bit one plus 128.
+
+### 2.3 The queue and the window
+
+The thread doesn't write to the destination. It queues **items** for the engine's window: the audio buffers it hands over ([pipeline.md](pipeline.md) §8.4), the visual events ([parameters.md](parameters.md) §6), the word and bookmark events ([pipeline.md](pipeline.md) §4.1), and an end mark at its end ([pipeline.md](pipeline.md) §8.5). To have them written, it posts the window a message, which **flushes** the queue: the window takes the items in order, writes each buffer to the destination, and hands each event to the destination as a bookmark, which comes back when the destination plays to it. The destination of the original's recorded runs plays at once, so each event comes back before the next item; the port's sink gets the audio and the events in that order.
+
+The thread flushes the queue:
+1. after queuing a visual, word or bookmark event, at once;
+2. after a hand-over, as follows. A thread starts **prebuffering**: a hand-over then flushes only when more than six items were waiting in the queue before its buffer, and stops prebuffering. After that, every hand-over flushes;
+3. at its end, after the end mark.
+
+The thread's other messages, a text started or done (section 2.1) and an attribute changed (section 2.5), go to the window in the same order as the flushes, which it handles in the order they came.
+
+### 2.4 Where the events land
+
+An event's **position** is how much audio the destination had been given when the window reported it, in samples of the engine's format, counted from the engine's first text.
+- A visual, word or bookmark event comes back from the destination after the audio queued before it: its position is where the last hand-over before it ended ([synthesizer.md](synthesizer.md) §5.3). It is the same in every run.
+- A text's start and end, and an attribute change a tag makes, stand where the window had flushed the queue when the thread posted them. So a text is often reported done before the audio of its last word: in Peter's `Hello there, this is a test.`, at sample 20,020 of 26,070, at the last visual event, as the buffers after it waited in the queue.
+
+The port's window handles each message as soon as it is posted. The original's is the application's window: it handles a message when the application's message loop gets to it. It also flushes the queue when the destination reports free space, which the recorded runs' destination does after 10 ms without messages. So where the original reports these events varies from run to run, always at or after the port's place:
+- In the first session of an application whose loop waits for messages, the window mostly keeps up: in each of the 34 runs that the original spoke ten times, the port's place for each event was the one most of its runs had (from 5 of 10 to 10 of 10).
+- In later sessions it lags by varying amounts: in three sessions of one text, the second's end landed at the port's sample in 2 of 10 runs, and at four later ones in the others.
+- While the application makes other calls, nothing is flushed. Ten texts queued at once let the thread run ahead, so that more than six buffers gathered and prebuffering stopped at the start: in all ten runs, the texts' starts and ends landed later than the port's, mostly where they land when every hand-over flushes.
+
+### 2.5 Pitch, speed and volume
+
+A new engine has its voice's pitch and speed ([pipeline.md](pipeline.md) §4, Peter 85 Hz and 150 words a minute) and volume 65535.
+- **Pitch** is in Hz. Setting it to 0 sets the lowest, 50, and to 65535 the highest, 400. Any other value outside 50 to 400 gives `E_UNEXPECTED` (0x8000FFFF) and changes nothing.
+- **Speed** is in words a minute. 0 sets the lowest, 50, and 4294967295 the highest, 250. Any other value outside 50 to 250 gives `E_UNEXPECTED`.
+- **Volume** takes the value's low word, the left channel's, without a check. Reading it gives that word in both halves.
+
+Each change posts the window a message that the attribute changed, which it reports to the engine's notification sinks. The speaking thread takes the new value at its next step ([pipeline.md](pipeline.md) §8.3). The commands that change the pitch, speed or volume also set the engine's attribute and post the message ([pipeline.md](pipeline.md) §4), the pitch and the speed from the prosody stage and the volume from the parameter generator's, so in stream order: its place is that of section 2.4. The port tells its `AttributeChanged` function of a call's change at once, and of a command's at that place.
+
+### 2.6 Visual events
+
+Each visual event the parameter generator queues reports a phoneme symbol to the engine's notification sinks, from the data pack's `engine.json`:
+- the IPA character: `U` gives `u`, the space and the symbols without one give 0;
+- the engine phoneme, the symbol, sign-extended;
+- the hints, always 2 (`TTSNSHINT_STATEMENT`);
+- the mouth shape (`TTSMOUTH`) of the 53 symbols that have one, the space's included, or none.
+
+Visual events belong to no text: they go to the engine's notification sinks, not to a text's, and texts without a sink have them too. The port gives them to the sink of `Run`, with text −1.
+
+### 2.7 What the recorded runs don't reach
+
+- **The queue's limit.** In the original, a hand-over that finds ten items or more waiting posts a flush and waits until the window has flushed (at most 5 seconds, or until the engine is reset), then queues its buffer and flushes again. With a window that keeps up, at most seven items wait (section 2.3), so the port has no limit. Nor does it have the original's handling of a destination that has no room: the window then stops at the first buffer that doesn't fit, with 50 bytes to spare, and goes on at the next flush.
+- **Hand-overs of 0 or 2 samples.** The original's queue refuses an empty item, and the thread then waits for the window for ever; it takes an item of 4 bytes for an event. None of the 539,095 hand-overs of the recorded runs had fewer than 3 samples.
+- **An error from the destination.** The original's window resets the audio when the destination refuses a buffer (part T18). The port's `Run` stops at an error from the sink, drops the texts still queued and returns the error.
+- **ANSI notification sinks** get 0 for every visual event's IPA character. The port has one kind of sink.
+- **Symbols outside the table.** No phoneme symbol is 0 or 128 and up. For 0, the original would read the mouth shape past its table's end; the port gives no IPA character and no mouth shape for such symbols.

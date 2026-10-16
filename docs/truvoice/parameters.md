@@ -296,7 +296,7 @@ To render the current phoneme, the generator:
 4. **Attenuation.** With the cursor's attenuation `a` in dB: the targets, onsets and back targets of tracks 0, 1 and 2 go down by `a`, to 0 at the lowest;
 5. **Voice.** With a voice other than 0: track 12's target goes down to the voice's `fourthFormantLimit` at the most. Track 21's target gets `voice << 4` and track 20's `a << 4`, both by a bitwise or;
 6. if the flag to keep the earlier frames is set (the stage's step sets it after a generated segment, section 17.5), every track's earliest frame becomes its next, and the flag is cleared;
-7. **Visual event.** If the visual events are on ([pipeline.md](pipeline.md) §8.1) and the phoneme isn't `p`, and the pipeline speaks for an engine, the generator queues a visual event with the phoneme's symbol, sign-extended, for the destination. A pause is queued only if the last visual event wasn't one;
+7. **Visual event.** If the visual events are on ([pipeline.md](pipeline.md) §8.1) and the phoneme isn't `p`, and the pipeline speaks for an engine, the generator queues a visual event with the phoneme's symbol, sign-extended, for the destination, and flushes the queue ([engine.md](engine.md) §2.3). A pause is queued only if the last visual event wasn't one;
 8. renders the 22 segments, tracks 0 to 21 (section 2.4).
 
 ## 7. Resets

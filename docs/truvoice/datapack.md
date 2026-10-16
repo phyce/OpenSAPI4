@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), the normalizer's program and lists ([normalizer.md](normalizer.md) §2), and what TextData converts texts with and the modes ([engine.md](engine.md) §1). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), the normalizer's program and lists ([normalizer.md](normalizer.md) §2), what TextData converts texts with and the modes ([engine.md](engine.md) §1), and what the visual events report ([engine.md](engine.md) §2.6). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -19,6 +19,7 @@ input.json
 normalizer.json
 text.json
 modes.json
+engine.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -241,3 +242,11 @@ The strings, the punctuation and the lists' words and replacements are printable
 | `modes` | 10 objects | The engine's modes, in order: each mode's voice is its place |
 
 A **mode** has its mode information: `engine` and `mode` (GUIDs), `manufacturer`, `product`, `name`, `language` (a language ID), `dialect`, `speaker`, `style`, `gender` (0 neutral, 1 female, 2 male), `age`, `features`, `interfaces` and `engineFeatures`. Each mode has a speaker and a name.
+
+## 14. `engine.json`
+
+| Field | Values | Meaning |
+|---|---|---|
+| `visuals` | Entries `[s, i, m]` | What a visual event reports for a phoneme symbol ([engine.md](engine.md) §2.6): `s` the symbol, `i` its IPA character (0 for none) and `m` its mouth shape, 8 values of 0 to 255 in the order of `TTSMOUTH` (height, width, upturn, jaw open, upper teeth, lower teeth, tongue, lip tension), or null for none |
+
+Each symbol is a printable ASCII character, listed once, with an IPA character or a mouth shape. An IPA character is 1 to 65535 but no surrogate. A symbol not listed has neither.

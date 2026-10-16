@@ -7,6 +7,9 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/synthesizer"
 )
 
+// prebufferedItems is how many items may wait in the queue while the speaking thread prebuffers.
+const prebufferedItems = 6
+
 // The engine's output gains the speaking thread takes.
 const (
 	lowestGain  = 1
@@ -14,8 +17,8 @@ const (
 )
 
 // Start prepares the pipeline for a speaking thread of its engine: it takes the engine's sample rate and, if
-// it is 1 to 4, its output gain, has the synthesizer render, turns the visual events on and initializes the
-// pipeline (pipeline.md §8.1).
+// it is 1 to 4, its output gain, has the synthesizer render, turns the visual events on, starts prebuffering and
+// initializes the pipeline (pipeline.md §8.1).
 func (pipeline *Pipeline) Start() {
 	engine := pipeline.Engine
 	pipeline.SampleRate = engine.SampleRate
@@ -24,6 +27,7 @@ func (pipeline *Pipeline) Start() {
 	}
 	pipeline.Synthesizer.Rendering = true
 	pipeline.VisualEvents = true
+	pipeline.Prebuffering = true
 	pipeline.Initialize()
 }
 
@@ -97,9 +101,16 @@ func (pipeline *Pipeline) SetVoice(voice int32) {
 }
 
 // HandOver queues the audio buffer for the destination, after the events the control commands queued, and
-// empties the buffer (pipeline.md §8.4).
+// empties the buffer. While prebuffering, it flushes the queue only when more than six items were waiting, and
+// then stops prebuffering; after, it always does (pipeline.md §8.4).
 func (pipeline *Pipeline) HandOver() {
+	engine := pipeline.Engine
+	waiting := len(engine.Queue) - engine.Flushed
 	samples := pipeline.Synthesizer.Samples
-	pipeline.Engine.Queue = append(pipeline.Engine.Queue, Item{Samples: slices.Clone(samples)})
+	engine.Queue = append(engine.Queue, Item{Samples: slices.Clone(samples)})
 	pipeline.Synthesizer.Samples = samples[:0]
+	if !pipeline.Prebuffering || waiting > prebufferedItems {
+		engine.Flush()
+		pipeline.Prebuffering = false
+	}
 }
