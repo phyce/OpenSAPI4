@@ -18,6 +18,13 @@ var (
 	// ErrWaveFormatNotSupported is TTSERR_WAVEFORMATNOTSUPPORTED: the destination takes none of the engine's
 	// formats.
 	ErrWaveFormatNotSupported = errors.New("truvoice: wave format not supported")
+	// ErrPaused pauses the engine when a sink returns it (Engine.Pause). Run and Resume return it while the
+	// engine is paused.
+	ErrPaused = errors.New("truvoice: paused")
+	// ErrAlreadyPaused is TTSERR_ALREADYPAUSED: Pause on an engine that is paused.
+	ErrAlreadyPaused = errors.New("truvoice: already paused")
+	// ErrNotPaused is TTSERR_NOTPAUSED: Resume on an engine that isn't paused.
+	ErrNotPaused = errors.New("truvoice: not paused")
 )
 
 // Data is what the engines of one data pack share: its tables, and what the original keeps for the whole process,
@@ -92,8 +99,17 @@ type Engine struct {
 	format    Format
 	state     pipeline.Engine
 	converter *text.Converter
-	samples   int64
 	textCount int
+
+	// The window (engine.md §2.3, §5): the bytes of audio the sinks took, and of the queue's first buffer.
+	given, taken int64
+	// The speaking thread, while it runs or waits in a pause (engine.md §5.2): it runs on behind the held audio
+	// until its queue is full, and then waits for the window.
+	thread           *thread
+	running          bool
+	paused           bool
+	runningOn        bool
+	waitingForWindow bool
 
 	// AttributeChanged, when set, is told of every change of pitch, speed or volume: from the methods that set
 	// them, and from the texts in stream order.

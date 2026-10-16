@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"slices"
@@ -61,25 +62,38 @@ type goldenRuns struct {
 
 // The sets whose runs the engine's test replays.
 var engineSets = []string{"affixes", "conversion", "dictionary", "durations", "inject", "input", "letters", "lexical",
-	"lexicon", "normalizer", "parameters", "pipeline", "positions", "postlexical", "prosody", "stage", "synthesizer"}
+	"lexicon", "normalizer", "parameters", "pause", "pipeline", "positions", "postlexical", "prosody", "stage",
+	"synthesizer"}
 
 // The calls besides Speak and Queue the test makes.
-var portedCalls = []string{"Inject", "PitchGet", "PitchSet", "SpeedGet", "SpeedSet", "VolumeGet", "VolumeSet", "ModeGet"}
+var portedCalls = []string{"Inject", "PitchGet", "PitchSet", "SpeedGet", "SpeedSet", "VolumeGet", "VolumeSet", "ModeGet",
+	"Limit", "Pump", "AudioPause", "AudioResume", "AudioReset"}
 
-// recorder is a sink that keeps the audio and the events as the golden data writes them.
+// recorder is a sink that keeps the audio and the events as the golden data writes them. Like the recorded runs'
+// destination, it takes at most limit bytes in all (none when limit is negative): it pauses the engine at the
+// first buffer that doesn't fit with 50 bytes to spare, as the original's window stops there and the runs pause.
 type recorder struct {
-	pcm       []byte
-	texts     []string
-	marks     []string
-	visuals   []string
-	positions []string
-	calls     []string
-	position  int64
-	numbers   map[int]int
-	err       error
+	pcm          []byte
+	texts        []string
+	marks        []string
+	visuals      []string
+	positions    []string
+	calls        []string
+	position     int64
+	numbers      map[int]int
+	limit        int64
+	pausedBySink bool
+	err          error
 }
 
+// spareSpace is the room the original's window leaves in the destination.
+const spareSpace = 50
+
 func (recorder *recorder) Audio(data []byte) (int, error) {
+	if recorder.limit >= 0 && recorder.limit-int64(len(recorder.pcm)) <= int64(len(data))+spareSpace {
+		recorder.pausedBySink = true
+		return 0, ErrPaused
+	}
 	recorder.pcm = append(recorder.pcm, data...)
 	return len(data), nil
 }
@@ -96,9 +110,13 @@ func (recorder *recorder) Event(event Event) error {
 		recorder.positions = append(recorder.positions, fmt.Sprint("started ", number, " ", event.Sample))
 		recorder.calls = append(recorder.calls, entry("started", number))
 	case TextDone:
-		recorder.texts = append(recorder.texts, fmt.Sprint("done ", number))
-		recorder.positions = append(recorder.positions, fmt.Sprint("done ", number, " ", event.Sample))
-		recorder.calls = append(recorder.calls, entry("done", number))
+		kind := "done"
+		if event.Aborted {
+			kind = "aborted"
+		}
+		recorder.texts = append(recorder.texts, fmt.Sprint(kind, " ", number))
+		recorder.positions = append(recorder.positions, fmt.Sprint(kind, " ", number, " ", event.Sample))
+		recorder.calls = append(recorder.calls, entry(kind, number))
 	case WordPosition:
 		recorder.marks = append(recorder.marks, fmt.Sprint(event.Sample, " word ", number, " ", event.Value))
 	case Bookmark:
@@ -140,8 +158,10 @@ func entry(values ...any) string {
 }
 
 const (
-	succeeded  = "0x00000000"
-	outOfRange = "0x8000FFFF"
+	succeeded     = "0x00000000"
+	outOfRange    = "0x8000FFFF"
+	alreadyPaused = "0x80040502"
+	notPaused     = "0x80040501"
 	// PitchGet writes a WORD, and the recorded runs read a DWORD they filled with 0xDEADBEEF first.
 	pitchGetFill = 0xdead0000
 )
@@ -172,6 +192,28 @@ func (recorder *recorder) call(engine *Engine, step goldenStep) error {
 		engine.SetVolume(uint32(step.Value))
 	case "ModeGet":
 		values = append(values, strings.ToUpper(engine.ModeInfo().ModeID))
+	case "Limit":
+		recorder.limit = int64(int32(uint32(step.Value)))
+		values = values[:2]
+		values = append(values, nil)
+	case "AudioPause":
+		if recorder.pausedBySink {
+			recorder.pausedBySink = false
+		} else if engine.Pause() != nil {
+			values[2] = alreadyPaused
+		}
+		values = append(values, len(recorder.pcm))
+	case "AudioResume":
+		values = append(values, len(recorder.pcm))
+		if err := engine.Resume(recorder); errors.Is(err, ErrNotPaused) {
+			values[2] = notPaused
+		} else if err != nil && !errors.Is(err, ErrPaused) {
+			return err
+		}
+	case "AudioReset":
+		engine.Reset(recorder)
+		recorder.pausedBySink = false
+		values = append(values, len(recorder.pcm))
 	default:
 		return fmt.Errorf("call %s", step.Call)
 	}
@@ -183,7 +225,7 @@ func (recorder *recorder) call(engine *Engine, step goldenStep) error {
 func expected(golden goldenCase) (texts, marks, visuals []string) {
 	for _, event := range golden.Events {
 		switch event[1] {
-		case "started", "done":
+		case "started", "done", "aborted":
 			texts = append(texts, fmt.Sprint(event[1], " ", event[2]))
 		case "word", "mark":
 			marks = append(marks, fmt.Sprint(int64(event[0].(float64)), " ", event[1], " ", event[2], " ", uint32(event[3].(float64))))
@@ -296,7 +338,7 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 	if engine.Format() != (Format{golden.Format[0], golden.Format[1]}) {
 		return nil, fmt.Errorf("format %v, expected %v", engine.Format(), golden.Format)
 	}
-	sink := &recorder{numbers: map[int]int{}}
+	sink := &recorder{numbers: map[int]int{}, limit: -1}
 	engine.AttributeChanged = sink.attributeChanged
 	if golden.Pitch != nil {
 		engine.SetPitch(uint16(*golden.Pitch))
@@ -322,6 +364,11 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 		switch step.Call {
 		case "Run":
 			if err := engine.Run(sink); err != nil {
+				return nil, err
+			}
+			continue
+		case "Pump":
+			if err := engine.Run(sink); err != nil && !errors.Is(err, ErrPaused) {
 				return nil, err
 			}
 			continue
@@ -403,6 +450,16 @@ func compare(t *testing.T, pack *datapack.Pack, golden goldenCase) error {
 	calls := make([]string, len(golden.Calls))
 	for index, values := range golden.Calls {
 		calls[index] = entry(values...)
+		if values[0] == "call" && values[1] == "AudioReset" {
+			// The recorded runs write a call when it has returned: after the TextDataDone that AudioReset gives the
+			// texts the thread hadn't all fed itself, and before those the window gives later.
+			first := index
+			for first > 0 && strings.HasPrefix(calls[first-1], "aborted ") {
+				first--
+			}
+			copy(calls[first+1:index+1], calls[first:index])
+			calls[first] = entry(values...)
+		}
 	}
 	if index := firstDifference(sink.calls, calls); index >= 0 {
 		return fmt.Errorf("%d calls, expected %d; call %d: %s, expected %s", len(sink.calls), len(calls), index,
@@ -430,8 +487,8 @@ func at(values []string, index int) string {
 // TestEngine speaks the recorded runs of every set with the engine, each once, and compares the audio, the texts'
 // starts and ends, the words and bookmarks where they stand in the audio, the visual events where they stand, and,
 // for the runs that keep them, the calls with what they gave between the attribute changes and the texts' starts
-// and ends. It leaves out the runs that need what later parts of the port bring, the user lexicon, pronunciations,
-// pauses and resets, the calls the engine doesn't have (RealTime, QueryInterface), an empty \Vol=\ given to Inject,
+// and ends. It leaves out the runs that need what later parts of the port bring, the user lexicon and
+// pronunciations, the calls the engine doesn't have (RealTime, QueryInterface), an empty \Vol=\ given to Inject,
 // the racy runs and the runs with texts in the contexts of the pre-formatter, which isn't ported.
 func TestEngine(t *testing.T) {
 	pack := conformance.Pack(t)
@@ -523,20 +580,48 @@ func comparePositions(actual []string, runs []goldenRuns) error {
 	return nil
 }
 
+// compareLaterPositions checks that each of the original's runs gave the events in the same order, each where the
+// port has it or later, and the texts a reset aborted where the port has them.
+func compareLaterPositions(actual []string, runs []goldenRuns) error {
+	for _, run := range runs {
+		if len(run.Events) != len(actual) {
+			return fmt.Errorf("%d events, expected %d", len(actual), len(run.Events))
+		}
+		for index, event := range run.Events {
+			place := strings.LastIndexByte(actual[index], ' ')
+			value, _ := strconv.ParseInt(actual[index][place+1:], 10, 64)
+			original := int64(event[2].(float64))
+			if fmt.Sprint(event[0], " ", event[1]) != actual[index][:place] || original < value ||
+				event[0] == "aborted" && original != value {
+				return fmt.Errorf("event %d: %s, expected %v", index, actual[index], event)
+			}
+		}
+	}
+	return nil
+}
+
 // TestPositions speaks the runs of the positions set, each of which the original spoke ten times, and compares
 // where the texts' starts and ends and the attribute changes land with where most of the original's runs had them.
+// It also speaks the runs of the pause set, each of which the original spoke three times, and checks that in each,
+// the original had them where the port has them or later (compareLaterPositions).
 func TestPositions(t *testing.T) {
 	pack := conformance.Pack(t)
-	compared := 0
-	conformance.EachLine(t, func(golden goldenCase) {
-		compared++
-		sink, err := speak(t, pack, golden)
-		if err == nil {
-			err = comparePositions(sink.positions, golden.Positions)
-		}
-		if err != nil {
-			t.Errorf("%s: %v", golden.Name, err)
-		}
-	}, "positions.jsonl.gz")
-	t.Logf("%d runs compared", compared)
+	sets := []struct {
+		name    string
+		compare func([]string, []goldenRuns) error
+	}{{"positions", comparePositions}, {"pause", compareLaterPositions}}
+	for _, set := range sets {
+		compared := 0
+		conformance.EachLine(t, func(golden goldenCase) {
+			compared++
+			sink, err := speak(t, pack, golden)
+			if err == nil {
+				err = set.compare(sink.positions, golden.Positions)
+			}
+			if err != nil {
+				t.Errorf("%s: %v", golden.Name, err)
+			}
+		}, set.name+".jsonl.gz")
+		t.Logf("%s: %d runs compared", set.name, compared)
+	}
 }

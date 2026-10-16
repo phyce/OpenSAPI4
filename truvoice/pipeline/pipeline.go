@@ -75,7 +75,8 @@ type Pipeline struct {
 // Engine is the engine the pipeline speaks for (nil when it converts text to phonemes): the attributes its
 // API sets and reads, its sample rate and output gain, the texts it queued for the speaking thread, the queue
 // that carries the audio and the events to the destination in order, how many of the queue's items the engine's
-// window has flushed to the destination, and the messages the pipeline posts to the window.
+// window has flushed to the destination, the messages the pipeline posts to the window, and whether the window
+// holds the audio, which the destination doesn't take (engine.md §5.2).
 type Engine struct {
 	Pitch      uint16
 	Speed      uint32
@@ -88,6 +89,7 @@ type Engine struct {
 	Queue      []Item
 	Flushed    int
 	Messages   []Message
+	Holding    bool
 }
 
 // A QueuedText is a text the engine queued for the speaking thread: its characters, and the text its events and

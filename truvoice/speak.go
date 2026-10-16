@@ -1,6 +1,8 @@
 package truvoice
 
 import (
+	"errors"
+	"io"
 	"unicode/utf16"
 
 	"github.com/phyce/OpenSAPI4/truvoice/input"
@@ -18,8 +20,9 @@ func (engine *Engine) SpeakString(value string, sink Sink) error {
 	return engine.Speak(utf16.Encode([]rune(value)), true, text.Text, sink)
 }
 
-// Speak speaks one text, as one TextData call of the wide interface with a notification sink does, and returns when
-// the speaking thread ends: when the sink has everything of the text, and of the texts queued before it.
+// Speak speaks one text, as one TextData call of the wide interface with a notification sink does, and returns as
+// Run does: when the speaking thread ends, when the sink has everything of the text and of the texts queued before
+// it. While the engine is paused, Speak queues the text and returns ErrPaused.
 func (engine *Engine) Speak(characters []uint16, tagged bool, characterSet text.CharacterSet, sink Sink) error {
 	if _, err := engine.Queue(characters, tagged, characterSet, true); err != nil {
 		return err
@@ -71,30 +74,54 @@ func (engine *Engine) queue(converted []byte, notify bool) int {
 
 // Run runs a speaking thread, which speaks the queued texts with a new pipeline (pipeline.md §8), and gives the
 // audio and the events to the sink in stream order, as the engine's window does when the thread flushes its queue
-// (engine.md §2.3). It returns when the thread ends, after the last text. An error from the sink ends the thread at
-// once: the texts still queued are dropped, and Run returns the error.
+// (engine.md §2.3). It returns when the thread ends, after the last text. When the sink pauses the engine, Run
+// returns ErrPaused, and Resume goes on (engine.md §5). Any other error from the sink resets the engine as Reset
+// does, after which Run returns the error.
 func (engine *Engine) Run(sink Sink) error {
-	if len(engine.state.Texts) == 0 {
-		return nil
+	if engine.thread == nil && len(engine.state.Texts) > 0 {
+		engine.thread = engine.newThread()
 	}
-	thread := engine.newThread()
-	for thread.input.Turn() {
-		thread.pipeline.ApplyAttributes()
-		result := thread.pipeline.Step()
-		if result&pipeline.StepHandOver != 0 {
-			thread.pipeline.HandOver()
+	if engine.paused {
+		return ErrPaused
+	}
+	return engine.run(sink)
+}
+
+// run goes round the speaking thread's loop (pipeline.md §8.2) until it ends, or waits in a pause: at once when
+// the engine was paused before it ran, and after the hand-over that finds the queue full when the sink paused it.
+func (engine *Engine) run(sink Sink) error {
+	engine.running = true
+	defer func() { engine.running = false }()
+	if err := engine.deliver(sink); err != nil {
+		engine.reset(sink)
+		return err
+	}
+	for thread := engine.thread; thread != nil; thread = engine.thread {
+		if engine.paused && !engine.runningOn {
+			return ErrPaused
 		}
-		if result&pipeline.StepIdle != 0 {
-			thread.input.Busy = false
+		if thread.input.Turn() {
+			thread.pipeline.ApplyAttributes()
+			result := thread.pipeline.Step()
+			if result&pipeline.StepHandOver != 0 && thread.pipeline.HandOver() {
+				engine.runningOn, engine.waitingForWindow = false, true
+			}
+			if result&pipeline.StepIdle != 0 {
+				thread.input.Busy = false
+			}
+		} else {
+			engine.thread = nil
+			engine.state.Flush()
 		}
 		if err := engine.deliver(sink); err != nil {
-			engine.state.Texts = nil
-			engine.state.Queue = engine.state.Queue[:0]
+			engine.reset(sink)
 			return err
 		}
 	}
-	engine.state.Flush()
-	return engine.deliver(sink)
+	if engine.paused {
+		return ErrPaused
+	}
+	return nil
 }
 
 // thread is a speaking thread's pipeline and stages.
@@ -133,32 +160,68 @@ func (thread *thread) Reset() {
 }
 
 // deliver gives the sink what the window flushed and the messages posted since the last time, in order: each
-// message after the items flushed when it was posted (engine.md §2.3).
+// message after the items flushed when it was posted (engine.md §2.3). While the window holds the audio, it gives
+// no buffer, only the events before the first one, and every message (engine.md §5.2). After an error from the
+// sink, the messages it didn't give stay posted.
 func (engine *Engine) deliver(sink Sink) error {
 	state := &engine.state
 	messages := state.Messages
-	flushed := state.Flushed
-	defer func() {
-		state.Queue = state.Queue[:copy(state.Queue, state.Queue[flushed:])]
-		state.Flushed = 0
-		state.Messages = state.Messages[:0]
-	}()
-	for index, item := range state.Queue[:flushed] {
-		for ; len(messages) > 0 && messages[0].Queued <= index; messages = messages[1:] {
+	state.Messages = nil
+	given := 0
+	err := func() error {
+		for ; given < state.Flushed; given++ {
+			for ; len(messages) > 0 && messages[0].Queued <= given; messages = messages[1:] {
+				if err := engine.deliverMessage(messages[0], sink); err != nil {
+					messages = messages[1:]
+					return err
+				}
+			}
+			item := state.Queue[given]
+			if state.Holding && item.Event == nil {
+				break
+			}
+			whole, err := engine.deliverItem(item, sink)
+			if err != nil {
+				if whole {
+					given++
+				}
+				return err
+			}
+			if !whole {
+				break
+			}
+		}
+		for ; len(messages) > 0; messages = messages[1:] {
 			if err := engine.deliverMessage(messages[0], sink); err != nil {
+				messages = messages[1:]
 				return err
 			}
 		}
-		if err := engine.deliverItem(item, sink); err != nil {
-			return err
-		}
+		return nil
+	}()
+	state.Messages = append(messages, state.Messages...)
+	state.Queue = state.Queue[:copy(state.Queue, state.Queue[given:])]
+	state.Flushed -= given
+	if len(state.Queue) == 0 {
+		engine.waitingForWindow = false
 	}
-	for _, message := range messages {
-		if err := engine.deliverMessage(message, sink); err != nil {
-			return err
-		}
+	return err
+}
+
+// pauseWindow pauses the engine where the window gives the sink its items: the window holds the audio from the
+// next buffer, and the speaking thread runs on until its queue is full, unless it already waits for the window.
+func (engine *Engine) pauseWindow() {
+	engine.paused, engine.state.Holding = true, true
+	engine.runningOn = !engine.waitingForWindow
+}
+
+// accept handles a sink's error: ErrPaused pauses the engine, any other ends the delivery.
+func (engine *Engine) accept(err error) error {
+	if errors.Is(err, ErrPaused) {
+		engine.pauseWindow()
+		return nil
 	}
-	return nil
+	return err
 }
 
 func (engine *Engine) deliverMessage(message pipeline.Message, sink Sink) error {
@@ -167,21 +230,32 @@ func (engine *Engine) deliverMessage(message pipeline.Message, sink Sink) error 
 		engine.attributeChanged(Attribute(message.Attribute))
 	case message.Text == nil:
 	case message.Kind == pipeline.TextStarted:
-		return sink.Event(Event{Kind: TextStarted, Sample: engine.samples, Text: message.Text.Number})
+		return engine.accept(sink.Event(Event{Kind: TextStarted, Sample: engine.position(), Text: message.Text.Number}))
 	case message.Kind == pipeline.TextDone:
-		return sink.Event(Event{Kind: TextDone, Sample: engine.samples, Text: message.Text.Number})
+		return engine.accept(sink.Event(Event{Kind: TextDone, Sample: engine.position(), Text: message.Text.Number}))
 	}
 	return nil
 }
 
-func (engine *Engine) deliverItem(item pipeline.Item, sink Sink) error {
+// deliverItem gives the sink an item, and reports whether it took all of it. A buffer the sink paused in is held
+// from the bytes it took.
+func (engine *Engine) deliverItem(item pipeline.Item, sink Sink) (bool, error) {
 	if item.Event == nil {
-		data := synthesizer.AppendPCM(nil, item.Samples, engine.format.Bits)
-		engine.samples += int64(len(item.Samples))
-		_, err := sink.Audio(data)
-		return err
+		data := synthesizer.AppendPCM(nil, item.Samples, engine.format.Bits)[engine.taken:]
+		taken, err := sink.Audio(data)
+		taken = min(max(taken, 0), len(data))
+		engine.given += int64(taken)
+		if err == nil && taken < len(data) {
+			err = io.ErrShortWrite
+		}
+		if err = engine.accept(err); err != nil || taken < len(data) {
+			engine.taken += int64(taken)
+			return false, err
+		}
+		engine.taken = 0
+		return true, nil
 	}
-	event := Event{Sample: engine.samples, Text: -1, Value: item.Event.Value}
+	event := Event{Sample: engine.position(), Text: -1, Value: item.Event.Value}
 	if item.Event.Text != nil {
 		event.Text = item.Event.Text.Number
 	}
@@ -198,9 +272,14 @@ func (engine *Engine) deliverItem(item pipeline.Item, sink Sink) error {
 		event.Kind = WordPosition
 	case pipeline.Mark:
 		if item.Event.Value == 0 {
-			return nil
+			return true, nil
 		}
 		event.Kind = Bookmark
 	}
-	return sink.Event(event)
+	return true, engine.accept(sink.Event(event))
+}
+
+// position is where the audio stands: the samples the sinks took, in the engine's format.
+func (engine *Engine) position() int64 {
+	return engine.given * 8 / int64(engine.format.Bits)
 }

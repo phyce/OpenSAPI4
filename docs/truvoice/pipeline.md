@@ -296,7 +296,7 @@ The attributes keep their constructed values: the loop applies the engine's befo
 ### 8.2 The loop
 
 Each time round, the thread:
-1. waits while the engine is paused, and ends if the engine is reset (the engine's spec will say how);
+1. waits while the engine is paused, and ends if the engine is reset ([engine.md](engine.md) §5.3);
 2. runs its input side ([input.md](input.md) §6): it takes the next queued text once the last has gone through, feeds more of the text into the input ring, or pumps the ring into the escape parser, which makes the thread **busy**. Without a queued text, a thread that isn't busy ends (section 8.5);
 3. applies the attributes (section 8.3);
 4. runs a step (section 6);
@@ -324,6 +324,8 @@ When a step reports a hand-over, the thread appends the buffer's samples to the 
 
 The thread then flushes the queue, unless it is prebuffering and no more than six items were waiting before the buffer ([engine.md](engine.md) §2.3). A thread starts prebuffering, and the first hand-over that flushes ends it.
 
+When ten items or more were waiting, the thread instead flushes the queue, waits until the window has flushed all of it, at most 5 seconds, then queues the buffer and flushes again, without ending the prebuffering. So many wait only behind a destination without room or a pause ([engine.md](engine.md) §5.2).
+
 ### 8.5 The end
 
 The thread ends when it isn't busy, the current text is all fed, the scheduler is out of input, the input ring is drained and no text is queued: after a step reported idle, no input came. It queues an end mark, flushes the queue ([engine.md](engine.md) §2.3), and drops its pipeline. The next text starts a new thread with a new pipeline, so the synthesizer's noise and filters start afresh.
@@ -339,4 +341,3 @@ The thread ends when it isn't busy, the current text is all fed, the scheduler i
 - The output stage's run at the start of a step (section 6 step 2) never changes anything: its window only grows in a parameter generator's step, which ends with a run of the output stage, and the markers only grow in the synthesizer's loop of that step.
 - The constructed gain and sample rate (section 8.1): the start always replaces them, because the engine's gain is 1 to 3 and its sample rate 11025 or 8000 Hz.
 - A voice of 10 or more at the thread (section 8.3): the engine's voice is always 0 to 9.
-- The pause and the reset (section 8.2) are the engine's, and come with its next part. The queue's limit is in [engine.md](engine.md) §2.7.

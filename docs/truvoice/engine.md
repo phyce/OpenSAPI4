@@ -1,6 +1,6 @@
 # TruVoice: the engine
 
-How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking pipeline the other specs describe. This spec covers what TextData makes of a text before it queues it for the speaking thread (section 1), and how the engine speaks the texts and reports what it speaks: the speaking threads, the audio's formats, the queue to the destination, the events and where they land, and pitch, speed and volume (section 2); the modes, the enumerator, Select, ModeGet and Find (section 3); and `Inject` and the other attributes (section 4). Pausing, resets and the user lexicon come with the next part.
+How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking pipeline the other specs describe. This spec covers what TextData makes of a text before it queues it for the speaking thread (section 1), and how the engine speaks the texts and reports what it speaks: the speaking threads, the audio's formats, the queue to the destination, the events and where they land, and pitch, speed and volume (section 2); the modes, the enumerator, Select, ModeGet and Find (section 3); `Inject` and the other attributes (section 4); and pausing, resuming and resets (section 5). The user lexicon and Phoneme come with the next parts.
 
 **In short.**
 - TextData takes text, IPA and engine phonemes, from the wide interface and the ANSI one (which takes no IPA). Text is converted to code page 1252 with Windows' best fit: `ā` becomes `a`, `€` the byte 0x80, a character the code page lacks `?`. Engine phonemes go between `ESC[1I` and `ESC[0I`, and IPA is converted to engine phonemes between them.
@@ -14,12 +14,15 @@ How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking p
 - Visual events report each phoneme's IPA character and mouth shape. Pitch is 50 to 400 Hz and speed 50 to 250 words a minute.
 - The engine has ten modes, one for each voice: eight men, Peter, Sidney, Eddie, Douglas, Biff, Amos, Melvin and Alex, and two women, Wanda and Julia. Select takes a mode's GUID. Find scores each mode on the names, the speaker, the gender and the age wanted, by the caller's ranks, and gives the first with the highest score.
 - `Inject` changes the engine at once: `\Pit=\`, `\Spd=\`, `\Vol=\`, `\Chr=\`, `\Vce=Speaker=\` and `\Rst\` set its attributes, character and voice, and a string that is exactly `\gain=1\`, `\gain=2\` or `\gain=3\` the gain of the next speaking thread. The real-time attribute isn't implemented.
+- `AudioPause` holds the audio, and the speaking thread runs on until ten items wait in its queue. `AudioResume` goes on. `AudioReset` ends the thread and drops the texts queued: each text not done gets a `TextDataDone` with `TTSBNS_ABORTED`.
 
 **Exactness.** Ported from the original's code, and checked against it on every text it queued for the speaking thread in 1,367 recorded runs: the 24 runs of TextData's own set, which test every tag with values in and out of its range, word marks, tags in words, emphasis before words and at the end, spelling, voices, contexts, the characters 128 and up, best fit, IPA with every rule, engine phonemes, the ANSI interface, the character sets it refuses and sizes that leave out the NUL; and the texts of the input, normalizer and stage sets. Of their 2,376 texts, 2,361 were identical to the original's. Three were refused, as the original refused them. The other 12 have characters in the address, e-mail or spreadsheet context, whose pre-formatter isn't ported. Four runs that call `Inject` were left out here, as `Inject` changes what the conversion reads; section 4's check speaks them.
 
-Section 2 was checked against the original's speaking in 1,760 recorded runs, every run of the sets but those that need `Inject` (section 4) or the next part (the user lexicon, pausing and resets), the 8 runs with the pre-formatter's contexts and 5 runs whose calls land wherever the speaking thread happens to be. In all of them the audio was the original's, 659,067,040 samples, in the format the destination took; the texts started and ended in the original's order, 5,104 times; and the 75,234 words and bookmarks and 573,209 visual events came at the original's samples, with its IPA characters, engine phonemes and mouth shapes. Where a text's start and end and an attribute change land varies from run to run in the original (section 2.4): in 34 runs that it spoke ten times each, the port put each of the 101 at the place most of its runs had it.
+Section 2 was checked against the original's speaking in 1,760 recorded runs, every run of the sets but those that need `Inject` (section 4), pauses and resets (section 5) or the next part (the user lexicon), the 8 runs with the pre-formatter's contexts and 5 runs whose calls land wherever the speaking thread happens to be. In all of them the audio was the original's, 659,067,040 samples, in the format the destination took; the texts started and ended in the original's order, 5,104 times; and the 75,234 words and bookmarks and 573,209 visual events came at the original's samples, with its IPA characters, engine phonemes and mouth shapes. Where a text's start and end and an attribute change land varies from run to run in the original (section 2.4): in 34 runs that it spoke ten times each, the port put each of the 101 at the place most of its runs had it.
 
 Sections 3 and 4 were checked against the original's interface. The ten modes' information was the original's, every field. 4,180 recorded runs of calls on new enumerators gave the original's results, modes and positions in all 14,748 calls: 5,054 Next, 4,390 Skip, 1,008 Clone, 891 Reset, 501 Select with what ModeGet then gave, and 2,904 Find, of which 2,249 found a mode, with names in every case, NULs, the default ranks, ranks that count for nothing, and ranks that make the scores wrap, which pin each gender's and age's score. `Inject` was checked in 107 runs: the 8 runs of the other sets that call it before their texts, and 99 runs of its own set, which test the gain, every tag with values in and out of its range, empty values, `\Rst\` after changes made by `Inject`, by the attribute calls and by texts, the context it resets, and voices. In the 99 runs, the 583 calls (150 `Inject`, 107 Speak, 92 PitchGet, 85 SpeedGet, 82 VolumeGet, 22 ModeGet, 21 PitchSet, 14 SpeedSet, 10 VolumeSet) gave the original's results and values, between the original's 188 attribute changes and texts' starts and ends, in its order. In all 107, the audio was the original's. Five runs of the set were left out: the two with an empty `\Vol=\` (section 4.4), the two that call RealTime and QueryInterface, which the port doesn't have (section 4.3 gives what they gave), and one with the pre-formatter's contexts.
+
+Section 5 was checked against the original in the 146 runs of the pause set, which it spoke three times each. Their destination takes only so many bytes, from none to 310,000, so that the audio stops, and the runs pause there, make calls and resume or reset; in the four formats, with calls of every kind during the pause, texts queued during it, a second pause, the thread ending during it, resets without a pause, a pause before a text and before none, the errors, and resets in a text too long for the tokenizer to read at once and in one too long to feed at once. In all of them the audio was the original's, 9,442,640 samples; the texts started, ended and were aborted in the original's order, 289, 202 and 194 times; the 2,640 words and bookmarks and 9,271 visual events came at the original's samples; and the 416 calls besides TextData (157 `AudioPause`, 96 `AudioReset`, 66 `AudioResume`, 41 PitchSet, 17 SpeedSet, 11 VolumeSet, 8 `Inject`, 18 attribute gets and 2 ModeGet) gave the original's results, with the destination's position at each pause, resume and reset, between the original's 158 attribute changes and texts' starts and ends, in its order. Where the starts, ends and attribute changes land varies from run to run, as in section 2.4: of the 2,529 in the three runs, 2,212 landed at the port's place and 317 later, none earlier.
 
 ## 1. TextData's text
 
@@ -156,7 +159,7 @@ The thread flushes the queue:
 2. after a hand-over, as follows. A thread starts **prebuffering**: a hand-over then flushes only when more than six items were waiting in the queue before its buffer, and stops prebuffering. After that, every hand-over flushes;
 3. at its end, after the end mark.
 
-The thread's other messages, a text started or done (section 2.1) and an attribute changed (section 2.5), go to the window in the same order as the flushes, which it handles in the order they came.
+The thread's other messages, a text started or done (section 2.1) and an attribute changed (section 2.5), go to the window in the same order as the flushes, which it handles in the order they came. Behind a destination without room, and behind a pause, the window holds the audio and the queue fills (section 5.2).
 
 ### 2.4 Where the events land
 
@@ -190,9 +193,7 @@ Visual events belong to no text: they go to the engine's notification sinks, not
 
 ### 2.7 What the recorded runs don't reach
 
-- **The queue's limit.** In the original, a hand-over that finds ten items or more waiting posts a flush and waits until the window has flushed (at most 5 seconds, or until the engine is reset), then queues its buffer and flushes again. With a window that keeps up, at most seven items wait (section 2.3), so the port has no limit. Nor does it have the original's handling of a destination that has no room: the window then stops at the first buffer that doesn't fit, with 50 bytes to spare, and goes on at the next flush.
 - **Hand-overs of 0 or 2 samples.** The original's queue refuses an empty item, and the thread then waits for the window for ever; it takes an item of 4 bytes for an event. None of the 539,095 hand-overs of the recorded runs had fewer than 3 samples.
-- **An error from the destination.** The original's window resets the audio when the destination refuses a buffer (part T18). The port's `Run` stops at an error from the sink, drops the texts still queued and returns the error.
 - **ANSI notification sinks** get 0 for every visual event's IPA character. The port has one kind of sink.
 - **Symbols outside the table.** No phoneme symbol is 0 or 128 and up. For 0, the original would read the mouth shape past its table's end; the port gives no IPA character and no mouth shape for such symbols.
 
@@ -295,3 +296,59 @@ The pitch, speed, volume, character and voice reach the texts already queued at 
 - **An empty value before a number.** An empty `\Pit=`, `\Spd=` or `\Vol=` before that tag has read a number in the string reads a variable the original never set. In the recorded runs, an empty `\Vol=\` set volume 7, every time, and told the window; an empty `\Pit=\` or `\Spd=\` did nothing, as if theirs were out of range. The port leaves the attribute as it is for all three.
 - **A null string** gives `TTSERR_INVALIDCHAR` (0x80040208), and running out of memory `E_OUTOFMEMORY`. The port has no null strings.
 - **The ANSI interface's `Inject`** converts the string to UTF-16 and calls the wide one.
+
+## 5. Pause, resume and reset
+
+### 5.1 The calls
+
+The engine **claims** its destination when a speaking thread starts, unless it is paused, and releases it when the window takes the thread's end mark (section 2.3). It is **speaking** from that start until that end mark.
+
+| Call | What it does |
+|---|---|
+| `AudioPause` | Fails with `TTSERR_ALREADYPAUSED` (0x80040502) when the engine is paused. Otherwise the engine is paused: the speaking thread waits the next time round its loop ([pipeline.md](pipeline.md) §8.2), and the destination is stopped and, if the engine had claimed it, released. It returns what stopping the destination returned, and the engine is paused even when that is an error |
+| `AudioResume` | Fails with `TTSERR_NOTPAUSED` (0x80040501) when the engine isn't paused. Otherwise it claims the destination and starts it; if either fails, it returns that error and the engine stays paused. Then the engine is no longer paused, the speaking thread goes on, and the window flushes the queue. When the engine isn't speaking, the destination is released again |
+| `AudioReset` | When the engine isn't paused and hasn't claimed the destination, it stops and flushes the destination and returns what stopping it returned. Otherwise it **resets** the engine (section 5.3), and returns `S_OK`, or what stopping the destination returned when it stopped it |
+
+The port has no destination: a sink takes the audio and the events (section 2.3). `Pause`, `Resume` and `Reset` are `AudioPause`, `AudioResume` and `AudioReset`, and `Pause` and `Resume` fail with `ErrAlreadyPaused` and `ErrNotPaused`. A sink pauses the engine by returning `ErrPaused` (section 5.2) and resets it by returning any other error (section 5.4). The port's engine has no thread of its own (section 2.1), so the calls come while `Run` doesn't run, or from the sink's methods while it runs:
+- `Pause` before `Run` makes the next thread wait before its first step: `Run`, and `Speak`, return `ErrPaused`. From the sink's methods, it pauses the engine as the sink's `ErrPaused` does.
+- `Resume` gives the sink the queue and runs the thread on from its wait, and returns as `Run` does. From the sink's methods, it only ends the pause.
+- `Reset` resets the engine when it is paused or has texts to speak. It does nothing while `Run` runs, and nothing to an engine that has nothing to speak and isn't paused.
+
+### 5.2 Pausing
+
+The window gives the destination a buffer only when the destination's free space is more than the buffer's size, in bytes of the engine's format, plus 50. Otherwise it stops at that buffer, and the events after it wait too; it tries again at the next flush, or when the destination reports free space. While the engine is paused, the window gives the destination nothing. So behind a destination without room and behind a pause, the queue fills.
+
+The speaking thread runs on behind the window. A hand-over that finds ten items or more waiting in the queue flushes it, waits until the window has flushed the whole queue, at most 5 seconds, and then queues its buffer and flushes again; it doesn't end the prebuffering ([pipeline.md](pipeline.md) §8.4). The events are queued whatever the queue holds. The thread's messages, the texts started and done and the attribute changes, are reported while the window holds the audio, at the position where it stopped.
+
+In the recorded runs, the destination takes only so many bytes. The window stops at the first buffer that doesn't fit, and the thread runs on until a hand-over finds the queue full and waits. `AudioPause` comes during that wait, then the calls of the run, then `AudioResume`, which flushes the queue and so ends the wait. While the engine is paused:
+- `PitchSet`, `SpeedSet`, `VolumeSet` and `Inject` change the engine's attributes, which the thread applies at its next step (section 2.5, [pipeline.md](pipeline.md) §8.3), after `AudioResume`. The attribute calls report their changes at once.
+- `TextData` queues its text, without claiming the destination. If no thread runs, it starts one, which waits before its first step: the text's start is reported after `AudioResume`.
+
+`AudioResume` made after more than 5 seconds finds the thread past its wait: it has queued its buffer and waits the next time round its loop. The audio and the events are the same.
+
+The port's sink returns `ErrPaused` where the original's window would stop: from `Audio`, after taking none of the buffer or some of it, or from `Event`. The engine is then paused: it holds the audio from the bytes the sink took, or from the next buffer after an event, and gives the sink the events before that buffer and the thread's messages. The thread runs on until a hand-over finds ten items waiting, and `Run` returns `ErrPaused`. `Resume` gives the sink the rest of the queue and runs the thread on.
+
+### 5.3 Reset
+
+A reset stops the destination (unless the engine is paused), flushes it and releases it. The engine is no longer paused, and the speaking thread is told to end and woken from its wait, whichever it was in: the pause or the window. The reset waits for the thread to end, at most 5 seconds.
+
+The thread ends the next time round its loop, without an end mark, and posts the window a `TextDataDone` with flags 1 (`TTSBNS_ABORTED`) for each text it hasn't reported done:
+1. each text whose end is in the pipeline: each control node `i` with value 0 that carries a text ([pipeline.md](pipeline.md) §4.1), in the nodes' order;
+2. then the text it was reading, if that is all fed and its end isn't a node yet: the input ring isn't drained ([input.md](input.md) §4.1), or the command ring holds more than six bytes ([input.md](input.md) §2.1). The end of a text, `ESC[0i ESC[C` ([input.md](input.md) §5.2), takes seven.
+
+The reset itself then gives each text still queued, the one the thread was feeding and those after it, a `TextDataDone` with `TTSBNS_ABORTED`, in order, at the destination's position. It drops the window's queue: the audio and the events in it are never given. When the application's loop gets to them, after `AudioReset` has returned, the window handles the messages still posted, in order: those the thread posted before the reset, then the thread's aborted texts. So the notification sinks get, all at the destination's position: the texts the thread hadn't all fed, those whose end was in the pipeline, and the text it was reading. A text that hadn't started gets its `TextDataDone` without a `TextDataStarted`.
+
+What the texts changed stays (section 2.1). The next `TextData` starts a new thread.
+
+### 5.4 An error from the destination
+
+When the destination refuses a buffer, the window resets the engine (section 5.3). The port's sink is the destination and the notification sinks in one: an error from its `Audio` or `Event`, other than `ErrPaused`, resets the engine the same way, and `Run` returns the error. The sink gets the `TextDone` events of the reset, and its errors there are ignored.
+
+### 5.5 What the recorded runs don't reach, and where the port differs
+
+- **Destination errors.** The recorded runs' destination never refuses a buffer (section 5.4), and its `Claim`, `Start` and `Stop` never fail.
+- **A pause while the thread runs freely.** `AudioPause` made while the thread isn't waiting for the window makes it wait the next time round its loop, wherever it is then. The port's `Pause`, called from the sink's methods, lets the thread run on until its queue is full, as behind a destination without room, so where it waits doesn't depend on timing.
+- **A reset while the engine speaks without a pause.** The thread ends the next time round its loop, wherever it is then. The three recorded runs that do this are among the five that section 2's check leaves out. In the port, `Reset` does nothing while `Run` runs, and a sink resets the engine by returning an error. Between `Queue` and `Run`, `Reset` aborts each text queued, as if the thread had taken none.
+- **The end of a text alone in the command ring.** A reset finds the text the thread was reading unfinished when the command ring holds more than six bytes, so when it holds the seven of the text's end and nothing else. The recorded runs' resets find the ring empty or holding more, or holding seven with the input ring not drained, so they don't tell six from seven.
+- **The waits' 5 seconds.** Behind a destination without room and without a pause, the original's thread queues a buffer and goes on every 5 seconds. A reset that waits 5 seconds for the thread goes on without it. The port's thread waits until `Resume` or `Reset`.
+- **Part of a buffer.** The original's window gives a buffer whole. A port's sink can take part of one and return `ErrPaused`: it gets the rest after `Resume`. A sink that takes part of a buffer without an error resets the engine with `io.ErrShortWrite`.

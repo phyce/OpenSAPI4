@@ -42,3 +42,13 @@ func (stage *Stage) feedText() {
 		engine.Texts = engine.Texts[1:]
 	}
 }
+
+// endOfTextCommands is how many bytes of the command ring the end of a text's commands take but the first.
+const endOfTextCommands = 6
+
+// EndUnread reports whether the text the thread took last is all fed but its end isn't among the pipeline's nodes
+// yet, as the original's reset judges it (engine.md §5.3): the tokenizer hasn't drained the input ring, or the
+// command ring holds more than six bytes.
+func (stage *Stage) EndUnread() bool {
+	return stage.AllFed && (!stage.Drained || commandRingSize-1-stage.room() > endOfTextCommands)
+}
