@@ -282,7 +282,7 @@ The engine starts a **speaking thread** when it is given a text and none runs. T
 
 ### 8.1 Construction and start
 
-A new pipeline's attributes are pitch 85 Hz, speed 150 words a minute, volume 65535, the normal character (0) and voice 0. The voice is also the synthesizer's output-filter voice. The synthesizer's gain is 1 and its sample rate 8000 Hz. Its input side starts as if its last text were all fed ([input.md](input.md) §6). The engine's conversion of text to phonemes constructs its pipeline the same way.
+A new pipeline's attributes are pitch 85 Hz, speed 150 words a minute, volume 65535, the normal character (0) and voice 0. The voice is also the synthesizer's output-filter voice. The synthesizer's gain is 1 and its sample rate 8000 Hz. Its input side starts as if its last text were all fed ([input.md](input.md) §6). `Phoneme` constructs its pipeline the same way ([engine.md](engine.md) §6.2).
 
 The speaking thread then starts its pipeline:
 1. The sample rate becomes the engine's.

@@ -67,6 +67,10 @@ type Pipeline struct {
 	// it (pipeline.md §8.4).
 	Prebuffering bool
 
+	// Listing makes the prosody stage list the phonemes it scans in Listed, as Phoneme gives them (engine.md §6).
+	Listing bool
+	Listed  []byte
+
 	Synthesizer *synthesizer.Synthesizer
 	Engine      *Engine
 	tables      *datapack.Pipeline
@@ -161,7 +165,7 @@ const (
 	initialSpeed      = 150
 	initialVolume     = 0xffff
 	initialGain       = 1
-	initialSampleRate = 8000
+	InitialSampleRate = 8000
 )
 
 // InitialFrame is the frame the synthesizer's ring starts with.
@@ -187,12 +191,19 @@ func (pipeline *Pipeline) PostVisual(symbol byte) {
 	pipeline.Engine.Flush()
 }
 
+// List adds a symbol to the listing, if the pipeline lists.
+func (pipeline *Pipeline) List(symbol byte) {
+	if pipeline.Listing {
+		pipeline.Listed = append(pipeline.Listed, symbol)
+	}
+}
+
 // New returns a pipeline as the speaking thread constructs it on its stack: its nodes all zero, its attributes
 // pitch 85, speed 150, full volume, normal character and voice 0, gain 1, rendering at 8000 Hz. Its parameter
 // generator, which works on the pipeline, is set after.
 func New(tables *datapack.Pipeline, synthesizer *synthesizer.Synthesizer, stages Stages, engine *Engine) *Pipeline {
 	pipeline := &Pipeline{Synthesizer: synthesizer, Stages: stages, Engine: engine, tables: tables,
-		Pitch: initialPitch, Speed: initialSpeed, Volume: initialVolume, SampleRate: initialSampleRate}
+		Pitch: initialPitch, Speed: initialSpeed, Volume: initialVolume, SampleRate: InitialSampleRate}
 	synthesizer.OutputVoice = 0
 	synthesizer.Gain = initialGain
 	for index := range pipeline.nodes {

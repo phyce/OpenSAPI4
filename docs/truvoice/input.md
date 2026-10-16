@@ -2,7 +2,7 @@
 
 How L&H TruVoice (`tv_enua.dll`) reads the text it speaks into the pipeline's nodes. The speaking thread's input side takes each text the engine queued: the **feeder** writes it into the **input ring** a few lines at a time, and the thread pumps the ring through the **TextIn tokenizer**, which splits it into tokens and expands some of them, such as `£` into ` pound `. The **escape parser** reads what the tokenizer gives it a character at a time: it keeps the text's characters and turns its commands, escape sequences such as `ESC[150p`, into a stream of characters and commands in the **command ring**. In the scheduler's steps ([pipeline.md](pipeline.md) §6), the **input stage** makes the nodes of a word at a time from the command ring and hands them to the normalizer.
 
-This spec covers the escape parser (section 1), the input stage (section 2), their reset (section 3), the TextIn tokenizer (section 4), the feeder (section 5) and the speaking thread's input side (section 6).
+This spec covers the escape parser (section 1), the input stage (section 2), their reset (section 3), the TextIn tokenizer (section 4), the feeder (section 5), the speaking thread's input side (section 6) and Phoneme's (section 7).
 
 **In short.**
 - The escape parser makes line ends and tabs spaces and drops the other control characters. In text it keeps the characters below 128, drops 128 to 191, and writes 192 to 255 as one or two letters: `é` as `ay`, `ß` as `ss`, `Ñ` as `Nj`.
@@ -11,6 +11,7 @@ This spec covers the escape parser (section 1), the input stage (section 2), the
 - The tokenizer reads up to 210 tokens: words, numbers, punctuation, symbols, line ends and escape sequences. It splits words at letters next to digits and at dots: `abc123` is `abc` and `123`. It says the symbols `¢ £ ¥ § © ® ± ¶ ¼ ½ ¾ × ÷` as words, `-5` as `minus 5`, `aaa` as `AAA`, `unknown` and `unsent` as `un known` and `un sent`, `am` after a number as `AM`, and `jan` and `mar` next to a number as `January` and `March`, and puts `ESC[C` before a quoted exclamation. It keeps the hundred tokens before the one it expands, and gives the parser what the tokens before them say, or all of them at the text's end. In a mode only escape sequences turn on, it announces quoted text in German.
 - The feeder writes a text into the input ring ten lines at a time, and breaks a line of more than 200 characters at a space. It lowercases lines in capitals in a text of 41 characters or more, ends a short line after a line end with a dot, makes a line of punctuation a dot in a text of 131 characters or more, and ends the text with `ESC[0i ESC[C`.
 - The speaking thread takes the next text when the last is all fed, the tokenizer has found the input ring empty and the escape parser has run out. Until a text is all fed, the thread feeds more of it whenever the ring has room for more than 2,048 characters, and pumps the ring when the escape parser runs out.
+- Phoneme feeds its text into the input ring as it is, without the feeder's lines, and pumps the ring into the escape parser without the tokenizer, 400 characters at a time. Its tags' texts go to the escape parser directly.
 
 **Exactness.** Ported from the original's code, and checked against it by replaying every call of its escape parser and input stage recorded in 170 runs: the 88 runs of the check set (6 sentences at every mode, tagged texts, other formats and gains, attributes and an untagged tag), the tokenizer's 38 runs and the feeder's 20 (sections 4 and 5), 20 texts with every command letter, without values, with one value and with more, at the ends of their ranges and past them, the flags' commands with `[` and `]` and without, hold and continue, the defaults, letters no command has, values over 255, more than 16 values, an empty first or last value, a digit after the 16th semicolon, leading zeros, characters next to the digits among a command's values, escape characters inside a command and not followed by `[`, control characters, tabs and line ends, commands inside words, long words and runs of spaces, the characters 128 to 255 in text and in phonetic input, a long text, and two texts in one speaking thread. Each call left the speaking thread's state byte-identical to the original's: the 186,902 characters given to the parser and the 26,055 steps of the input stage. Of the parser's characters, 125,753 went into the command ring as they were and 93 of 192 and up as their letters, 33 of them as two; 64 of 128 to 191 and 7 control characters were dropped, and 383 line ends and tabs became spaces. 5,892 escape characters started 5,888 commands, 4 of them among another's values: 5,483 of 22 command letters, all but `S`, `x` and `n`, with their values in and out of their ranges, 5 of letter 0, from three values over 255 and two of 17 values, and 400 of 13 letters that are no command; the one digit for the 17th value came. In the runs of long words the command ring ran out of room: 41 commands and 6,328 characters weren't written. The input stage made 125,396 nodes, 119,545 of them characters and 5,851 control nodes, 4,811 of them words and 226 bookmarks; 6 of the 17 `[` and `]` it read became phonetic input commands; it stopped 6,005 words at ten nodes and found the ring empty 3,284 times.
 
@@ -76,7 +77,7 @@ At the letter, the command has `n` values: none when the value the digits go to 
 | `a` | `n` < 2 | `v` is kept from 0 to 16. The attenuation setting becomes `v` | `v` |
 | `c` | `n` < 2 | `v` outside 0 to 2 becomes 0 | `v` |
 | `f` | `n` < 2 | `v` is kept from 0 to 9. The filter setting becomes `v`, and the rate index setting at most the data pack's `filterRates[v]` | `v` and the rate index setting |
-| `g`, `s` | `n` < 2 | `v` below 0 becomes 100, 0 becomes 1, and above 255 255 (section 7) | `v` |
+| `g`, `s` | `n` < 2 | `v` below 0 becomes 100, 0 becomes 1, and above 255 255 (section 8) | `v` |
 | `i`, `n`, `z` | `n` < 5 | `v` below 0 becomes 1, and `n` 1 | The `n` values |
 | `l` | `v` isn't empty, `n` < 3 and `v` < 22 | The second value, empty, becomes the generated frame's level of track `v` ([datapack.md](datapack.md) `generatedFrame`), and otherwise at most the data pack's `levelLimits[v]`. The track level setting `v` becomes it | `v` and the second value |
 | `p` | `n` < 2 | `v` below 0 becomes 42 and the pitch setting 84 Hz; `v` below 25 becomes 25 and the pitch 50 Hz; otherwise `v` is at most 200 and the pitch `2v` Hz | `v` |
@@ -179,7 +180,7 @@ So `ab.` before a space is the token `ab`, said with `.`, and `ab..` the token `
 3. takes the characters up to one with class 0x04: `ESC[`, they and that letter make a token at the end of the list, an escape sequence, whose length is its number of characters;
 4. takes the next character: if it is the escape character, goes back to step 1; otherwise it is the character after the escape sequences.
 
-If the ring runs out on the way, there is no character after them. So an escape character followed by anything but `[` is dropped, and the escape parser only ever gets escape sequences that begin with `ESC[`. Escape sequences of more than 20 characters crash the original (section 7).
+If the ring runs out on the way, there is no character after them. So an escape character followed by anything but `[` is dropped, and the escape parser only ever gets escape sequences that begin with `ESC[`. Escape sequences of more than 20 characters crash the original (section 8).
 
 ### 4.3 Splits
 
@@ -249,7 +250,7 @@ After a line has ended, a new line starts, unless that was the tenth. When the t
 
 A line is in **capitals** unless it has a lowercase letter `a` to `z`, a character from 128 to 255, or the escape sequence `ESC[1I` (exactly: it starts phonetic input). It is **punctuation** unless it has a letter `A` to `Z` or `a` to `z`, a digit, a symbol (section 4.1), a character from 192 to 255 or an escape sequence.
 
-When the line has no space after its first character at step 2, the original looks for one before the line, and loses its way (section 7). The port ends the line where it is.
+When the line has no space after its first character at step 2, the original looks for one before the line, and loses its way (section 8). The port ends the line where it is.
 
 ### 5.2 Writing lines
 
@@ -275,7 +276,23 @@ A text stays first in the engine's queue until it is all fed. A step that report
 
 **Exactness.** Ported from the original's code, and checked against it in 1,005 recorded runs: the 923 runs of the stages after the input side ([lexical.md](lexical.md), [prosody.md](prosody.md), [parameters.md](parameters.md)), and the 82 runs of sections 1 to 5 but the check set's. Go speaking threads ran each from the texts the original's took, with the Go normalizer ([normalizer.md](normalizer.md)) and every stage after it, and nothing taken from the recordings. Before each of the 894,238 steps, after the thread's input side had fed and pumped, the speaking thread's whole state was the original's. The 1,009 threads took the 1,080 texts where the original's did, 40 of them given without a notification sink, and ended where they did; they fed more of a text 68 times and pumped the input ring 3,660 times, 945 of them before the text was all fed, and found no text 1,009 times while busy. The texts started and ended in the original's order, and the audio was the original's PCM in every run, with every word and bookmark at the original's sample.
 
-## 7. What the recorded runs don't reach
+## 7. Phoneme's input side
+
+Phoneme ([engine.md](engine.md) §6) runs a pipeline of its own, without a speaking thread. It reads a text in one of two ways.
+
+**As it is.** The text's characters go into the input ring as they are, without the feeder's lines, as with the registry setting of section 5.2:
+- **Feeding** writes the text's characters from the feeder's position while the ring has room for 10, a right single quote as an apostrophe. Once the position has reached the text's end, it writes the end of text, `ESC[0i ESC[C` and two spaces, with the room checks of section 5.2, and the text is all fed. If the position moved on, the input ring is no longer drained.
+- **Pumping** gives the escape parser the characters of the input ring as they are, without the tokenizer, up to 400 of them or until the ring is drained (section 4.1). When it gave any, the scheduler is no longer out of input ([pipeline.md](pipeline.md) §6).
+
+The text starts with feeding from its start, then a pump. Then, each time round the loop, before a step of the scheduler:
+1. if the text isn't all fed and the input ring has room for more than 2,048 characters, it is fed more;
+2. otherwise, if the scheduler is out of input and the input ring isn't drained, the ring is pumped.
+
+The loop ends after a step that reports idle.
+
+**A string.** The characters of a string go to the escape parser directly, without the input ring, and the end of text follows them; the scheduler is no longer out of input. (The original stops at a NUL, and gives nothing more for a string without characters; Phoneme gives it neither.)
+
+## 8. What the recorded runs don't reach
 
 - An escape character followed by anything but `[` at the escape parser: the tokenizer drops them, and passes only escape sequences that begin with `ESC[` (section 4.2). An escape character among a command's values starts a new command: the runs have four. One followed by anything but `[` among a command's values would be dropped with that character.
 - Escape sequences of more than 20 characters, counting the escape character: the tokenizer copies a sequence onto the stack, into 20 bytes, with a NUL after it, and with 21 or more the original crashes. The port reads them whole. So a value's digits never go past the 17th value, and the 8-bit count of semicolons never wraps.

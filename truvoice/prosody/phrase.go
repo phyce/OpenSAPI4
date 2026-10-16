@@ -69,6 +69,7 @@ func (stage *Stage) ScanPhrase() int32 {
 		if node.Type() == pipeline.Phoneme && stage.hasClass(last, phoneme) {
 			shared.InPhrase = true
 			shared.Pending++
+			stage.listPhoneme(node, last)
 		} else {
 			stage.scanNode(node, last)
 		}
@@ -93,6 +94,26 @@ func (stage *Stage) ScanPhrase() int32 {
 	return stage.ScanResult
 }
 
+// listPhoneme lists a phoneme the scan counts, but a pause, and a vowel's stress after it: 2 for stress 1, 1 for
+// stress 2 or 3 (engine.md §6.2).
+func (stage *Stage) listPhoneme(node *pipeline.Node, symbol byte) {
+	if !stage.Pipeline.Listing {
+		return
+	}
+	if symbol != ' ' {
+		stage.Pipeline.List(symbol)
+	}
+	if !stage.hasClass(symbol, vowel) {
+		return
+	}
+	switch stress(node) {
+	case 1:
+		stage.Pipeline.List('2')
+	case 2, 3:
+		stage.Pipeline.List('1')
+	}
+}
+
 // scanNode notes a node of the scan that isn't a phoneme.
 func (stage *Stage) scanNode(node *pipeline.Node, symbol byte) {
 	shared := stage.Shared
@@ -115,6 +136,7 @@ func (stage *Stage) scanNode(node *pipeline.Node, symbol byte) {
 			}
 			stage.WordMarks[stage.Words] = node
 			stage.Words++
+			stage.Pipeline.List(symbol)
 		} else if stage.hasClass(symbol, phraseBreak) {
 			stage.endPhrase(node, symbol)
 		}
@@ -130,6 +152,7 @@ func (stage *Stage) endPhrase(node *pipeline.Node, symbol byte) {
 	case symbol == '.' || symbol == '?' || symbol == '!':
 		stage.ScanResult = sentenceEnd
 		stage.SentencePhonemes = stage.Phonemes
+		stage.Pipeline.List(symbol)
 		for previous := stage.Pipeline.Previous(node); stage.inClass(previous, -syllabic); previous = stage.Pipeline.Previous(previous) {
 			if previous.Type() == pipeline.Phoneme && stage.hasClass(previous.Symbol(), phoneme) {
 				stage.Phonemes--

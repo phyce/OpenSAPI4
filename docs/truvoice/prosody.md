@@ -130,6 +130,8 @@ The scan's result is 0 while the window runs out before the phrase's end. Otherw
 
 The rate is the prosody cursor's ([pipeline.md](pipeline.md) §3.1). The phrase limit becomes 70 at the start of a stage's run while the **short phrase** flag is set ([pipeline.md](pipeline.md) §1): the escape parser sets it as text comes in while more than 608 nodes are free, unless prosody off is set ([input.md](input.md) §1.1); prosody clears it as it walks a phrase (section 5.1), and the parameter generator once it is more than 64 frames ahead of the synthesizer ([parameters.md](parameters.md) §17.2).
 
+**The listing.** A pipeline that lists its phonemes, as Phoneme's does ([engine.md](engine.md) §6.2), lists them as the scan comes to them: at step 4.2, the phoneme's symbol unless it is a space, and after a symbol in class vowel its stress, `2` for stress 1 and `1` for stress 2 or 3; at a word mark that becomes one of the phrase's, its symbol, `%` or `&`; and at `.`, `?` or `!` with result 3, its symbol. A phrase broken off leaves its nodes from the last node on to the next phrase's scan, which lists them again: so the listing has `%%` or `&&` where a long phrase was broken off.
+
 ### 3.3 Breaks
 
 Placing the breaks, with an end symbol:

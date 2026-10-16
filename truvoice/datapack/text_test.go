@@ -20,6 +20,10 @@ func TestText(t *testing.T) {
 	if _, found := text.BestFit[0x4e00]; found {
 		t.Error("best fit maps U+4E00")
 	}
+	if text.Wide['A'] != 'A' || text.Wide[0x80] != 0x20ac || text.Wide[0x81] != 0x81 || text.Wide[0x83] != 0x192 || text.Wide[0x98] != 0x2dc ||
+		text.Wide[0x9f] != 0x178 || text.Wide[0xa0] != 0xa0 || text.Wide[0xff] != 0xff || text.Wide[0] != 0 {
+		t.Errorf("wide %x", text.Wide[0x80:0xa0])
+	}
 	rules := map[string]string{}
 	for _, rule := range text.IPARules {
 		rules[string(utf16.Decode(rule.Sequence))] = rule.Phonemes

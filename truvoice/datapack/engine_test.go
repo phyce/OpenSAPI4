@@ -3,6 +3,7 @@ package datapack_test
 import (
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/truvoice/internal/conformance"
@@ -35,6 +36,15 @@ func TestEngine(t *testing.T) {
 	if listed != 64 {
 		t.Errorf("%d symbols listed", listed)
 	}
+	ipa := map[byte]string{}
+	for symbol, units := range engine.IPA {
+		if units != nil {
+			ipa[byte(symbol)] = string(utf16.Decode(units))
+		}
+	}
+	if len(ipa) != 64 || ipa[' '] != " " || ipa['U'] != "ju" || ipa['5'] != "aɪɹ" || ipa['l'] != "l̩" || ipa['~'] != "ŋ" || ipa['Q'] != "" {
+		t.Errorf("IPA strings %q", ipa)
+	}
 }
 
 func TestDamagedEngine(t *testing.T) {
@@ -47,6 +57,11 @@ func TestDamagedEngine(t *testing.T) {
 		{`{"visuals":[["A",101,[1,2,3]]]}`, "has 3 values"},
 		{`{"visuals":[["A",101,[1,2,3,4,5,6,7,256]]]}`, "mouth value 256"},
 		{`{"visuals":[["A",0,null]]}`, "neither"},
+		{`{"ipa":[["A","e"],["A","e"]]}`, `ipa[1]: symbol "A"`},
+		{`{"ipa":[["\u007f","e"]]}`, "is not a new printable"},
+		{`{"ipa":[["A",""]]}`, `"" is not a string`},
+		{`{"ipa":[["A","a\u0000"]]}`, "is not a string"},
+		{`{"ipa":[["A","😀"]]}`, "is not a string"},
 	}
 	for _, test := range tests {
 		if _, err := writePack(t, "engine.json", []byte(test.content)).LoadEngine(); err == nil || !strings.Contains(err.Error(), test.message) {

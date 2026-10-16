@@ -134,16 +134,21 @@ type thread struct {
 }
 
 func (engine *Engine) newThread() *thread {
-	data := engine.data
+	thread := engine.data.newThread(&engine.state, engine.state.SampleRate)
+	thread.pipeline.Start()
+	return thread
+}
+
+// newThread makes a pipeline and its stages for an engine's state, or for none.
+func (data *Data) newThread(state *pipeline.Engine, sampleRate int) *thread {
 	thread := &thread{}
-	thread.pipeline = pipeline.New(data.pipeline, synthesizer.New(data.synthesizer, engine.state.SampleRate), thread, &engine.state)
+	thread.pipeline = pipeline.New(data.pipeline, synthesizer.New(data.synthesizer, sampleRate), thread, state)
 	thread.pipeline.Generator = parameters.New(data.parameters, data.vowels, thread.pipeline)
 	thread.input = input.New(data.input, thread.pipeline)
 	thread.normalizer = normalizer.New(data.normalizer, data.parameters, thread.pipeline)
 	thread.lexical = lexical.New(data.lexical, data.dictionary, data.parameters, thread.pipeline)
 	thread.prosody = prosody.New(data.prosody, data.parameters, thread.pipeline)
 	thread.prosody.Shared = data.shared
-	thread.pipeline.Start()
 	return thread
 }
 

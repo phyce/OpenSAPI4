@@ -40,6 +40,7 @@ type goldenCase struct {
 	Inject       string          `json:"inject"`
 	Lexicon      json.RawMessage `json:"lexicon"`
 	Racy         bool            `json:"racy"`
+	Unstable     bool            `json:"unstable"`
 	PreFormatter *bool           `json:"preFormatter"`
 	Accept       string          `json:"accept"`
 	Pitch        *int64          `json:"pitch"`
@@ -62,12 +63,12 @@ type goldenRuns struct {
 
 // The sets whose runs the engine's test replays.
 var engineSets = []string{"affixes", "conversion", "dictionary", "durations", "inject", "input", "letters", "lexical",
-	"lexicon", "normalizer", "parameters", "pause", "pipeline", "positions", "postlexical", "prosody", "stage",
+	"lexicon", "normalizer", "parameters", "pause", "phoneme", "pipeline", "positions", "postlexical", "prosody", "stage",
 	"synthesizer"}
 
 // The calls besides Speak and Queue the test makes.
 var portedCalls = []string{"Inject", "PitchGet", "PitchSet", "SpeedGet", "SpeedSet", "VolumeGet", "VolumeSet", "ModeGet",
-	"Limit", "Pump", "AudioPause", "AudioResume", "AudioReset"}
+	"Limit", "Pump", "AudioPause", "AudioResume", "AudioReset", "Phoneme"}
 
 // recorder is a sink that keeps the audio and the events as the golden data writes them. Like the recorded runs'
 // destination, it takes at most limit bytes in all (none when limit is negative): it pauses the engine at the
@@ -158,10 +159,13 @@ func entry(values ...any) string {
 }
 
 const (
-	succeeded     = "0x00000000"
-	outOfRange    = "0x8000FFFF"
-	alreadyPaused = "0x80040502"
-	notPaused     = "0x80040501"
+	succeeded       = "0x00000000"
+	outOfRange      = "0x8000FFFF"
+	alreadyPaused   = "0x80040502"
+	notPaused       = "0x80040501"
+	invalidArgument = "0x80070057"
+	// The size Phoneme leaves when it fails: the recorded runs fill the SDATA with 0xDEADBEEF first.
+	unwrittenSize = 0xdeadbeef
 	// PitchGet writes a WORD, and the recorded runs read a DWORD they filled with 0xDEADBEEF first.
 	pitchGetFill = 0xdead0000
 )
@@ -214,6 +218,26 @@ func (recorder *recorder) call(engine *Engine, step goldenStep) error {
 		engine.Reset(recorder)
 		recorder.pausedBySink = false
 		values = append(values, len(recorder.pcm))
+	case "Phoneme":
+		tagged := step.Flags == nil || *step.Flags == text.Tagged
+		characterSet := text.CharacterSet(step.CharacterSet)
+		var output []byte
+		var err error
+		if step.ANSI {
+			output, err = engine.PhonemeANSI(step.bytes(), tagged, characterSet)
+		} else {
+			var phonemes []uint16
+			phonemes, err = engine.Phoneme(step.units(), tagged, characterSet)
+			for _, unit := range phonemes {
+				output = append(output, byte(unit), byte(unit>>8))
+			}
+		}
+		if errors.Is(err, ErrInvalidArgument) {
+			values[2] = invalidArgument
+			values = append(values, unwrittenSize, nil)
+		} else {
+			values = append(values, len(output), hex.EncodeToString(output))
+		}
 	default:
 		return fmt.Errorf("call %s", step.Call)
 	}
@@ -387,21 +411,9 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 		characterSet := text.CharacterSet(step.CharacterSet)
 		var queued int
 		if step.ANSI {
-			characters := []rune(*step.Text)
-			data := make([]byte, len(characters), len(characters)+1)
-			for index, character := range characters {
-				data[index] = byte(character)
-			}
-			if !step.Uncounted {
-				data = append(data, 0)
-			}
-			queued, err = engine.QueueANSI(data, tagged, characterSet, !step.Sinkless)
+			queued, err = engine.QueueANSI(step.bytes(), tagged, characterSet, !step.Sinkless)
 		} else {
-			characters := utf16.Encode([]rune(*step.Text))
-			if !step.Uncounted {
-				characters = append(characters, 0)
-			}
-			queued, err = engine.Queue(characters, tagged, characterSet, !step.Sinkless)
+			queued, err = engine.Queue(step.units(), tagged, characterSet, !step.Sinkless)
 		}
 		if err != nil && !step.Tolerant {
 			return nil, fmt.Errorf("step %d: %v", number, err)
@@ -417,6 +429,28 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 		}
 	}
 	return sink, engine.Run(sink)
+}
+
+// bytes is the step's text for the ANSI interface, with its NUL unless it is uncounted.
+func (step goldenStep) bytes() []byte {
+	characters := []rune(*step.Text)
+	data := make([]byte, len(characters), len(characters)+1)
+	for index, character := range characters {
+		data[index] = byte(character)
+	}
+	if !step.Uncounted {
+		data = append(data, 0)
+	}
+	return data
+}
+
+// units is the step's text for the wide interface, with its NUL unless it is uncounted.
+func (step goldenStep) units() []uint16 {
+	characters := utf16.Encode([]rune(*step.Text))
+	if !step.Uncounted {
+		characters = append(characters, 0)
+	}
+	return characters
 }
 
 func compare(t *testing.T, pack *datapack.Pack, golden goldenCase) error {
@@ -461,6 +495,9 @@ func compare(t *testing.T, pack *datapack.Pack, golden goldenCase) error {
 			calls[first] = entry(values...)
 		}
 	}
+	if golden.Unstable {
+		sink.calls, calls = withoutPhonemes(sink.calls), withoutPhonemes(calls)
+	}
 	if index := firstDifference(sink.calls, calls); index >= 0 {
 		return fmt.Errorf("%d calls, expected %d; call %d: %s, expected %s", len(sink.calls), len(calls), index,
 			at(sink.calls, index), at(calls, index))
@@ -475,6 +512,19 @@ func firstDifference(actual, expected []string) int {
 		}
 	}
 	return -1
+}
+
+// withoutPhonemes leaves Phoneme's output out of the calls, but its size: in an unstable run, the original reads
+// past the listing, whatever memory holds there.
+func withoutPhonemes(calls []string) []string {
+	kept := make([]string, len(calls))
+	for index, call := range calls {
+		if strings.HasPrefix(call, "call Phoneme ") {
+			call = call[:strings.LastIndexByte(call, ' ')]
+		}
+		kept[index] = call
+	}
+	return kept
 }
 
 func at(values []string, index int) string {

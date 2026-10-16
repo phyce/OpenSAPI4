@@ -145,17 +145,30 @@ func (converter *Converter) finish(queued []byte, characterSet CharacterSet, fla
 	return queued
 }
 
-// ansi converts code units to code page 1252 as WideCharToMultiByte does: best fit, '?' for the rest, NUL to NUL.
 func (converter *Converter) ansi(characters []uint16) []byte {
+	return ToANSI(converter.tables, characters)
+}
+
+// ToANSI converts code units to code page 1252 as WideCharToMultiByte does: best fit, '?' for the rest, NUL to NUL.
+func ToANSI(tables *datapack.Text, characters []uint16) []byte {
 	converted := make([]byte, len(characters))
 	for index, character := range characters {
-		switch value, found := converter.tables.BestFit[character]; {
+		switch value, found := tables.BestFit[character]; {
 		case character == 0:
 		case found:
 			converted[index] = value
 		default:
 			converted[index] = '?'
 		}
+	}
+	return converted
+}
+
+// ToWide converts code page 1252 to code units as MultiByteToWideChar does.
+func ToWide(tables *datapack.Text, text []byte) []uint16 {
+	converted := make([]uint16, len(text))
+	for index, character := range text {
+		converted[index] = tables.Wide[character]
 	}
 	return converted
 }
