@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/phyce/OpenSAPI4/whistler"
 )
 
 func TestWriter(t *testing.T) {
@@ -16,7 +14,7 @@ func TestWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer := NewWriter(file, whistler.Format{SampleRate: 22050, Bits: 16})
+	writer := NewWriter(file, Format{SampleRate: 22050, Bits: 16})
 	for _, piece := range [][]byte{{1, 2, 3, 4}, {5, 6}} {
 		if taken, err := writer.Audio(piece); err != nil || taken != len(piece) {
 			t.Fatalf("Audio took %d, %v", taken, err)
@@ -43,7 +41,7 @@ func TestWriterWithoutAudio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer := NewWriter(file, whistler.Format{SampleRate: 8000, Bits: 16})
+	writer := NewWriter(file, Format{SampleRate: 8000, Bits: 16})
 	if err := writer.Finish(); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +57,7 @@ func TestWriterStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writer := NewWriter(file, whistler.Format{SampleRate: 8000, Bits: 8})
+	writer := NewWriter(file, Format{SampleRate: 8000, Bits: 8})
 	if err := writer.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +69,7 @@ func TestWriterStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if expected := Header(whistler.Format{SampleRate: 8000, Bits: 8}, 0); !bytes.Equal(written, expected) {
+	if expected := Header(Format{SampleRate: 8000, Bits: 8}, 0); !bytes.Equal(written, expected) {
 		t.Errorf("wrote %x, expected %x", written, expected)
 	}
 }

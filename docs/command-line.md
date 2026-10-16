@@ -6,7 +6,7 @@ A release has three programs and the voice data:
 |---|---|
 | `opensapi4` | Speaks into WAV files, as a stream over standard input and output, or as an HTTP server |
 | `sapi4out`, `sapi4limits` | Drop-in replacements for the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4) |
-| `voices/` | The voice data. Keep it next to the programs |
+| `voices/` | The voice data: the Microsoft voices' `microsoft` folder and TruVoice's `truvoice` folder. Keep it next to the programs |
 
 The programs look for the voice data in the folder named by the `OPENSAPI4_VOICES` environment variable, or else in the `voices` folder next to the program. `opensapi4` also takes `-voices <folder>`.
 
@@ -22,21 +22,23 @@ The text comes from the arguments, or from standard input when there are none. T
 
 | Flag | |
 |---|---|
-| `-voice` | The voice, `Mary` by default. `opensapi4 voices` lists them. The name may be in any case |
+| `-voice` | The voice, `Mary` by default. `opensapi4 voices` lists them. The name may be in any case, and a TruVoice voice may be given by its speaker, such as `Peter` |
 | `-pitch` | The pitch in Hz, in the voice's range. 0 is the lowest |
 | `-speed` | The speed in words per minute, in the voice's range. 0 is the slowest |
 | `-volume` | 0 to 65535, the default |
-| `-rate`, `-bits` | Another format: 22050 Hz voices also give 8000 and 16000 Hz, 8000 Hz voices 11025 Hz, each in 16 or 8 bits |
+| `-rate`, `-bits` | Another format: 22050 Hz voices also give 8000 and 16000 Hz, 8000 Hz voices 11025 Hz, TruVoice's 11025 Hz voices 8000 Hz, each in 16 or 8 bits |
 | `-untagged` | Read `\` as text, not as the start of a tag |
 | `-ipa` | The text is IPA, such as `həˈloʊ` |
-| `-inject` | Tags applied before the text: `\Pit=n\`, `\Spd=n\`, `\Vol=n\`, `\Rst\` |
+| `-inject` | Tags applied before the text: `\Pit=n\`, `\Spd=n\`, `\Vol=n\`, `\Rst\`, and for TruVoice also `\Chr=\` and `\Vce=Speaker=name\` |
 | `-output` | The WAV file to write; `-` for standard output |
 | `-pcm` | Write raw PCM, without the WAV header |
 | `-json` | The request as JSON (see [Requests](#requests)): inline, a file, or `-` for standard input. Flags given with it override its fields |
 
 Flags may come before or after the text. After `--`, everything is text.
 
-The texts may have tags, as in SAPI 4: `\Pau=500\` pauses for half a second, `\Pit=150\` and `\Spd=200\` change the pitch and speed, `\Emp\` stresses the next word, `\Chr="Whisper"\` whispers, `\Mrk=n\` sets a bookmark, `\Rst\` resets everything.
+The texts may have tags, as in SAPI 4: `\Pau=500\` pauses for half a second, `\Pit=150\` and `\Spd=200\` change the pitch and speed, `\Emp\` stresses the next word, `\Chr="Whisper"\` whispers, `\Mrk=n\` sets a bookmark, `\Rst\` resets everything. The TruVoice voices take the same tags, `\Chr="Monotone"\` too, and `\Vce=Speaker=Julia\` switches to another of them and `\Prn=word=pronunciation\` pronounces a word.
+
+Each request is spoken as by a new process of the original: what one request's tags change doesn't last into the next.
 
 ## opensapi4 voices
 
@@ -45,7 +47,7 @@ opensapi4 voices
 opensapi4 voices -json
 ```
 
-Lists the voices with their sample rate, pitch and speed (default, minimum and maximum). With `-json`, every detail, as `GET /voices` gives it.
+Lists the voices with their speaker, sample rate, pitch and speed (default, minimum and maximum): the Microsoft voices, then TruVoice's. With `-json`, every detail, as `GET /voices` gives it; `engine` is `microsoft` or `truvoice`.
 
 ## Requests
 
@@ -113,7 +115,7 @@ Reads requests from standard input, one JSON object a line, and speaks them in o
   - `textStarted`, `textDone`;
   - `word`: `offset` is where the word starts in the text, in UTF-16 code units (JavaScript string indexes);
   - `bookmark`: `bookmark` is the `\Mrk=n\` number;
-  - `visual`: the phone starting there, as `ipa` and the engine's `phoneme`, and the `mouth` shape, each value 0 to 255.
+  - `visual`: the phone starting there, as `ipa` and the engine's `phoneme`, and the `mouth` shape, each value 0 to 255. TruVoice's visual events belong to no text, so their `text` is -1, and some of its phonemes have no `ipa` or no `mouth`.
 - **`done`** ends the request, with the number of samples. With `output`, it also has the file's name.
 - **`error`** ends a request that can't be spoken, with `error`, the reason. The stream goes on with the next request.
 
@@ -151,7 +153,7 @@ sapi4out <voice> <pitch> <speed> <text>
 sapi4limits [<voice>]
 ```
 
-The same arguments, output and WAV files as the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4), so programs that call those can call these instead:
+The same arguments, output and WAV files as the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4), so programs that call those can call these instead. For now they speak with the Microsoft voices only:
 
 - `sapi4out` writes a WAV file in the current folder, named with 16 random letters and no extension, and prints its name. A voice name that isn't exactly one of the voices gives Mary. Pitch and speed outside the voice's range give its maximum.
 - `sapi4limits` lists the voices, or with a voice, prints its default, minimum and maximum pitch and speed.

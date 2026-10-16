@@ -152,6 +152,8 @@ What a text changes lasts into the next one, in the same session or the next: th
 
 The port's engine has no thread of its own. `Queue` converts and queues a text, `Run` runs a speaking thread over the texts queued, and `Speak` is both. Texts the original's application queues while a thread speaks, the port's caller queues before `Run`. Whether such a text joins the session in the original depends on whether the thread has ended by then, and a new session starts with new noise and filters in the synthesizer ([pipeline.md](pipeline.md) §8.5).
 
+Some of what lasts the original keeps for the whole process, so that every engine's texts change it: the prosody stage's shared state ([prosody.md](prosody.md) §3.1), the voice `\Rst\` goes back to (section 1.3) and the user lexicon (section 7). The port keeps it on `Data`, which every engine made from it shares. `Data.NewProcess` gives a `Data` with the same tables and the rest as a new process starts with, its user lexicon a copy of the words the old one has, as a new process reads the file the old one saved.
+
 ### 2.2 The audio's formats
 
 The engine offers its destination four formats, mono PCM, in this order, and takes the first the destination accepts: 11025 Hz with 16 bits, 11025 Hz with 8 bits, 8000 Hz with 16 bits, 8000 Hz with 8 bits. If the destination accepts none, selecting the mode fails with `TTSERR_WAVEFORMATNOTSUPPORTED`. The pipeline renders at the format's sample rate ([pipeline.md](pipeline.md) §8.1), always in 16 bits; in 8 bits, each sample is the high byte of the 16-bit one plus 128.

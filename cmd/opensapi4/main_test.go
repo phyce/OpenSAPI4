@@ -19,7 +19,6 @@ import (
 
 	opensapi4 "github.com/phyce/OpenSAPI4"
 	"github.com/phyce/OpenSAPI4/internal/wave"
-	"github.com/phyce/OpenSAPI4/whistler"
 )
 
 func TestParseFlags(t *testing.T) {
@@ -78,15 +77,17 @@ func TestDecodeRequest(t *testing.T) {
 
 // fakeSpeech feeds a messages writer as an engine would.
 func fakeSpeech(writer *messages) error {
-	if err := writer.sendFormat(whistler.Format{SampleRate: 8000, Bits: 16}); err != nil {
+	if err := writer.sendFormat(opensapi4.Format{SampleRate: 8000, Bits: 16}); err != nil {
 		return err
 	}
-	writer.Event(whistler.Event{Kind: whistler.TextStarted})
+	writer.Event(opensapi4.Event{Kind: opensapi4.TextStarted})
 	writer.Audio([]byte{1, 2, 3, 4})
-	writer.Event(whistler.Event{Kind: whistler.WordPosition, Sample: 2, Value: 12})
-	writer.Event(whistler.Event{Kind: whistler.Visual, Sample: 2})
+	writer.Event(opensapi4.Event{Kind: opensapi4.WordPosition, Sample: 2, Value: 12})
+	writer.Event(opensapi4.Event{Kind: opensapi4.Visual, Sample: 2, Text: -1, Visual: opensapi4.VisualPhoneme{Engine: 'h', IPA: 'h'}})
+	writer.Event(opensapi4.Event{Kind: opensapi4.Visual, Sample: 2, Visual: opensapi4.VisualPhoneme{Engine: 2,
+		Mouth: &opensapi4.Mouth{Height: 1, Width: 2, Upturn: 3, JawOpen: 4, UpperTeethVisible: 5, LowerTeethVisible: 6, TonguePosition: 7, LipTension: 8}}})
 	writer.Audio([]byte{5, 6})
-	writer.Event(whistler.Event{Kind: whistler.TextDone, Sample: 3})
+	writer.Event(opensapi4.Event{Kind: opensapi4.TextDone, Sample: 3})
 	return writer.finish(nil, "")
 }
 
@@ -118,6 +119,23 @@ func TestMessages(t *testing.T) {
 	if output.String() != expected {
 		t.Errorf("got %q\nexpected %q", output.String(), expected)
 	}
+
+	output.Reset()
+	writer = &messages{output: bufio.NewWriter(&output), visual: true}
+	if err := fakeSpeech(writer); err != nil {
+		t.Fatal(err)
+	}
+	expected = `{"type":"format","sampleRate":8000,"bits":16,"channels":1}
+{"type":"audio","data":"AQIDBA=="}
+{"type":"event","event":"visual","sample":2,"text":-1,"ipa":"h","phoneme":104}
+{"type":"event","event":"visual","sample":2,"text":0,"phoneme":2,"mouth":{"height":1,"width":2,"upturn":3,"jawOpen":4,"upperTeethVisible":5,` +
+		`"lowerTeethVisible":6,"tonguePosition":7,"lipTension":8}}
+{"type":"audio","data":"BQY="}
+{"type":"done","samples":3}
+`
+	if output.String() != expected {
+		t.Errorf("got\n%s\nexpected\n%s", output.String(), expected)
+	}
 }
 
 func openTestVoices(t *testing.T) *opensapi4.Voices {
@@ -134,7 +152,7 @@ func openTestVoices(t *testing.T) *opensapi4.Voices {
 }
 
 // expectedAudio is what the voices give for a request, as PCM.
-func expectedAudio(t *testing.T, voices *opensapi4.Voices, request opensapi4.Request) ([]byte, whistler.Format) {
+func expectedAudio(t *testing.T, voices *opensapi4.Voices, request opensapi4.Request) ([]byte, opensapi4.Format) {
 	t.Helper()
 	speech, err := voices.NewSpeech(request)
 	if err != nil {
@@ -240,7 +258,7 @@ not json
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(file, append(wave.Header(whistler.Format{SampleRate: 22050, Bits: 16}, uint32(len(want))), want...)) {
+		if !bytes.Equal(file, append(wave.Header(wave.Format{SampleRate: 22050, Bits: 16}, uint32(len(want))), want...)) {
 			t.Errorf("raw %v: the WAV file has %d bytes", raw, len(file))
 		}
 	}
@@ -252,7 +270,7 @@ func TestServer(t *testing.T) {
 	defer server.Close()
 	request := opensapi4.Request{Voice: "Mike", Text: "Testing, one, two, three."}
 	want, format := expectedAudio(t, voices, request)
-	wavFile := append(wave.Header(format, uint32(len(want))), want...)
+	wavFile := append(wave.Header(wave.Format(format), uint32(len(want))), want...)
 
 	check := func(name string, response *http.Response, err error, status int, contentType string) []byte {
 		t.Helper()
@@ -295,6 +313,19 @@ func TestServer(t *testing.T) {
 	if !bytes.Equal(audio, want) || visual < 10 || read[len(read)-1]["type"] != "done" || read[0]["id"] != "x" {
 		t.Errorf("POST json: %d bytes of audio, %d visual events, last %v", len(audio), visual, read[len(read)-1])
 	}
+	julia := opensapi4.Request{Voice: "Julia", Text: "Testing, one, two, three."}
+	want, _ = expectedAudio(t, voices, julia)
+	response, err = http.Get(server.URL + "/speak?voice=Julia&format=json&visual=true&text=" + url.QueryEscape(julia.Text))
+	read, audio = readMessages(t, bufio.NewReader(bytes.NewReader(check("TruVoice json", response, err, 200, "application/x-ndjson"))))
+	visual = 0
+	for _, message := range read {
+		if message["event"] == "visual" && message["text"] == float64(-1) {
+			visual++
+		}
+	}
+	if !bytes.Equal(audio, want) || visual < 10 || read[0]["sampleRate"] != float64(11025) || read[len(read)-1]["type"] != "done" {
+		t.Errorf("TruVoice json: %d bytes of audio, %d visual events, first %v, last %v", len(audio), visual, read[0], read[len(read)-1])
+	}
 
 	for _, bad := range []string{`{"voice": "Nobody", "text": "Hi"}`, `{"voice": "Sam", "text": "Hi", "output": "x.wav"}`, `{"text": "Hi", "format": "mp3"}`,
 		`{"text": "Hi", "events": true}`, `{"text": 5}`} {
@@ -310,7 +341,7 @@ func TestServer(t *testing.T) {
 
 	response, err = http.Get(server.URL + "/voices")
 	var list []opensapi4.Voice
-	if json.Unmarshal(check("voices", response, err, 200, "application/json"), &list) != nil || len(list) != 19 {
+	if json.Unmarshal(check("voices", response, err, 200, "application/json"), &list) != nil || len(list) != 29 {
 		t.Errorf("voices: %d", len(list))
 	}
 	response, err = http.Get(server.URL + "/")

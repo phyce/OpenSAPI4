@@ -52,7 +52,10 @@ function showRanges() {
 
 fetch("voices").then(response => response.json()).then(list => {
 	voices = list;
-	for (const voice of list) voiceSelect.add(new Option(voice.name, voice.name, voice.name === "Sam", voice.name === "Sam"));
+	for (const voice of list) {
+		const label = voice.engine === "truvoice" ? `${voice.speaker} (TruVoice)` : voice.name;
+		voiceSelect.add(new Option(label, voice.name, voice.name === "Sam", voice.name === "Sam"));
+	}
 	showRanges();
 });
 voiceSelect.addEventListener("change", showRanges);

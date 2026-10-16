@@ -40,6 +40,32 @@ func TestReadWrite(t *testing.T) {
 	}
 }
 
+func TestClone(t *testing.T) {
+	lexicon := New(nil, nil, nil)
+	if err := lexicon.Read(strings.NewReader("APPLE\x00@1pL\x00ZEBRA\x00zE1br@\x00")); err != nil {
+		t.Fatal(err)
+	}
+	lexicon.store([]byte("MANGO"), []byte("m@1NgO"))
+	clone := lexicon.Clone(nil)
+	if clone.Changed() {
+		t.Error("the clone is changed")
+	}
+	clone.store([]byte("APPLE"), []byte("A1pL"))
+	clone.store([]byte("PEAR"), []byte("pe1R"))
+	for _, test := range []struct {
+		lexicon       *Lexicon
+		word          string
+		pronunciation string
+	}{
+		{lexicon, "APPLE", "@1pL"}, {lexicon, "MANGO", "m@1NgO"}, {lexicon, "PEAR", ""},
+		{clone, "APPLE", "A1pL"}, {clone, "MANGO", "m@1NgO"}, {clone, "ZEBRA", "zE1br@"}, {clone, "PEAR", "pe1R"},
+	} {
+		if pronunciation, _ := test.lexicon.Pronunciation(test.word); pronunciation != test.pronunciation {
+			t.Errorf("%s gave %q, expected %q", test.word, pronunciation, test.pronunciation)
+		}
+	}
+}
+
 func TestOrder(t *testing.T) {
 	random := rand.New(rand.NewSource(18))
 	for _, size := range []int{2, 5, 8, 9, 10, 33, 100, 1000} {

@@ -78,7 +78,7 @@ func streamRequest(voices *opensapi4.Voices, line []byte, output *bufio.Writer, 
 	if err != nil {
 		return writer.finish(err, "")
 	}
-	writer.audio = wave.NewWriter(file, speech.Format())
+	writer.audio = wave.NewWriter(file, wave.Format(speech.Format()))
 	err = writer.audio.Start()
 	if err == nil {
 		err = speech.Speak(writer)

@@ -16,7 +16,7 @@ import (
 
 var version = "dev"
 
-const usage = `opensapi4 speaks with the Microsoft SAPI 4 voices.
+const usage = `opensapi4 speaks with the SAPI 4 voices: Microsoft's and L&H TruVoice's.
 
 Commands:
   opensapi4 speak [flags] [text]   speak a text into a WAV file

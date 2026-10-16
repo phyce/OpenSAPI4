@@ -1,6 +1,6 @@
 # OpenSAPI4
 
-An open-source implementation of the Microsoft SAPI 4 voices (Microsoft Sam, Mike, Mary and all their variants), written in pure Go. The same text and settings give the same audio as the original engine, sample for sample, on Windows, Linux and macOS.
+An open-source implementation of the SAPI 4 voices (Microsoft Sam, Mike, Mary and all their variants, and the ten L&H TruVoice voices), written in pure Go. The same text and settings give the same audio as the original engines, sample for sample, on Windows, Linux and macOS.
 
 ## Why
 
@@ -15,10 +15,10 @@ Running them today is hard. You need 25-year-old 32-bit installers on Windows, o
 | Microsoft voices | Done: all 19 voices, every tag, event and setting |
 | Command-line tools, HTTP and stream modes | Done |
 | Releases for Windows, Linux and macOS | Done: [v0.1.0](https://github.com/phyce/OpenSAPI4/releases/tag/v0.1.0) |
-| L&H TruVoice voices | In progress |
+| L&H TruVoice voices | Done: all 10 voices, every tag, event and setting, in `opensapi4` and the Go package. Next: `sapi4out` and `sapi4limits`, and the address, e-mail and spreadsheet contexts (`\Ctx=`) |
 | AT&T FlexTalk voices | Planned |
 
-The engine is checked against the original on more than 40,000 cases, and it's identical in every sample and event. Details are in [docs/plan.md](docs/plan.md).
+The Microsoft engine is checked against the original on more than 40,000 cases, and TruVoice's on thousands of recorded runs of the whole engine and every stage inside it; both are identical in every sample and event. Details are in [docs/plan.md](docs/plan.md).
 
 ## Voices
 
@@ -29,6 +29,13 @@ The engine is checked against the original on more than 40,000 cases, and it's i
 | Sam | Sam |
 
 The telephone voices speak at 8000 Hz; the rest at 22050 Hz. `\Chr="Whisper"\` in a text makes any of them whisper, Sam included.
+
+| L&H TruVoice | Speaker |
+|---|---|
+| Adult Male #1 to #8, American English (TruVoice) | Peter, Sidney, Eddie, Douglas, Biff, Amos, Melvin, Alex |
+| Adult Female #1 and #2, American English (TruVoice) | Wanda, Julia |
+
+The TruVoice voices speak at 11025 Hz. Their names are long, so they also answer to their speakers' names: `-voice Peter` is `Adult Male #1, American English (TruVoice)`. `\Vce=Speaker=Julia\` in a text switches to another of them.
 
 ## Download
 
@@ -61,7 +68,7 @@ Everything is in [docs/command-line.md](docs/command-line.md).
 
 ## The voice data
 
-The engine needs the voices' data: the recorded speech, the pronunciation rules and the dictionaries. It reads them from a data pack converted from the original voice files ([docs/whistler/datapack.md](docs/whistler/datapack.md)). The data pack isn't in this repository and is never compiled into the program; it comes with the release downloads as the `voices` folder.
+The engines need the voices' data: the recorded speech, the pronunciation rules and the dictionaries, and for TruVoice the tables of its synthesizer and rules. They read them from data packs converted from the original voices' files ([docs/whistler/datapack.md](docs/whistler/datapack.md), [docs/truvoice/datapack.md](docs/truvoice/datapack.md)). The data packs aren't in this repository and are never compiled into the program; they come with the release downloads as the `voices` folder, with a `microsoft` and a `truvoice` folder.
 
 ## Using it from Go
 
@@ -74,11 +81,11 @@ speech, err := voices.NewSpeech(opensapi4.Request{Voice: "Sam", Text: `Hello, \P
 if err != nil {
 	return err
 }
-// sink implements whistler.Sink: it gets the PCM (speech.Format()) and the events in order.
+// sink implements opensapi4.Sink: it gets the PCM (speech.Format()) and the events in order.
 err = speech.Speak(sink)
 ```
 
-Package `github.com/phyce/OpenSAPI4` lists the voices and speaks requests as the command line takes them. For everything else (the user lexicon, pausing, attribute events, the format negotiation), use the engine directly:
+Package `github.com/phyce/OpenSAPI4` lists the voices and speaks requests as the command line takes them. For everything else (the user lexicon, pausing, attribute events, the format negotiation), use the engines directly, package `whistler` for the Microsoft voices and package `truvoice` for TruVoice's:
 
 ```go
 pack, err := datapack.Open("voices/microsoft")
@@ -103,7 +110,7 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 |---|---|
 | `docs/command-line.md` | The command-line tools, the stream and the HTTP server |
 | `docs/whistler/` | How the Microsoft engine behaves, and the data pack format |
-| `docs/truvoice/` | How the TruVoice engine behaves, and its data pack format (in progress) |
+| `docs/truvoice/` | How the TruVoice engine behaves, and its data pack format |
 | `cmd/opensapi4`, `cmd/sapi4out`, `cmd/sapi4limits` | The command-line tools |
 | `scripts/release` | Builds the release archives |
 | `scripts/check-release` | Runs a release archive's programs and checks what they give |
@@ -120,7 +127,9 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 | `whistler/units` | Turns unit records into frames, controls and settings |
 | `whistler/synthesis` | Turns frames into samples: 16- or 8-bit, at the voice's rate or resampled |
 | `whistler/effects` | Whisper, the post-filter, the reverb, `\Chr=` and `\Rst\` switching |
+| `truvoice` | The TruVoice engine: speaks texts with one of its ten voices, with its modes, attributes, pausing, `Phoneme` and the user lexicon, joining the stages below |
 | `truvoice/datapack` | Reads and checks the TruVoice data pack |
+| `truvoice/text` | What TruVoice makes of a text before it speaks it: character sets, IPA, word marks, tags, voices and contexts |
 | `truvoice/synthesizer` | TruVoice's formant synthesizer: parameter frames to coefficient blocks to samples, its frame ring, steps and audio buffer |
 | `truvoice/pipeline` | TruVoice's pipeline: the nodes its stages pass on, the stages' cursors, the text's control commands, the output stage, the scheduler and the speaking thread's start, attributes and hand-overs |
 | `truvoice/input` | TruVoice's input side: the speaking thread's taking, feeding and pumping of the texts and Phoneme's feeding and pumping, the feeder, which writes a text into the input ring a few lines at a time, the TextIn tokenizer, which splits it into tokens and expands some of them, the escape parser, which reads the characters and commands it gives, and the input stage, which makes the pipeline's nodes of them |

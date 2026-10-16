@@ -29,7 +29,7 @@ import (
 	"time"
 
 	opensapi4 "github.com/phyce/OpenSAPI4"
-	"github.com/phyce/OpenSAPI4/whistler"
+	truvoicedatapack "github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/whistler/datapack"
 )
 
@@ -67,7 +67,7 @@ type entry struct {
 
 func main() {
 	version := flag.String("version", "", "the version, such as v0.1.0")
-	voices := flag.String("voices", "", "the voices folder to ship, holding the microsoft folder")
+	voices := flag.String("voices", "", "the voices folder to ship, holding the microsoft and truvoice folders")
 	output := flag.String("output", "dist", "the folder to write the archives to; it must be empty or new")
 	allowChanges := flag.Bool("allow-changes", false, "build from a working tree with changes that aren't committed")
 	flag.Parse()
@@ -165,28 +165,35 @@ func command(name string, arguments ...string) (string, error) {
 	return strings.TrimSpace(string(result)), nil
 }
 
-// checkVoices checks the voice data against its manifest's sums, and that every voice speaks, and gives its files:
-// the manifest and the files it lists, nothing else.
+// checkVoices checks both packs of the voice data against their manifests' sums, and that every voice speaks, and
+// gives their files: each pack's manifest and the files it lists, nothing else.
 func checkVoices(folder string) ([]entry, error) {
-	packFolder := filepath.Join(folder, opensapi4.MicrosoftFolder)
-	pack, err := datapack.Open(packFolder)
+	microsoft, err := datapack.Open(filepath.Join(folder, opensapi4.MicrosoftFolder))
 	if err != nil {
 		return nil, err
 	}
-	files := []entry{{name: "voices/microsoft/manifest.json", source: filepath.Join(packFolder, "manifest.json")}}
-	for name, sum := range pack.Manifest.Files {
-		if !filepath.IsLocal(filepath.FromSlash(name)) || path.Clean(name) != name {
-			return nil, fmt.Errorf("the voice data's manifest lists %q", name)
+	truVoice, err := truvoicedatapack.Open(filepath.Join(folder, opensapi4.TruVoiceFolder))
+	if err != nil {
+		return nil, err
+	}
+	var files []entry
+	for pack, sums := range map[string]map[string]string{opensapi4.MicrosoftFolder: microsoft.Manifest.Files, opensapi4.TruVoiceFolder: truVoice.Manifest.Files} {
+		packFolder := filepath.Join(folder, pack)
+		files = append(files, entry{name: "voices/" + pack + "/manifest.json", source: filepath.Join(packFolder, "manifest.json")})
+		for name, sum := range sums {
+			if !filepath.IsLocal(filepath.FromSlash(name)) || path.Clean(name) != name {
+				return nil, fmt.Errorf("the %s voice data's manifest lists %q", pack, name)
+			}
+			source := filepath.Join(packFolder, filepath.FromSlash(name))
+			content, err := os.ReadFile(source)
+			if err != nil {
+				return nil, err
+			}
+			if digest := sha256.Sum256(content); hex.EncodeToString(digest[:]) != sum {
+				return nil, fmt.Errorf("the %s voice data's %s doesn't match its manifest", pack, name)
+			}
+			files = append(files, entry{name: "voices/" + pack + "/" + name, source: source})
 		}
-		source := filepath.Join(packFolder, filepath.FromSlash(name))
-		content, err := os.ReadFile(source)
-		if err != nil {
-			return nil, err
-		}
-		if digest := sha256.Sum256(content); hex.EncodeToString(digest[:]) != sum {
-			return nil, fmt.Errorf("the voice data's %s doesn't match its manifest", name)
-		}
-		files = append(files, entry{name: "voices/microsoft/" + name, source: source})
 	}
 	slices.SortFunc(files, func(first, second entry) int { return strings.Compare(first.name, second.name) })
 	voices, err := opensapi4.Open(folder)
@@ -312,7 +319,7 @@ func copyFile(destination io.Writer, source string) error {
 }
 
 // checkHostArchive unpacks the archive for this computer, if there is one, and speaks with its programs, which
-// must find the voices next to them.
+// must find the voices next to them: Sam with opensapi4 and sapi4out, which must give the same file, and Peter.
 func checkHostArchive(output, version string) error {
 	var host *platform
 	for index := range platforms {
@@ -345,11 +352,13 @@ func checkHostArchive(output, version string) error {
 	}
 	speak := exec.Command(filepath.Join(programFolder, "opensapi4"+extension), "speak", "-voice", "Sam", "-output", filepath.Join(folder, "check.wav"),
 		"Testing, one, two, three.")
+	speakTruVoice := exec.Command(filepath.Join(programFolder, "opensapi4"+extension), "speak", "-voice", "Peter", "-output",
+		filepath.Join(folder, "truvoice.wav"), "Testing, one, two, three.")
 	compatible := exec.Command(filepath.Join(programFolder, "sapi4out"+extension), "Sam", "100", "150", "Testing, one, two, three.")
 	compatible.Dir = folder
 	var printed bytes.Buffer
 	compatible.Stdout = &printed
-	for _, run := range []*exec.Cmd{speak, compatible} {
+	for _, run := range []*exec.Cmd{speak, speakTruVoice, compatible} {
 		run.Env = withoutVoicesVariable(os.Environ())
 		run.Stderr = os.Stderr
 		if err := run.Run(); err != nil {
@@ -367,7 +376,14 @@ func checkHostArchive(output, version string) error {
 	if len(first) < 10000 || !bytes.Equal(first, second) {
 		return fmt.Errorf("check %s: opensapi4 gave %d bytes and sapi4out %d, expected the same", name, len(first), len(second))
 	}
-	fmt.Printf("checked %s: %d bytes of audio\n", name, len(first))
+	truVoice, err := os.ReadFile(filepath.Join(folder, "truvoice.wav"))
+	if err != nil {
+		return err
+	}
+	if len(truVoice) < 10000 {
+		return fmt.Errorf("check %s: Peter gave %d bytes", name, len(truVoice))
+	}
+	fmt.Printf("checked %s: %d bytes of audio from Sam, %d from Peter\n", name, len(first), len(truVoice))
 	return nil
 }
 
@@ -468,6 +484,6 @@ func (counter *audioCounter) Audio(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (counter *audioCounter) Event(whistler.Event) error {
+func (counter *audioCounter) Event(opensapi4.Event) error {
 	return nil
 }

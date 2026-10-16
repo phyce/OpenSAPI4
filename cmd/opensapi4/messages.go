@@ -9,8 +9,6 @@ import (
 
 	opensapi4 "github.com/phyce/OpenSAPI4"
 	"github.com/phyce/OpenSAPI4/internal/wave"
-	"github.com/phyce/OpenSAPI4/whistler"
-	"github.com/phyce/OpenSAPI4/whistler/datapack"
 )
 
 // request is a request as the stream and the HTTP server take it: the speech, with an ID to echo, the events to
@@ -89,12 +87,12 @@ type errorMessage struct {
 	Error string          `json:"error"`
 }
 
-var eventNames = map[whistler.EventKind]string{
-	whistler.TextStarted:  "textStarted",
-	whistler.TextDone:     "textDone",
-	whistler.WordPosition: "word",
-	whistler.Bookmark:     "bookmark",
-	whistler.Visual:       "visual",
+var eventNames = map[opensapi4.EventKind]string{
+	opensapi4.TextStarted:  "textStarted",
+	opensapi4.TextDone:     "textDone",
+	opensapi4.WordPosition: "word",
+	opensapi4.Bookmark:     "bookmark",
+	opensapi4.Visual:       "visual",
 }
 
 const audioMessageSize = 32768
@@ -128,7 +126,7 @@ func (writer *messages) write(message any) error {
 	return nil
 }
 
-func (writer *messages) sendFormat(format whistler.Format) error {
+func (writer *messages) sendFormat(format opensapi4.Format) error {
 	writer.sampleSize = format.Bits / 8
 	return writer.write(formatMessage{ID: writer.id, Type: "format", SampleRate: format.SampleRate, Bits: format.Bits, Channels: 1})
 }
@@ -187,8 +185,8 @@ func (writer *messages) flushOutput() error {
 	return nil
 }
 
-func (writer *messages) Event(event whistler.Event) error {
-	if event.Kind == whistler.Visual && !writer.visual || event.Kind != whistler.Visual && !writer.events {
+func (writer *messages) Event(event opensapi4.Event) error {
+	if event.Kind == opensapi4.Visual && !writer.visual || event.Kind != opensapi4.Visual && !writer.events {
 		return nil
 	}
 	if err := writer.sendAudio(); err != nil {
@@ -196,26 +194,29 @@ func (writer *messages) Event(event whistler.Event) error {
 	}
 	message := eventMessage{ID: writer.id, Type: "event", Event: eventNames[event.Kind], Sample: event.Sample, Text: event.Text}
 	switch event.Kind {
-	case whistler.WordPosition:
+	case opensapi4.WordPosition:
 		offset := event.Value / 2
 		message.Offset = &offset
-	case whistler.Bookmark:
+	case opensapi4.Bookmark:
 		message.Bookmark = &event.Value
-	case whistler.Visual:
+	case opensapi4.Visual:
 		phoneme := int(event.Visual.Engine)
 		message.IPA, message.Phoneme, message.Mouth = ipa(event.Visual), &phoneme, mouthOf(event.Visual.Mouth)
 	}
 	return writer.write(message)
 }
 
-func ipa(visual datapack.Visual) string {
+func ipa(visual opensapi4.VisualPhoneme) string {
 	if visual.IPA == 0 {
 		return ""
 	}
 	return string(rune(visual.IPA))
 }
 
-func mouthOf(shape datapack.Mouth) *mouth {
+func mouthOf(shape *opensapi4.Mouth) *mouth {
+	if shape == nil {
+		return nil
+	}
 	return &mouth{Height: int(shape.Height), Width: int(shape.Width), Upturn: int(shape.Upturn), JawOpen: int(shape.JawOpen),
 		UpperTeethVisible: int(shape.UpperTeethVisible), LowerTeethVisible: int(shape.LowerTeethVisible),
 		TonguePosition: int(shape.TonguePosition), LipTension: int(shape.LipTension)}

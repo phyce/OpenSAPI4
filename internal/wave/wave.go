@@ -5,14 +5,18 @@ package wave
 import (
 	"encoding/binary"
 	"io"
-
-	"github.com/phyce/OpenSAPI4/whistler"
 )
 
 const HeaderSize = 46
 
+// Format is a PCM format: mono, SampleRate samples a second, and Bits 16 (signed, little-endian) or 8 (unsigned).
+type Format struct {
+	SampleRate int
+	Bits       int
+}
+
 // Header is the header of a WAV file with dataSize bytes of PCM in format.
-func Header(format whistler.Format, dataSize uint32) []byte {
+func Header(format Format, dataSize uint32) []byte {
 	blockAlign := uint16(format.Bits / 8)
 	header := make([]byte, 0, HeaderSize)
 	header = append(header, "RIFF"...)
@@ -30,17 +34,17 @@ func Header(format whistler.Format, dataSize uint32) []byte {
 	return binary.LittleEndian.AppendUint32(header, dataSize)
 }
 
-// Writer writes an engine's audio as a WAV file. It is a whistler.Sink. As SAPI 4's audio file destination,
-// it writes the header with the first audio, so a text with no audio leaves the file empty; Finish writes the
-// sizes into the header.
+// Writer writes an engine's audio as a WAV file: its Audio is a sink's. As SAPI 4's audio file destination, it
+// writes the header with the first audio, so a text with no audio leaves the file empty; Finish writes the sizes
+// into the header.
 type Writer struct {
 	output  io.WriteSeeker
-	format  whistler.Format
+	format  Format
 	started bool
 	size    uint32
 }
 
-func NewWriter(output io.WriteSeeker, format whistler.Format) *Writer {
+func NewWriter(output io.WriteSeeker, format Format) *Writer {
 	return &Writer{output: output, format: format}
 }
 
@@ -66,10 +70,6 @@ func (writer *Writer) Audio(data []byte) (int, error) {
 	written, err := writer.output.Write(data)
 	writer.size += uint32(written)
 	return written, err
-}
-
-func (writer *Writer) Event(whistler.Event) error {
-	return nil
 }
 
 func (writer *Writer) Finish() error {

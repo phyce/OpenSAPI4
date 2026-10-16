@@ -16,6 +16,7 @@ import (
 	"github.com/phyce/OpenSAPI4/internal/compatibility"
 	"github.com/phyce/OpenSAPI4/internal/voicedata"
 	"github.com/phyce/OpenSAPI4/internal/wave"
+	"github.com/phyce/OpenSAPI4/whistler"
 	"github.com/phyce/OpenSAPI4/whistler/text"
 )
 
@@ -49,8 +50,8 @@ func run() int {
 	engine := voice.Engine
 	engine.SetPitch(uint16(compatibility.Atoi(arguments[2].ANSI)))
 	engine.SetSpeed(uint32(compatibility.Atoi(arguments[3].ANSI)))
-	writer := wave.NewWriter(file, engine.Format())
-	err = engine.Speak(arguments[4].Text, true, text.ANSIText, writer)
+	writer := wave.NewWriter(file, wave.Format(engine.Format()))
+	err = engine.Speak(arguments[4].Text, true, text.ANSIText, waveSink{Writer: writer})
 	if err == nil {
 		err = writer.Finish()
 	}
@@ -62,6 +63,15 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// waveSink writes the audio as a WAV file.
+type waveSink struct {
+	*wave.Writer
+}
+
+func (sink waveSink) Event(whistler.Event) error {
+	return nil
 }
 
 // createFile makes a new file in the current folder with a random name.

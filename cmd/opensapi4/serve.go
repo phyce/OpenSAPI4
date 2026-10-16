@@ -20,7 +20,6 @@ import (
 
 	opensapi4 "github.com/phyce/OpenSAPI4"
 	"github.com/phyce/OpenSAPI4/internal/wave"
-	"github.com/phyce/OpenSAPI4/whistler"
 )
 
 //go:embed page.html
@@ -231,7 +230,7 @@ func (served *handler) speak(response http.ResponseWriter, incoming *http.Reques
 		}
 		response.Header().Set("Content-Type", "audio/wav")
 		response.Header().Set("Content-Length", strconv.Itoa(wave.HeaderSize+len(buffer.data)))
-		response.Write(wave.Header(speechFormat, uint32(len(buffer.data))))
+		response.Write(wave.Header(wave.Format(speechFormat), uint32(len(buffer.data))))
 		response.Write(buffer.data)
 	case "pcm":
 		response.Header().Set("Content-Type", "application/octet-stream")
@@ -270,7 +269,7 @@ func (sink contextSink) Audio(data []byte) (int, error) {
 	return sink.sink.Audio(data)
 }
 
-func (sink contextSink) Event(whistler.Event) error {
+func (sink contextSink) Event(opensapi4.Event) error {
 	return nil
 }
 

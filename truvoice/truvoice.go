@@ -78,6 +78,20 @@ func Load(pack *datapack.Pack) (*Data, error) {
 	return data, nil
 }
 
+// NewProcess gives a Data with this one's tables and what a new process of the original starts with: the prosody
+// stage's shared state, the voice \Rst\ goes back to, and a user lexicon with this one's words, as read from the
+// file this one's process saved. What the engines of one Data speak, \Prn= tags included, then doesn't change what
+// the other's speak.
+func (data *Data) NewProcess() *Data {
+	separate := &Data{}
+	*separate = *data
+	separate.process, separate.shared = text.NewProcess(), new(prosody.Shared)
+	separate.userLexicon = data.userLexicon.Clone(func(value []byte) []byte {
+		return separate.listing(append(bytes.Clone(value), 0), false)
+	})
+	return separate
+}
+
 // Lexicon is the user lexicon every engine of the data looks words up in, as every engine of the original's process
 // does (engine.md §7). It starts empty; Read fills it from a file.
 func (data *Data) Lexicon() *lexicon.Lexicon {

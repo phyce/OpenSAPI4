@@ -6,6 +6,7 @@ package lexicon
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -51,6 +52,14 @@ type Lexicon struct {
 // with a NUL after them: Add takes a pronunciation in text through it.
 func New(tables *datapack.Text, engine *datapack.Engine, phoneme func(text []byte) []byte) *Lexicon {
 	return &Lexicon{tables: tables, engine: engine, phoneme: phoneme}
+}
+
+// Clone makes a lexicon with this one's words, unchanged, that converts pronunciations in text with phoneme: what
+// a new process of the original has after reading the file this one's process saved.
+func (lexicon *Lexicon) Clone(phoneme func(text []byte) []byte) *Lexicon {
+	lexicon.lock.Lock()
+	defer lexicon.lock.Unlock()
+	return &Lexicon{tables: lexicon.tables, engine: lexicon.engine, phoneme: phoneme, entries: slices.Clone(lexicon.entries)}
 }
 
 // Add adds a word and its pronunciation as ILexPronounceW::Add does (engine.md §7.2). Word and pronunciation are

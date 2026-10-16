@@ -11,18 +11,17 @@ import (
 
 	opensapi4 "github.com/phyce/OpenSAPI4"
 	"github.com/phyce/OpenSAPI4/internal/wave"
-	"github.com/phyce/OpenSAPI4/whistler"
 )
 
 // speak speaks a text, from the arguments, the request's JSON or standard input, into a WAV file or standard
 // output.
 func speak(arguments []string) int {
 	flags, folder := newFlags("speak", "[flags] [text]")
-	voice := flags.String("voice", opensapi4.DefaultVoice, "the voice; opensapi4 voices lists them")
+	voice := flags.String("voice", opensapi4.DefaultVoice, "the voice, by its name or a speaker such as Peter; opensapi4 voices lists them")
 	pitch := flags.Int("pitch", 0, "the pitch in Hz, in the voice's range; 0 is the lowest (default the voice's own)")
 	speed := flags.Int("speed", 0, "the speed in words per minute, in the voice's range; 0 is the slowest (default the voice's own)")
 	volume := flags.Int("volume", 0xFFFF, "the volume, 0 to 65535")
-	rate := flags.Int("rate", 0, "the sample rate in Hz: 22050 Hz voices also give 8000 and 16000, 8000 Hz voices 11025 (default the voice's own)")
+	rate := flags.Int("rate", 0, "the sample rate in Hz: 22050 Hz voices also give 8000 and 16000, 8000 Hz voices 11025, TruVoice's 11025 Hz voices 8000 (default the voice's own)")
 	bits := flags.Int("bits", 16, "bits a sample, 8 or 16")
 	untagged := flags.Bool("untagged", false, `read \ as text, not as the start of a tag such as \Pau=500\`)
 	ipa := flags.Bool("ipa", false, "the text is IPA")
@@ -135,7 +134,7 @@ func (sink pcmSink) Audio(data []byte) (int, error) {
 	return sink.output.Write(data)
 }
 
-func (sink pcmSink) Event(whistler.Event) error {
+func (sink pcmSink) Event(opensapi4.Event) error {
 	return nil
 }
 
@@ -149,7 +148,16 @@ func (sink *bufferSink) Audio(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (sink *bufferSink) Event(whistler.Event) error {
+func (sink *bufferSink) Event(opensapi4.Event) error {
+	return nil
+}
+
+// waveSink writes the audio as a WAV file.
+type waveSink struct {
+	*wave.Writer
+}
+
+func (sink waveSink) Event(opensapi4.Event) error {
 	return nil
 }
 
@@ -165,7 +173,7 @@ func speakToStandardOutput(speech *opensapi4.Speech, pcm bool) error {
 	if err := speech.Speak(buffer); err != nil {
 		return err
 	}
-	if _, err := output.Write(wave.Header(speech.Format(), uint32(len(buffer.data)))); err != nil {
+	if _, err := output.Write(wave.Header(wave.Format(speech.Format()), uint32(len(buffer.data)))); err != nil {
 		return err
 	}
 	if _, err := output.Write(buffer.data); err != nil {
@@ -186,10 +194,10 @@ func speakToFile(speech *opensapi4.Speech, path string, pcm bool) error {
 			err = output.Flush()
 		}
 	} else {
-		writer := wave.NewWriter(file, speech.Format())
+		writer := wave.NewWriter(file, wave.Format(speech.Format()))
 		err = writer.Start()
 		if err == nil {
-			err = speech.Speak(writer)
+			err = speech.Speak(waveSink{Writer: writer})
 		}
 		if err == nil {
 			err = writer.Finish()

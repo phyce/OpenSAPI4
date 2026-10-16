@@ -35,9 +35,9 @@ func listVoices(arguments []string) int {
 		return 0
 	}
 	table := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(table, "VOICE\tGENDER\tRATE\tPITCH (Hz)\tSPEED (words/minute)")
+	fmt.Fprintln(table, "VOICE\tSPEAKER\tGENDER\tRATE\tPITCH (Hz)\tSPEED (words/minute)")
 	for _, voice := range list {
-		fmt.Fprintf(table, "%s\t%s\t%d Hz\t%d (%d to %d)\t%d (%d to %d)\n", voice.Name, voice.Gender, voice.SampleRate,
+		fmt.Fprintf(table, "%s\t%s\t%s\t%d Hz\t%d (%d to %d)\t%d (%d to %d)\n", voice.Name, voice.Speaker, voice.Gender, voice.SampleRate,
 			voice.Pitch.Default, voice.Pitch.Minimum, voice.Pitch.Maximum, voice.Speed.Default, voice.Speed.Minimum, voice.Speed.Maximum)
 	}
 	if err := table.Flush(); err != nil {
