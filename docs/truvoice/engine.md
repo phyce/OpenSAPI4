@@ -1,6 +1,6 @@
 # TruVoice: the engine
 
-How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking pipeline the other specs describe. This spec covers what TextData makes of a text before it queues it for the speaking thread (section 1), and how the engine speaks the texts and reports what it speaks: the speaking threads, the audio's formats, the queue to the destination, the events and where they land, and pitch, speed and volume (section 2). The modes, the other attributes, `Inject`, pausing, resets and the user lexicon come with the next parts.
+How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking pipeline the other specs describe. This spec covers what TextData makes of a text before it queues it for the speaking thread (section 1), and how the engine speaks the texts and reports what it speaks: the speaking threads, the audio's formats, the queue to the destination, the events and where they land, and pitch, speed and volume (section 2); the modes, the enumerator, Select, ModeGet and Find (section 3); and `Inject` and the other attributes (section 4). Pausing, resets and the user lexicon come with the next part.
 
 **In short.**
 - TextData takes text, IPA and engine phonemes, from the wide interface and the ANSI one (which takes no IPA). Text is converted to code page 1252 with Windows' best fit: `ā` becomes `a`, `€` the byte 0x80, a character the code page lacks `?`. Engine phonemes go between `ESC[1I` and `ESC[0I`, and IPA is converted to engine phonemes between them.
@@ -12,10 +12,14 @@ How L&H TruVoice (`tv_enua.dll`) behaves at its interface, around the speaking p
 - A speaking thread speaks the queued texts one after another and ends when none is left; the next text starts a new one. The audio is 11025 or 8000 Hz, 16 or 8 bits, whichever the destination takes first.
 - The thread queues the audio and the events for the engine's window, which gives them to the destination when the thread **flushes** the queue: after each visual, word and bookmark event, and after a hand-over of audio once seven buffers have gathered at the thread's start, then after every one. A text's start and end, and a change of attribute that a tag makes, are reported where the window had flushed when they were posted: usually before the last audio queued.
 - Visual events report each phoneme's IPA character and mouth shape. Pitch is 50 to 400 Hz and speed 50 to 250 words a minute.
+- The engine has ten modes, one for each voice: eight men, Peter, Sidney, Eddie, Douglas, Biff, Amos, Melvin and Alex, and two women, Wanda and Julia. Select takes a mode's GUID. Find scores each mode on the names, the speaker, the gender and the age wanted, by the caller's ranks, and gives the first with the highest score.
+- `Inject` changes the engine at once: `\Pit=\`, `\Spd=\`, `\Vol=\`, `\Chr=\`, `\Vce=Speaker=\` and `\Rst\` set its attributes, character and voice, and a string that is exactly `\gain=1\`, `\gain=2\` or `\gain=3\` the gain of the next speaking thread. The real-time attribute isn't implemented.
 
-**Exactness.** Ported from the original's code, and checked against it on every text it queued for the speaking thread in 1,367 recorded runs: the 24 runs of TextData's own set, which test every tag with values in and out of its range, word marks, tags in words, emphasis before words and at the end, spelling, voices, contexts, the characters 128 and up, best fit, IPA with every rule, engine phonemes, the ANSI interface, the character sets it refuses and sizes that leave out the NUL; and the texts of the input, normalizer and stage sets. Of their 2,376 texts, 2,361 were identical to the original's. Three were refused, as the original refused them. The other 12 have characters in the address, e-mail or spreadsheet context, whose pre-formatter isn't ported. Four runs that call `Inject` were left out (`Inject` comes with the next part).
+**Exactness.** Ported from the original's code, and checked against it on every text it queued for the speaking thread in 1,367 recorded runs: the 24 runs of TextData's own set, which test every tag with values in and out of its range, word marks, tags in words, emphasis before words and at the end, spelling, voices, contexts, the characters 128 and up, best fit, IPA with every rule, engine phonemes, the ANSI interface, the character sets it refuses and sizes that leave out the NUL; and the texts of the input, normalizer and stage sets. Of their 2,376 texts, 2,361 were identical to the original's. Three were refused, as the original refused them. The other 12 have characters in the address, e-mail or spreadsheet context, whose pre-formatter isn't ported. Four runs that call `Inject` were left out here, as `Inject` changes what the conversion reads; section 4's check speaks them.
 
-Section 2 was checked against the original's speaking in 1,760 recorded runs, every run of the sets but those that need the next parts (`Inject`, the user lexicon, pausing and resets), the 8 runs with the pre-formatter's contexts and 5 runs whose calls land wherever the speaking thread happens to be. In all of them the audio was the original's, 659,067,040 samples, in the format the destination took; the texts started and ended in the original's order, 5,104 times; and the 75,234 words and bookmarks and 573,209 visual events came at the original's samples, with its IPA characters, engine phonemes and mouth shapes. Where a text's start and end and an attribute change land varies from run to run in the original (section 2.4): in 34 runs that it spoke ten times each, the port put each of the 101 at the place most of its runs had it.
+Section 2 was checked against the original's speaking in 1,760 recorded runs, every run of the sets but those that need `Inject` (section 4) or the next part (the user lexicon, pausing and resets), the 8 runs with the pre-formatter's contexts and 5 runs whose calls land wherever the speaking thread happens to be. In all of them the audio was the original's, 659,067,040 samples, in the format the destination took; the texts started and ended in the original's order, 5,104 times; and the 75,234 words and bookmarks and 573,209 visual events came at the original's samples, with its IPA characters, engine phonemes and mouth shapes. Where a text's start and end and an attribute change land varies from run to run in the original (section 2.4): in 34 runs that it spoke ten times each, the port put each of the 101 at the place most of its runs had it.
+
+Sections 3 and 4 were checked against the original's interface. The ten modes' information was the original's, every field. 4,180 recorded runs of calls on new enumerators gave the original's results, modes and positions in all 14,748 calls: 5,054 Next, 4,390 Skip, 1,008 Clone, 891 Reset, 501 Select with what ModeGet then gave, and 2,904 Find, of which 2,249 found a mode, with names in every case, NULs, the default ranks, ranks that count for nothing, and ranks that make the scores wrap, which pin each gender's and age's score. `Inject` was checked in 107 runs: the 8 runs of the other sets that call it before their texts, and 99 runs of its own set, which test the gain, every tag with values in and out of its range, empty values, `\Rst\` after changes made by `Inject`, by the attribute calls and by texts, the context it resets, and voices. In the 99 runs, the 583 calls (150 `Inject`, 107 Speak, 92 PitchGet, 85 SpeedGet, 82 VolumeGet, 22 ModeGet, 21 PitchSet, 14 SpeedSet, 10 VolumeSet) gave the original's results and values, between the original's 188 attribute changes and texts' starts and ends, in its order. In all 107, the audio was the original's. Five runs of the set were left out: the two with an empty `\Vol=\` (section 4.4), the two that call RealTime and QueryInterface, which the port doesn't have (section 4.3 gives what they gave), and one with the pre-formatter's contexts.
 
 ## 1. TextData's text
 
@@ -191,3 +195,103 @@ Visual events belong to no text: they go to the engine's notification sinks, not
 - **An error from the destination.** The original's window resets the audio when the destination refuses a buffer (part T18). The port's `Run` stops at an error from the sink, drops the texts still queued and returns the error.
 - **ANSI notification sinks** get 0 for every visual event's IPA character. The port has one kind of sink.
 - **Symbols outside the table.** No phoneme symbol is 0 or 128 and up. For 0, the original would read the mouth shape past its table's end; the port gives no IPA character and no mouth shape for such symbols.
+
+## 3. Modes
+
+### 3.1 The ten modes
+
+The engine has ten modes, one for each of its voices, in the order of the voices. Their information (`TTSMODEINFO`) is in the data pack's `modes.json`:
+
+| Mode | Speaker | Gender | Name |
+|---|---|---|---|
+| 0 | Peter | male (2) | `Adult Male #1, American English (TruVoice)` |
+| 1 | Sidney | male | `Adult Male #2, …` |
+| 2 | Eddie | male | `Adult Male #3, …` |
+| 3 | Douglas | male | `Adult Male #4, …` |
+| 4 | Biff | male | `Adult Male #5, …` |
+| 5 | Amos | male | `Adult Male #6, …` |
+| 6 | Melvin | male | `Adult Male #7, …` |
+| 7 | Alex | male | `Adult Male #8, …` |
+| 8 | Wanda | female (1) | `Adult Female #1, American English (TruVoice)` |
+| 9 | Julia | female | `Adult Female #2, …` |
+
+Mode *n*'s ID is `{CA141FD0-AC7F-11D1-97A3-00600827300n}`. Every mode has the engine ID `{CA141FD0-AC7F-11D1-97A3-0060082730FF}`, the manufacturer `Lernout && Hauspie Speech Products` (the ampersand doubled), the product `TruVoice`, the language 1033 (US English) without a dialect, the style `Business`, the age 30 (adult), the features 1023 (any word, volume, speed, pitch, tagged text, IPA, visual events, word positions, optimized for the PC and for the phone), the interfaces 15 (`ILexPronounce`, `ITTSCentral`, `ITTSDialogs`, `ITTSAttributes`) and no engine features.
+
+### 3.2 The enumerator
+
+`ITTSEnum` goes through the ten modes in order from its **position**, 0 for a new enumerator:
+- **Next** writes up to the count asked for of the modes from the position, moves past them, and gives how many it wrote. It gives `S_OK` when it wrote the count, and `S_FALSE` otherwise. At the end it writes none and gives `S_FALSE`, even for a count of 0; before the end, a count of 0 gives `S_OK`.
+- **Skip** moves past the count of modes. When the position plus the count, in 32 bits that wrap, is past the end, it moves to the end and gives `S_FALSE`. So at position 1, skipping 0xFFFFFFFF wraps to position 0 and gives `S_OK`.
+- **Reset** goes back to position 0, and **Clone** gives a new enumerator at the same position.
+- **Select** makes an engine with the mode whose ID it is given, whatever the position. A mode ID that isn't one of the ten gives `TTSERR_INVALIDMODE` (0x80040206). The engine speaks with the mode's voice, its pitch and its speed (section 2.5), in the first of its formats the destination takes (section 2.2).
+
+The port's `Data.Enumerate` gives an `Enumerator` with `Next`, `Skip`, `Reset`, `Clone` and `Find`. `Data.Select` takes the mode ID as a string, `{…}` with the digits in either case, and `Data.NewEngine` the voice's number.
+
+### 3.3 ModeGet
+
+ModeGet gives the information of the engine's voice: the selected mode's, until a `\Vce\` tag in a text (section 1.3) or given to `Inject` (section 4.2) changes the voice. From then on it gives the new voice's mode, all of it, ID included. A text's `\Vce\` changes the voice when the speaking thread reaches it. The port's `Engine.ModeInfo` is ModeGet.
+
+### 3.4 Find
+
+`ITTSFind`'s Find gives the mode that best matches the mode information it is given, by **ranks** (`TTSMODEINFORANK`) that say how much each field counts. Without ranks it takes the mode name's 4, the speaker's 3, the gender's 2, the age's 1 and 0 for the rest. Each mode scores:
+- for each of the engine ID, the manufacturer, the product name, the mode name and the speaker that equals the one wanted, 10 times its rank. The engine IDs are compared as GUIDs. The names are compared up to a NUL, with ASCII letters' case aside and no other: `sIDNEY` is Sidney, but `Sİdney` and `ſidney` match nobody, and `Wanda` NUL `Julia` is Wanda;
+- when the gender wanted is neutral (0), female (1) or male (2), the gender's rank times how close the mode's gender is: 10 for the same, 6 for a mode's female or male when neutral is wanted, 3 for female and male. Any other gender wanted counts for nothing;
+- when the age wanted is one of SAPI's ages, 1, 3, 6, 14, 30 or 70 (baby, toddler, child, adolescent, adult, elderly), the age's rank times how close the mode's age is: (6 − *d*) × 10 / 6, rounded down, where *d* is how many places apart the two ages are in that list. Every mode is 30, so wanting 1 gives 3, 3 gives 5, 6 gives 6, 14 and 70 give 8 and 30 gives 10. Any other age wanted counts for nothing.
+
+The ranks of the mode ID, the language, the dialect, the style, the features, the interfaces and the engine features count for nothing. The scores are 32 bits and wrap. Find gives the first mode with the highest score, or `E_FAIL` (0x80004005) when every mode scores 0, and leaves the enumerator at the end either way. Its Select is the enumerator's.
+
+The port's `Enumerator.Find` takes the ranks as a `*Rank`, nil for none, and gives `ErrNoModeFound` for `E_FAIL`.
+
+### 3.5 What the recorded runs don't reach
+
+- **Select at 8000 Hz first.** Select takes the first format it offers from the mode's number: 8000 Hz for a mode numbered 10 to 19, 11025 Hz otherwise. With ten modes it is always 11025 Hz (section 2.2), and the port has only that order.
+- **Select's failures.** A destination without SAPI's audio interfaces gives `E_INVALIDARG`, and an engine that can't be set up `E_OUTOFMEMORY`. The port's engine has no destination object and needs nothing set up.
+- **Null pointers** give `E_INVALIDARG`, and so does Next with a count other than 1 and no place for how many it wrote. The port has no pointers.
+- **The ANSI interfaces** `ITTSEnumA` and `ITTSFindA` give the same modes with ANSI strings. The port has one kind of string.
+- **Aggregation.** Asking the class factory for the enumerator inside another object gives `CLASS_E_NOAGGREGATION`.
+- **Ages and genders the modes don't have.** Find would count a mode's age that isn't one of SAPI's as 70, and a neutral mode's gender as 6 from female or male. Every mode is a man or a woman of 30, so the port leaves both out.
+
+## 4. Inject and the other attributes
+
+### 4.1 Inject
+
+`Inject` changes the engine with a string of tags, at once rather than at a place in the text. It converts the string as TextData converts text (section 1.1), up to its first NUL, then:
+- When the string is exactly `\gain=1\`, `\gain=2\` or `\gain=3\`, in that case and with nothing before or after it, it sets the engine's output gain to that number. Each speaking thread takes the gain when it starts ([pipeline.md](pipeline.md) §8.1) as the synthesizer's ([synthesizer.md](synthesizer.md) §5.4), so it counts from the next thread on. A new engine has gain 1. Any other string, `\gain=4\` and `\Gain=2\` too, is read for tags.
+- Otherwise the string is read for **tags**, and what is between them is dropped:
+  - `\\` is passed over;
+  - a tag runs from a backslash to the next one. A backslash among the string's last two characters ends the string, and so does a tag without its closing backslash;
+  - a tag with fewer than three characters between its backslashes is dropped;
+  - reading goes on after the closing backslash, which isn't shared with the next tag: `\Pit=230\Spd=120\` sets the pitch only, and `\Pit=240\\Spd=130\` both.
+- A tag is known by its name, the three characters after its backslash, case aside, as in TextData (section 1.3). `rst` resets whatever follows it (`\Rst=5\`, `\Rstxyz\`); `pit`, `spd`, `vol`, `chr` and `vce` need `=` as the fourth character, and their value runs from the fifth to the closing backslash. Every other tag, `\Pau=\`, `\Mrk=\`, `\Emp\` and `\Ctx=\` included, does nothing.
+
+### 4.2 The tags
+
+| Tag | What it does |
+|---|---|
+| `\Pit=` | When the value is all ASCII digits: the number, 0 counting as 50 and 65535 as 400. From 50 to 400 it becomes the pitch, in Hz, and the window is told the pitch changed |
+| `\Spd=` | When the value is all ASCII digits: the number, 0 counting as 50 and 4294967295 as 250. From 50 to 250 it becomes the speed, and the window is told |
+| `\Vol=` | When the value is all ASCII digits: the number's low word becomes the volume, without a check, and the window is told, even when the volume stays the same |
+| `\Chr=` | The value up to a comma or a backslash, at most 19 characters, case aside: `"normal"`, `"whisper"` and `"monotone"`, quotes included, set the character 0, 1 or 2. The window isn't told |
+| `\Vce=` | The first key, up to its `=`, must be `speaker`, case aside. Its value, after an opening quote if there is one, runs up to a comma or a backslash, at most 19 characters, and a closing quote is dropped. The first mode whose speaker it is, case aside, gives the engine its voice, with the voice's pitch and speed (section 2.5). The window isn't told |
+| `\Rst\` | The pitch and the speed of the mode Select chose, volume 65535, the normal character and no context (section 1.4). The window is told the pitch, the speed and the volume changed, in that order. The voice stays |
+
+Numbers are read as the C library's `sscanf` reads `%u`: 32 bits that wrap, so `\Pit=4294967346\` is 50. Signs, spaces and other digits make the value not all digits: `\Pit=+100\`, `\Pit= 200\`, `\Pit=200 \`, `\Pit=2²³\` and `\Pit=1é00\` do nothing, while `\Pit=0100\` is 100 and the fullwidth `\Pit=２００\` 200, as best fit makes it ASCII first. `\Vol=65536\` is volume 0 and `\Vol=70000\` 4464.
+
+Each of `\Pit=`, `\Spd=` and `\Vol=` keeps the last number it read in the string, after its corrections, and an empty value takes it again: `\Pit=200\ \Pit=\` sets 200 twice and tells the window twice, `\Pit=0\ \Pit=\` sets 50 twice, `\Pit=500\ \Pit=\` does nothing, and `\Vol=900\ \Pit=210\ \Vol=\ \Pit=\` sets the volume, the pitch, the volume and the pitch. An empty value before its tag has read a number is section 4.4's.
+
+`\Chr=whisper\` without quotes, `\Chr="whisper" \` and a value longer than 19 characters do nothing; `\Chr="whisper",x\` is whisper. `\Vce=Speaker="julia"\`, `\Vce=Speaker=Julia,Gender=Male\`, `\Vce=Speaker="Wanda\`, `\Vce=Speaker=Wanda"\` and `\Vce=Speaker=Melvin,\` find their speakers. `\Vce=Gender=Male,Speaker=Julia\`, `\Vce=Speaker = Wanda\`, `\Vce=Speaker=\` and an unknown speaker do nothing: unlike TextData's `\Vce\`, `Inject`'s reads only the speaker and keeps the voice when it finds nobody.
+
+`\Rst\` goes back to the mode Select chose, not to the voice: after `\Vce=Speaker=Wanda\`, it gives Wanda's voice Peter's pitch, 85 Hz, and ModeGet still gives Wanda. A text's `\Rst\` instead writes the commands of section 1.3.
+
+The pitch, speed, volume, character and voice reach the texts already queued at the speaking thread's next step ([pipeline.md](pipeline.md) §8.3). The context is read by the next TextData, and the gain by the next speaking thread.
+
+### 4.3 The other attributes
+
+- **RealTimeGet** and **RealTimeSet** give `E_NOTIMPL` (0x80004001), and RealTimeGet writes nothing. The port has neither.
+- **Interfaces.** The engine has `ITTSCentral`, `ITTSAttributes`, `ILexPronounce` and `ITTSDialogs`, wide and ANSI. It has neither `ILexPronounce2` nor `IAttributes`: asking for them gives `E_NOINTERFACE`, as asking the engine for `ITTSEnum` does. The dialogs show the engine's About, General, Lexicon and Translate windows; the port has none.
+
+### 4.4 What the recorded runs don't reach, and where the port differs
+
+- **An empty value before a number.** An empty `\Pit=`, `\Spd=` or `\Vol=` before that tag has read a number in the string reads a variable the original never set. In the recorded runs, an empty `\Vol=\` set volume 7, every time, and told the window; an empty `\Pit=\` or `\Spd=\` did nothing, as if theirs were out of range. The port leaves the attribute as it is for all three.
+- **A null string** gives `TTSERR_INVALIDCHAR` (0x80040208), and running out of memory `E_OUTOFMEMORY`. The port has no null strings.
+- **The ANSI interface's `Inject`** converts the string to UTF-16 and calls the wide one.

@@ -27,26 +27,29 @@ type goldenStep struct {
 	Flags        *uint32 `json:"flags"`
 	Uncounted    bool    `json:"uncounted"`
 	Tolerant     bool    `json:"tolerant"`
+	Value        int64   `json:"value"`
 }
 
 type goldenCase struct {
-	Name      string          `json:"name"`
-	Mode      json.RawMessage `json:"mode"`
-	Texts     []string        `json:"texts"`
-	Steps     []goldenStep    `json:"steps"`
-	Untagged  bool            `json:"untagged"`
-	Inject    string          `json:"inject"`
-	Lexicon   json.RawMessage `json:"lexicon"`
-	Racy      bool            `json:"racy"`
-	Accept    string          `json:"accept"`
-	Pitch     *int64          `json:"pitch"`
-	Speed     *int64          `json:"speed"`
-	Volume    *int64          `json:"volume"`
-	Format    [2]int          `json:"format"`
-	Samples   int64           `json:"samples"`
-	Digest    string          `json:"digest"`
-	Events    [][]any         `json:"events"`
-	Positions []goldenRuns    `json:"positions"`
+	Name         string          `json:"name"`
+	Mode         json.RawMessage `json:"mode"`
+	Texts        []string        `json:"texts"`
+	Steps        []goldenStep    `json:"steps"`
+	Untagged     bool            `json:"untagged"`
+	Inject       string          `json:"inject"`
+	Lexicon      json.RawMessage `json:"lexicon"`
+	Racy         bool            `json:"racy"`
+	PreFormatter *bool           `json:"preFormatter"`
+	Accept       string          `json:"accept"`
+	Pitch        *int64          `json:"pitch"`
+	Speed        *int64          `json:"speed"`
+	Volume       *int64          `json:"volume"`
+	Format       [2]int          `json:"format"`
+	Samples      int64           `json:"samples"`
+	Digest       string          `json:"digest"`
+	Events       [][]any         `json:"events"`
+	Calls        [][]any         `json:"calls"`
+	Positions    []goldenRuns    `json:"positions"`
 }
 
 // goldenRuns is how many of the original's runs of a case gave the same events, and the events: where each text
@@ -57,8 +60,11 @@ type goldenRuns struct {
 }
 
 // The sets whose runs the engine's test replays.
-var engineSets = []string{"affixes", "conversion", "dictionary", "durations", "input", "letters", "lexical", "lexicon",
-	"normalizer", "parameters", "pipeline", "positions", "postlexical", "prosody", "stage", "synthesizer"}
+var engineSets = []string{"affixes", "conversion", "dictionary", "durations", "inject", "input", "letters", "lexical",
+	"lexicon", "normalizer", "parameters", "pipeline", "positions", "postlexical", "prosody", "stage", "synthesizer"}
+
+// The calls besides Speak and Queue the test makes.
+var portedCalls = []string{"Inject", "PitchGet", "PitchSet", "SpeedGet", "SpeedSet", "VolumeGet", "VolumeSet", "ModeGet"}
 
 // recorder is a sink that keeps the audio and the events as the golden data writes them.
 type recorder struct {
@@ -67,6 +73,7 @@ type recorder struct {
 	marks     []string
 	visuals   []string
 	positions []string
+	calls     []string
 	position  int64
 	numbers   map[int]int
 	err       error
@@ -87,9 +94,11 @@ func (recorder *recorder) Event(event Event) error {
 	case TextStarted:
 		recorder.texts = append(recorder.texts, fmt.Sprint("started ", number))
 		recorder.positions = append(recorder.positions, fmt.Sprint("started ", number, " ", event.Sample))
+		recorder.calls = append(recorder.calls, entry("started", number))
 	case TextDone:
 		recorder.texts = append(recorder.texts, fmt.Sprint("done ", number))
 		recorder.positions = append(recorder.positions, fmt.Sprint("done ", number, " ", event.Sample))
+		recorder.calls = append(recorder.calls, entry("done", number))
 	case WordPosition:
 		recorder.marks = append(recorder.marks, fmt.Sprint(event.Sample, " word ", number, " ", event.Value))
 	case Bookmark:
@@ -111,6 +120,63 @@ var attributeNames = map[Attribute]string{PitchAttribute: "pitch", SpeedAttribut
 func (recorder *recorder) attributeChanged(attribute Attribute) {
 	recorder.positions = append(recorder.positions, fmt.Sprint("attribute ", attributeNames[attribute], " ",
 		len(recorder.marks)+len(recorder.visuals)))
+	recorder.calls = append(recorder.calls, entry("attribute", attributeNames[attribute]))
+}
+
+// entry writes an entry of the calls stream as the golden data has it.
+func entry(values ...any) string {
+	words := make([]string, len(values))
+	for index, value := range values {
+		switch value := value.(type) {
+		case nil:
+			words[index] = "null"
+		case float64:
+			words[index] = strconv.FormatFloat(value, 'f', -1, 64)
+		default:
+			words[index] = fmt.Sprint(value)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+const (
+	succeeded  = "0x00000000"
+	outOfRange = "0x8000FFFF"
+	// PitchGet writes a WORD, and the recorded runs read a DWORD they filled with 0xDEADBEEF first.
+	pitchGetFill = 0xdead0000
+)
+
+// call makes a call of a golden step other than Speak and Queue and records it in the calls stream, before the
+// attribute changes it made.
+func (recorder *recorder) call(engine *Engine, step goldenStep) error {
+	position := len(recorder.calls)
+	values := []any{"call", step.Call, succeeded}
+	switch step.Call {
+	case "Inject":
+		engine.Inject(*step.Text)
+	case "PitchGet":
+		values = append(values, pitchGetFill|uint32(engine.Pitch()))
+	case "SpeedGet":
+		values = append(values, engine.Speed())
+	case "VolumeGet":
+		values = append(values, engine.Volume())
+	case "PitchSet":
+		if engine.SetPitch(uint16(step.Value)) != nil {
+			values[2] = outOfRange
+		}
+	case "SpeedSet":
+		if engine.SetSpeed(uint32(step.Value)) != nil {
+			values[2] = outOfRange
+		}
+	case "VolumeSet":
+		engine.SetVolume(uint32(step.Value))
+	case "ModeGet":
+		values = append(values, strings.ToUpper(engine.ModeInfo().ModeID))
+	default:
+		return fmt.Errorf("call %s", step.Call)
+	}
+	recorder.calls = slices.Insert(recorder.calls, position, entry(values...))
+	return nil
 }
 
 // expected writes the golden events as the recorder does.
@@ -134,19 +200,25 @@ func expected(golden goldenCase) (texts, marks, visuals []string) {
 	return texts, marks, visuals
 }
 
-// leftOut says why the test leaves a run out: what later parts of the port bring, or what isn't ported.
+// leftOut says why the test leaves a run out: what later parts of the port bring, or what isn't ported. A string
+// given to Inject whose first \Vol=\ is empty sets the volume the original reads from a variable it never set.
 func leftOut(golden goldenCase) string {
 	switch {
 	case golden.Racy:
 		return "racy"
-	case golden.Inject != "":
-		return "Inject"
 	case golden.Lexicon != nil:
 		return "user lexicon"
 	}
 	for _, step := range golden.Steps {
-		if step.Call != "Speak" && step.Call != "Queue" {
+		if step.Call != "Speak" && step.Call != "Queue" && !slices.Contains(portedCalls, step.Call) {
 			return step.Call
+		}
+		if step.Call != "Inject" {
+			continue
+		}
+		lowered := strings.ToLower(*step.Text)
+		if index := strings.Index(lowered, `\vol=`); index >= 0 && strings.HasPrefix(lowered[index:], `\vol=\`) {
+			return "uninitialized value"
 		}
 	}
 	for _, value := range golden.texts() {
@@ -154,18 +226,19 @@ func leftOut(golden goldenCase) string {
 		if strings.Contains(lowered, `\prn=`) {
 			return "pronunciation"
 		}
-		if strings.Contains(lowered, "ctx=") && (strings.Contains(lowered, "address") || strings.Contains(lowered, "mail") ||
-			strings.Contains(lowered, "spreadsheet")) {
+		if golden.PreFormatter == nil && strings.Contains(lowered, "ctx=") && (strings.Contains(lowered, "address") ||
+			strings.Contains(lowered, "mail") || strings.Contains(lowered, "spreadsheet")) {
 			return "pre-formatter"
 		}
 	}
 	return ""
 }
 
+// texts are the texts the case speaks.
 func (golden goldenCase) texts() []string {
 	values := slices.Clone(golden.Texts)
 	for _, step := range golden.Steps {
-		if step.Text != nil {
+		if step.Call == "Speak" || step.Call == "Queue" {
 			values = append(values, *step.Text)
 		}
 	}
@@ -208,9 +281,9 @@ func acceptFormats(t *testing.T, list string) AcceptFormat {
 	}
 }
 
-// speak runs the golden case's calls on a new engine: the attributes, then its texts, all in one session, or its
-// steps, where a Speak waits for the speaking thread to end (the host waits after a Speak without a notification
-// sink too) and a Queue doesn't.
+// speak runs the golden case's calls on a new engine: the attributes and the Inject string, then its texts, all in
+// one session, or its steps, where a Speak waits for the speaking thread to end (the host waits after a Speak without
+// a notification sink too) and a Queue doesn't. Texts are numbered in the order they are queued.
 func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, error) {
 	data, err := Load(pack)
 	if err != nil {
@@ -234,6 +307,9 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 	if golden.Volume != nil {
 		engine.SetVolume(uint32(*golden.Volume))
 	}
+	if golden.Inject != "" {
+		engine.Inject(golden.Inject)
+	}
 	steps := golden.Steps
 	for index := range golden.Texts {
 		steps = append(steps, goldenStep{Call: "Queue", Text: &golden.Texts[index]})
@@ -241,10 +317,19 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 	if golden.Steps == nil {
 		steps = append(steps, goldenStep{Call: "Run"})
 	}
+	texts := 0
 	for number, step := range steps {
-		if step.Call == "Run" {
+		switch step.Call {
+		case "Run":
 			if err := engine.Run(sink); err != nil {
 				return nil, err
+			}
+			continue
+		case "Speak", "Queue":
+			sink.calls = append(sink.calls, entry("call", step.Call, nil))
+		default:
+			if err := sink.call(engine, step); err != nil {
+				return nil, fmt.Errorf("step %d: %v", number, err)
 			}
 			continue
 		}
@@ -275,8 +360,9 @@ func speak(t *testing.T, pack *datapack.Pack, golden goldenCase) (*recorder, err
 			return nil, fmt.Errorf("step %d: %v", number, err)
 		}
 		if err == nil {
-			sink.numbers[queued] = number
+			sink.numbers[queued] = texts
 		}
+		texts++
 		if step.Call == "Speak" {
 			if err := engine.Run(sink); err != nil {
 				return nil, err
@@ -311,6 +397,17 @@ func compare(t *testing.T, pack *datapack.Pack, golden goldenCase) error {
 		return fmt.Errorf("%d visual events, expected %d; event %d: %s, expected %s", len(sink.visuals), len(visuals), index,
 			at(sink.visuals, index), at(visuals, index))
 	}
+	if golden.Calls == nil {
+		return nil
+	}
+	calls := make([]string, len(golden.Calls))
+	for index, values := range golden.Calls {
+		calls[index] = entry(values...)
+	}
+	if index := firstDifference(sink.calls, calls); index >= 0 {
+		return fmt.Errorf("%d calls, expected %d; call %d: %s, expected %s", len(sink.calls), len(calls), index,
+			at(sink.calls, index), at(calls, index))
+	}
 	return nil
 }
 
@@ -331,9 +428,11 @@ func at(values []string, index int) string {
 }
 
 // TestEngine speaks the recorded runs of every set with the engine, each once, and compares the audio, the texts'
-// starts and ends, the words and bookmarks where they stand in the audio, and the visual events where they stand.
-// It leaves out the runs that need what later parts of the port bring, Inject, the user lexicon, pronunciations,
-// pauses and resets, the racy runs and the runs with texts in the contexts of the pre-formatter, which isn't ported.
+// starts and ends, the words and bookmarks where they stand in the audio, the visual events where they stand, and,
+// for the runs that keep them, the calls with what they gave between the attribute changes and the texts' starts
+// and ends. It leaves out the runs that need what later parts of the port bring, the user lexicon, pronunciations,
+// pauses and resets, the calls the engine doesn't have (RealTime, QueryInterface), an empty \Vol=\ given to Inject,
+// the racy runs and the runs with texts in the contexts of the pre-formatter, which isn't ported.
 func TestEngine(t *testing.T) {
 	pack := conformance.Pack(t)
 	seen := map[string]bool{}
