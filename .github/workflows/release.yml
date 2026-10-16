@@ -1,16 +1,42 @@
 name: Release
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
-        description: The release to check, such as v0.1.0
+        description: The draft release to build, such as v0.2.0; it holds the voice data's archive, and its tag exists
         required: true
 
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ inputs.version }}
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.version }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Download the voice data
+        run: gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "opensapi4-voices-$VERSION.zip" --dir "$RUNNER_TEMP/download"
+      - name: Unpack the voice data
+        run: unzip -q "$RUNNER_TEMP/download/opensapi4-voices-$VERSION.zip" -d "$RUNNER_TEMP/data"
+      - name: Build
+        run: go run ./scripts/release -version "$VERSION" -voices "$RUNNER_TEMP/data/voices" -output "$RUNNER_TEMP/dist"
+      - name: Compare the voice data's archive
+        run: cmp "$RUNNER_TEMP/download/opensapi4-voices-$VERSION.zip" "$RUNNER_TEMP/dist/opensapi4-voices-$VERSION.zip"
+      - name: Upload
+        run: gh release upload "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP"/dist/opensapi4-"$VERSION"-* "$RUNNER_TEMP/dist/SHA256SUMS"
+
   check:
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -24,11 +50,10 @@ jobs:
           - { runner: macos-latest, archive: macos-arm64.tar.gz }
     name: ${{ matrix.archive }}
     runs-on: ${{ matrix.runner }}
-    env:
-      VERSION: ${{ github.event.release.tag_name || inputs.version }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.version }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -38,3 +63,10 @@ jobs:
       - name: Check
         shell: bash
         run: go run ./scripts/check-release -archive "opensapi4-$VERSION-${{ matrix.archive }}"
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish
+        run: gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false

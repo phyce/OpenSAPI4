@@ -142,15 +142,23 @@ err = engine.SpeakString(`Hello, \Pit=150\ world.`, sink)
 ## Building releases
 
 ```sh
-go run ./scripts/release -version v0.1.0 -voices <voices folder>
+go run ./scripts/release -version v0.2.0 -voices <voices folder>
 ```
 
-Builds the programs for every system in the table above, packs each with the voice data, and writes the archives and their `SHA256SUMS` to `dist/`. The voice data isn't in this repository, so releases are built where it is. The script checks the data against its manifest, speaks with every voice, and runs the programs of the archive for the computer it runs on. The same commit and data always give the same archives.
+Builds the programs for every system in the table above, packs each with the voice data, and writes the archives, the voice data's archive on its own and their `SHA256SUMS` to `dist/`. The script checks the data against its manifest, speaks with every voice, and runs the programs of the archive for the computer it runs on. The same commit and data always give the same archives, and the voice data's archive depends only on the data.
 
-When a release is published, the Release workflow downloads its archives on Windows (x64, x86, arm64), Linux (x64, arm64) and macOS (Apple silicon, Intel), and checks each with `scripts/check-release`: every voice speaks three texts, `sapi4out` and `sapi4limits` run, and what they give must match the sums in `scripts/check-release/speech.sha256`. To check an archive by hand:
+The releases' programs are built by the Release workflow. The voice data isn't in this repository, so a release starts as a draft with only the voice data's archive, from the command above:
 
 ```sh
-go run ./scripts/check-release -archive dist/opensapi4-v0.1.0-linux-x64.tar.gz
+git tag v0.2.0 && git push origin v0.2.0
+gh release create v0.2.0 --draft --verify-tag dist/opensapi4-voices-v0.2.0.zip
+gh workflow run release.yml -f version=v0.2.0
+```
+
+The workflow unpacks that voice data, builds the archives from the tag with `scripts/release`, checks that it gives the same voice data archive, and uploads them to the draft. Then it checks each archive on Windows (x64, x86, arm64), Linux (x64, arm64) and macOS (Apple silicon, Intel) with `scripts/check-release`: every voice speaks three texts, `sapi4out` and `sapi4limits` run, and what they give must match the sums in `scripts/check-release/speech.sha256`. When every archive passes, it publishes the release. To check an archive by hand:
+
+```sh
+go run ./scripts/check-release -archive dist/opensapi4-v0.2.0-linux-x64.tar.gz
 ```
 
 ## Tests
