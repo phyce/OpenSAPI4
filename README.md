@@ -15,7 +15,7 @@ Running them today is hard. You need 25-year-old 32-bit installers on Windows, o
 | Microsoft voices | Done: all 19 voices, every tag, event and setting |
 | Command-line tools, HTTP and stream modes | Done |
 | Releases for Windows, Linux and macOS | Done: [v0.1.0](https://github.com/phyce/OpenSAPI4/releases/tag/v0.1.0) |
-| L&H TruVoice voices | Done: all 10 voices, every tag, event and setting, in `opensapi4` and the Go package. Next: `sapi4out` and `sapi4limits`, and the address, e-mail and spreadsheet contexts (`\Ctx=`) |
+| L&H TruVoice voices | Done: all 10 voices, every tag, event and setting, in the command-line tools and the Go package. Next: the address, e-mail and spreadsheet contexts (`\Ctx=`) |
 | AT&T FlexTalk voices | Planned |
 
 The Microsoft engine is checked against the original on more than 40,000 cases, and TruVoice's on thousands of recorded runs of the whole engine and every stage inside it; both are identical in every sample and event. Details are in [docs/plan.md](docs/plan.md).

@@ -1,5 +1,5 @@
 // Package compatibility does what the sapi4out and sapi4limits tools that other programs call do: how they
-// read their arguments, choose a voice and set it up.
+// read their arguments, choose a voice, set it up and speak.
 package compatibility
 
 import (
@@ -7,7 +7,12 @@ import (
 	"math"
 	"math/rand/v2"
 
+	"github.com/phyce/OpenSAPI4/internal/voicedata"
+	"github.com/phyce/OpenSAPI4/internal/wave"
+	"github.com/phyce/OpenSAPI4/truvoice"
+	truvoicetext "github.com/phyce/OpenSAPI4/truvoice/text"
 	"github.com/phyce/OpenSAPI4/whistler"
+	"github.com/phyce/OpenSAPI4/whistler/text"
 )
 
 // Argument is a command-line argument as the tools get it.
@@ -28,25 +33,60 @@ type Limits struct {
 
 // Voice is an engine set up as the tools set one up, with the pitch and speed limits they read from it.
 type Voice struct {
-	Engine       *whistler.Engine
+	Name         string
 	Pitch, Speed Limits
+	engine       engine
+	microsoft    *whistler.Engine
+	truVoice     *truvoice.Engine
 }
 
-// Open makes an engine with the mode named exactly name, case included, or with Mary when no mode is. It
-// reads the limits as the tools do, by setting the minimum and then the maximum pitch and speed, which stay
-// set.
-func Open(data *whistler.Data, name []byte) (*Voice, error) {
-	mode, found := data.Mode(string(name))
-	if !found {
-		if mode, found = data.Mode(fallbackVoice); !found {
-			return nil, fmt.Errorf("the data pack has no voice %q", fallbackVoice)
+// engine is what the tools set of both engines.
+type engine interface {
+	Pitch() uint16
+	SetPitch(hertz uint16) error
+	Speed() uint32
+	SetSpeed(wordsPerMinute uint32) error
+}
+
+// ModeNames are the names of the modes as SAPI 4's enumerator lists them: the Microsoft modes, then TruVoice's.
+func ModeNames(voices *voicedata.Voices) ([]string, error) {
+	var names []string
+	if voices.Microsoft != nil {
+		enumerator := voices.Microsoft.Enumerate()
+		for {
+			modes, complete := enumerator.Next(1)
+			if !complete {
+				break
+			}
+			names = append(names, modes[0].ModeName)
 		}
 	}
-	engine, err := data.NewEngine(mode)
+	if voices.TruVoice != nil {
+		modes, err := voices.TruVoice.LoadModes()
+		if err != nil {
+			return nil, err
+		}
+		for _, mode := range modes.Modes {
+			names = append(names, mode.Name)
+		}
+	}
+	return names, nil
+}
+
+// Open makes an engine with the mode named exactly name, case included, a Microsoft mode or a TruVoice one, or
+// with Mary when no mode is. It reads the limits as the tools do, by setting the minimum and then the maximum
+// pitch and speed, which stay set.
+func Open(voices *voicedata.Voices, name []byte) (*Voice, error) {
+	voice, found, err := open(voices, string(name))
+	if err == nil && !found {
+		if voice, found, err = open(voices, fallbackVoice); err == nil && !found {
+			err = fmt.Errorf("the voices have no %q", fallbackVoice)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	voice := &Voice{Engine: engine}
+	engine := voice.engine
 	voice.Pitch.Default, voice.Speed.Default = uint32(engine.Pitch()), engine.Speed()
 	engine.SetPitch(0)
 	engine.SetSpeed(0)
@@ -55,6 +95,78 @@ func Open(data *whistler.Data, name []byte) (*Voice, error) {
 	engine.SetSpeed(math.MaxUint32)
 	voice.Pitch.Maximum, voice.Speed.Maximum = uint32(engine.Pitch()), engine.Speed()
 	return voice, nil
+}
+
+func open(voices *voicedata.Voices, name string) (*Voice, bool, error) {
+	if voices.Microsoft != nil {
+		if mode, found := voices.Microsoft.Mode(name); found {
+			engine, err := voices.Microsoft.NewEngine(mode)
+			if err != nil {
+				return nil, false, err
+			}
+			return &Voice{Name: mode.Name, engine: engine, microsoft: engine}, true, nil
+		}
+	}
+	if voices.TruVoice == nil {
+		return nil, false, nil
+	}
+	modes, err := voices.TruVoice.LoadModes()
+	if err != nil {
+		return nil, false, err
+	}
+	for index, mode := range modes.Modes {
+		if mode.Name == name {
+			data, err := truvoice.Load(voices.TruVoice)
+			if err != nil {
+				return nil, false, err
+			}
+			engine, err := data.NewEngine(index)
+			if err != nil {
+				return nil, false, err
+			}
+			return &Voice{Name: mode.Name, engine: engine, truVoice: engine}, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+// Format is the format of the voice's audio, its own.
+func (voice *Voice) Format() wave.Format {
+	if voice.microsoft != nil {
+		return wave.Format(voice.microsoft.Format())
+	}
+	return wave.Format(voice.truVoice.Format())
+}
+
+// Speak speaks a text as the tools do, into a WAV file: it sets the pitch and the speed, where a value out of
+// range changes nothing, and speaks the text with tags as one TextData call of the ANSI interface without a
+// notification sink.
+func (voice *Voice) Speak(pitch uint16, speed uint32, characters []uint16, writer *wave.Writer) error {
+	voice.engine.SetPitch(pitch)
+	voice.engine.SetSpeed(speed)
+	if voice.microsoft != nil {
+		return voice.microsoft.Speak(characters, true, text.ANSIText, microsoftSink{Writer: writer})
+	}
+	if _, err := voice.truVoice.Queue(characters, true, truvoicetext.Text, false); err != nil {
+		return err
+	}
+	return voice.truVoice.Run(truVoiceSink{Writer: writer})
+}
+
+type microsoftSink struct {
+	*wave.Writer
+}
+
+func (sink microsoftSink) Event(whistler.Event) error {
+	return nil
+}
+
+type truVoiceSink struct {
+	*wave.Writer
+}
+
+func (sink truVoiceSink) Event(truvoice.Event) error {
+	return nil
 }
 
 // Atoi reads a number as the C runtime's atoi does: after white space and a sign, the digits up to the first

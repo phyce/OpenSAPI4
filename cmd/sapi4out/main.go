@@ -4,7 +4,8 @@
 //	sapi4out <voice> <pitch> <speed> <text>
 //
 // It writes the WAV file in the current folder, named with 16 random letters and no extension, and prints its
-// name. The voice is a mode name, case included; any other name gives Mary. The text may have tags.
+// name. The voice is a mode name, case included, of a Microsoft voice or a TruVoice one; any other name gives
+// Mary. The text may have tags.
 package main
 
 import (
@@ -16,8 +17,6 @@ import (
 	"github.com/phyce/OpenSAPI4/internal/compatibility"
 	"github.com/phyce/OpenSAPI4/internal/voicedata"
 	"github.com/phyce/OpenSAPI4/internal/wave"
-	"github.com/phyce/OpenSAPI4/whistler"
-	"github.com/phyce/OpenSAPI4/whistler/text"
 )
 
 func main() {
@@ -30,12 +29,12 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "usage: sapi4out <voice> <pitch> <speed> <text>")
 		return 2
 	}
-	data, err := voicedata.LoadMicrosoft()
+	voices, err := voicedata.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sapi4out:", err)
 		return 1
 	}
-	voice, err := compatibility.Open(data, arguments[1].ANSI)
+	voice, err := compatibility.Open(voices, arguments[1].ANSI)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sapi4out:", err)
 		return 1
@@ -47,11 +46,9 @@ func run() int {
 		return 1
 	}
 	defer file.Close()
-	engine := voice.Engine
-	engine.SetPitch(uint16(compatibility.Atoi(arguments[2].ANSI)))
-	engine.SetSpeed(uint32(compatibility.Atoi(arguments[3].ANSI)))
-	writer := wave.NewWriter(file, wave.Format(engine.Format()))
-	err = engine.Speak(arguments[4].Text, true, text.ANSIText, waveSink{Writer: writer})
+	writer := wave.NewWriter(file, voice.Format())
+	err = voice.Speak(uint16(compatibility.Atoi(arguments[2].ANSI)), uint32(compatibility.Atoi(arguments[3].ANSI)),
+		arguments[4].Text, writer)
 	if err == nil {
 		err = writer.Finish()
 	}
@@ -63,15 +60,6 @@ func run() int {
 		return 1
 	}
 	return 0
-}
-
-// waveSink writes the audio as a WAV file.
-type waveSink struct {
-	*wave.Writer
-}
-
-func (sink waveSink) Event(whistler.Event) error {
-	return nil
 }
 
 // createFile makes a new file in the current folder with a random name.

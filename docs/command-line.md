@@ -153,9 +153,9 @@ sapi4out <voice> <pitch> <speed> <text>
 sapi4limits [<voice>]
 ```
 
-The same arguments, output and WAV files as the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4), so programs that call those can call these instead. For now they speak with the Microsoft voices only:
+The same arguments, output and WAV files as the tools of [TETYYS/SAPI4](https://github.com/TETYYS/SAPI4), so programs that call those can call these instead. They speak with the voices of the voices folder, Microsoft's and TruVoice's:
 
-- `sapi4out` writes a WAV file in the current folder, named with 16 random letters and no extension, and prints its name. A voice name that isn't exactly one of the voices gives Mary. Pitch and speed outside the voice's range give its maximum.
-- `sapi4limits` lists the voices, or with a voice, prints its default, minimum and maximum pitch and speed.
+- `sapi4out` writes a WAV file in the current folder, named with 16 random letters and no extension, and prints its name. The voice is a voice's full name, such as `Sam` or `Adult Male #1, American English (TruVoice)`; a name that isn't exactly one of them, case included, gives Mary, and so does a speaker's name such as `Peter`. Pitch and speed outside the voice's range give its maximum.
+- `sapi4limits` lists the voices, the Microsoft ones first, or with a voice, prints its default, minimum and maximum pitch and speed.
 
 Where the old tools failed silently (no voice data) or crashed (missing arguments), these print the reason on standard error and exit with code 1 or 2.

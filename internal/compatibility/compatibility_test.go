@@ -1,11 +1,126 @@
 package compatibility
 
 import (
+	"bytes"
 	"math"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"testing"
+	"unicode/utf16"
+
+	"github.com/phyce/OpenSAPI4/internal/voicedata"
+	"github.com/phyce/OpenSAPI4/internal/wave"
 )
+
+func loadVoices(t *testing.T) *voicedata.Voices {
+	root := os.Getenv("OPENSAPI4_CONFORMANCE")
+	if root == "" {
+		t.Skip("OPENSAPI4_CONFORMANCE is not set")
+	}
+	t.Setenv(voicedata.EnvironmentVariable, filepath.Join(root, "datapack"))
+	voices, err := voicedata.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return voices
+}
+
+func TestModeNames(t *testing.T) {
+	names, err := ModeNames(loadVoices(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 29 || names[0] != "Mary" || names[18] != "Mike in Space" ||
+		names[19] != "Adult Male #1, American English (TruVoice)" || names[28] != "Adult Female #2, American English (TruVoice)" {
+		t.Errorf("names %q", names)
+	}
+}
+
+func TestOpen(t *testing.T) {
+	voices := loadVoices(t)
+	cases := []struct {
+		name         string
+		expected     string
+		pitch, speed Limits
+	}{
+		{"Sam", "Sam", Limits{100, 50, 200}, Limits{150, 30, 450}},
+		{"sam", "Mary", Limits{169, 84, 338}, Limits{170, 30, 510}},
+		{"Adult Male #1, American English (TruVoice)", "Adult Male #1, American English (TruVoice)", Limits{85, 50, 400}, Limits{150, 50, 250}},
+		{"Adult Male #6, American English (TruVoice)", "Adult Male #6, American English (TruVoice)", Limits{89, 50, 400}, Limits{120, 50, 250}},
+		{"adult male #1, american english (truvoice)", "Mary", Limits{169, 84, 338}, Limits{170, 30, 510}},
+		{"Peter", "Mary", Limits{169, 84, 338}, Limits{170, 30, 510}},
+		{"Adult Male #1, American English (TruVoice) ", "Mary", Limits{169, 84, 338}, Limits{170, 30, 510}},
+	}
+	for _, testCase := range cases {
+		voice, err := Open(voices, []byte(testCase.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if voice.Name != testCase.expected || voice.Pitch != testCase.pitch || voice.Speed != testCase.speed {
+			t.Errorf("Open(%q) = %q, pitch %v, speed %v; expected %q, %v, %v", testCase.name, voice.Name, voice.Pitch,
+				voice.Speed, testCase.expected, testCase.pitch, testCase.speed)
+		}
+	}
+}
+
+// TestSpeakOutOfRange checks that a TruVoice pitch or speed out of range leaves the maximum the limits set.
+func TestSpeakOutOfRange(t *testing.T) {
+	voices := loadVoices(t)
+	speak := func(pitch uint16, speed uint32) []byte {
+		voice, err := Open(voices, []byte("Adult Female #2, American English (TruVoice)"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var output writeSeeker
+		writer := wave.NewWriter(&output, voice.Format())
+		if err := voice.Speak(pitch, speed, utf16.Encode([]rune("Hello world.")), writer); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Finish(); err != nil {
+			t.Fatal(err)
+		}
+		return output.data
+	}
+	highest := speak(400, 250)
+	if len(highest) <= wave.HeaderSize {
+		t.Fatalf("%d bytes", len(highest))
+	}
+	if !bytes.Equal(speak(401, 251), highest) || !bytes.Equal(speak(49, 49), highest) {
+		t.Error("a value out of range changed the pitch or speed")
+	}
+	if bytes.Equal(speak(152, 150), highest) {
+		t.Error("the default pitch and speed give the highest's audio")
+	}
+}
+
+type writeSeeker struct {
+	data     []byte
+	position int64
+}
+
+func (output *writeSeeker) Write(data []byte) (int, error) {
+	end := output.position + int64(len(data))
+	if end > int64(len(output.data)) {
+		output.data = append(output.data, make([]byte, end-int64(len(output.data)))...)
+	}
+	copy(output.data[output.position:], data)
+	output.position = end
+	return len(data), nil
+}
+
+func (output *writeSeeker) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case 0:
+		output.position = offset
+	case 1:
+		output.position += offset
+	default:
+		output.position = int64(len(output.data)) + offset
+	}
+	return output.position, nil
+}
 
 func TestAtoi(t *testing.T) {
 	cases := map[string]int32{

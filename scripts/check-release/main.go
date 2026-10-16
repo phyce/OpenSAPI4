@@ -135,22 +135,25 @@ func run(programFolder, workFolder string) ([]result, error) {
 			results = append(results, result{label: voice.Name + ": " + speech.name, sum: sum(audio)})
 		}
 	}
-	for _, arguments := range [][]string{nil, {"Sam"}} {
+	const truVoice = "Adult Male #1, American English (TruVoice)"
+	for _, arguments := range [][]string{nil, {"Sam"}, {truVoice}} {
 		printed, err := output(program("sapi4limits"), "", arguments...)
 		if err != nil {
 			return nil, err
 		}
 		results = append(results, result{label: strings.Join(append([]string{"sapi4limits"}, arguments...), " "), sum: sum(printed)})
 	}
-	printed, err := output(program("sapi4out"), workFolder, "Sam", "100", "150", "Hello world.")
-	if err != nil {
-		return nil, err
+	for _, arguments := range [][]string{{"Sam", "100", "150"}, {truVoice, "85", "150"}} {
+		printed, err := output(program("sapi4out"), workFolder, append(arguments, "Hello world.")...)
+		if err != nil {
+			return nil, err
+		}
+		audio, err := os.ReadFile(filepath.Join(workFolder, strings.TrimSpace(string(printed))))
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result{label: strings.Join(append([]string{"sapi4out"}, arguments...), " "), sum: sum(audio)})
 	}
-	audio, err := os.ReadFile(filepath.Join(workFolder, strings.TrimSpace(string(printed))))
-	if err != nil {
-		return nil, err
-	}
-	results = append(results, result{label: "sapi4out Sam 100 150", sum: sum(audio)})
 	return results, nil
 }
 

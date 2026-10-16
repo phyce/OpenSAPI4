@@ -28,34 +28,34 @@ func run() int {
 	}()
 	if len(arguments) == 2 {
 		output = append(append(append(output, "Voice info for "...), arguments[1].ANSI...), "\r\n"...)
-		data, err := voicedata.LoadMicrosoft()
+		voices, err := voicedata.Load()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "sapi4limits:", err)
 			return 1
 		}
-		voice, err := compatibility.Open(data, arguments[1].ANSI)
+		voice, err := compatibility.Open(voices, arguments[1].ANSI)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "sapi4limits:", err)
 			return 1
 		}
-		output = fmt.Appendf(output, "%s\r\n%d %d %d\r\n%d %d %d\r\n", voice.Engine.Mode().Name,
+		output = fmt.Appendf(output, "%s\r\n%d %d %d\r\n%d %d %d\r\n", voice.Name,
 			voice.Pitch.Default, voice.Pitch.Minimum, voice.Pitch.Maximum,
 			voice.Speed.Default, voice.Speed.Minimum, voice.Speed.Maximum)
 		return 0
 	}
 	output = append(output, "Enumerating voices\r\n"...)
-	data, err := voicedata.LoadMicrosoft()
+	voices, err := voicedata.Load()
+	var names []string
+	if err == nil {
+		names, err = compatibility.ModeNames(voices)
+	}
 	if err != nil {
 		output = append(output, "(null)"...)
 		fmt.Fprintln(os.Stderr, "sapi4limits:", err)
 		return 1
 	}
-	enumerator := data.Enumerate()
-	for {
-		modes, complete := enumerator.Next(1)
-		if !complete {
-			return 0
-		}
-		output = append(append(output, modes[0].ModeName...), "\r\n"...)
+	for _, name := range names {
+		output = append(append(output, name...), "\r\n"...)
 	}
+	return 0
 }
