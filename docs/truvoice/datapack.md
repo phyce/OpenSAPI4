@@ -259,7 +259,7 @@ Each symbol of `visuals` is a printable ASCII character, listed once, with an IP
 | Field | Values | Meaning |
 |---|---|---|
 | `spreadsheet` | Object | The words the pre-formatter writes in the spreadsheet context ([preformatter.md](preformatter.md) §2), below |
-| `address` | Object | The words the pre-formatter knows in the address and e-mail contexts ([preformatter.md](preformatter.md) §3.4), below |
+| `address` | Object | The words the pre-formatter knows in the address and e-mail contexts ([preformatter.md](preformatter.md) §3.4, §3.6), below |
 
 The **spreadsheet** words:
 
@@ -284,5 +284,23 @@ The **address** words:
 | `functionWords` | 59 words | The function words, after which a dot ends no sentence and which a sentence's start skips |
 | `abbreviations` | 163 words | The abbreviations, after whose dot no sentence starts and one space follows |
 | `spacedAbbreviations` | 2 words | The abbreviations that get two spaces after their dot before a capitalized word, as other words do |
+| `headers` | Array of objects | The e-mail headers ([preformatter.md](preformatter.md) §3.6), below |
+| `messageStart` | Word | What a message header line writes where a message starts (§3.7) |
 
-Each address word is one lower-case letter or more, `a` to `z`, and each spaced abbreviation is one of the abbreviations.
+Each address word is one lower-case letter or more, `a` to `z`, and each spaced abbreviation is one of the abbreviations. The message start is printable ASCII, one character or more.
+
+Each **header**:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `name` | Word | The header's name, printable ASCII without spaces and colons, case and all; each name comes once |
+| `outside` | Action or absent | What a line of it does outside a header block |
+| `block` | Action or absent | What a line of it does in a header block |
+| `after` | Action or absent | What a line of it does right after a header block |
+| `outsideNames` | Count, 0 if absent | How many messages must have started for a line of it outside a header block to be read as names; 0 is never |
+| `insideNames` | Count, 0 if absent | The same in and right after a header block |
+| `continues` | `true` or absent | Whether a value of it that ends in a comma, when it isn't read as names, goes on in the next line as a dropped one (§3.6, §3.7) |
+| `clearsAuthor` | `true` or absent | Whether a message it starts outside a header block has no `Author:` line yet (§3.7) |
+| `quotedTwice` | `true` or absent | Whether in or right after a header block two `>` may quote a line of it (§3.6) |
+
+An action is one of `dropped`, `block`, `message`, `sender`, `kept`, `date`, `subject` and `author` (§3.7). Where a header has no action and isn't read as names, a line of it isn't a header line.

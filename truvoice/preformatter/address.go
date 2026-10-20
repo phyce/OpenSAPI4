@@ -24,6 +24,8 @@ func Address(words *datapack.Address, text []byte) []byte {
 // address is the address context's words and what it has written of a text.
 type address struct {
 	functionWords, abbreviations, spacedAbbreviations map[string]bool
+	headers                                           map[string]datapack.Header
+	messageStart                                      string
 	output                                            strings.Builder
 	paragraph                                         string
 	// size is the measures of the paragraph's pieces (section 3.3).
@@ -36,11 +38,28 @@ type address struct {
 	last    string
 	hasLast bool
 	single  bool
+	// state is where the e-mail reading is, messages how many messages it has seen start, and author whether the
+	// last block had an Author: line (section 3.6).
+	state    state
+	messages int
+	author   bool
+	// afterSubject is whether the line before was a Subject: line, and subjectGoesOn whether it was one in a header
+	// block.
+	afterSubject, subjectGoesOn bool
+	// namesGoOn is how the next line goes on with an Author:, names or other value that ended in a comma.
+	namesGoOn datapack.HeaderAction
+	// held is a line of a header block that ended in a comma, if holding.
+	held    string
+	holding bool
 }
 
 func newAddress(words *datapack.Address) *address {
+	headers := make(map[string]datapack.Header, len(words.Headers))
+	for _, header := range words.Headers {
+		headers[header.Name] = header
+	}
 	return &address{functionWords: wordSet(words.FunctionWords), abbreviations: wordSet(words.Abbreviations),
-		spacedAbbreviations: wordSet(words.SpacedAbbreviations)}
+		spacedAbbreviations: wordSet(words.SpacedAbbreviations), headers: headers, messageStart: words.MessageStart}
 }
 
 func wordSet(words []string) map[string]bool {
@@ -51,9 +70,21 @@ func wordSet(words []string) map[string]bool {
 	return set
 }
 
-// piece joins a piece the reading gives to the paragraph (sections 3.1 to 3.3).
+// piece reads a piece the reading gives as part of an e-mail message (section 3.6) and joins what is left of it
+// to the paragraph.
 func (address *address) piece(piece string, end ending) {
+	if rest, left := address.email(piece, end); left {
+		address.join(rest, end, true, piece, true)
+	}
+}
+
+// join joins a piece to the paragraph (sections 3.1 to 3.3), with a blank line's end if edits is set. If colons is
+// set, its colons get spaces when the line it was read as gets them (section 3.2).
+func (address *address) join(piece string, end ending, edits bool, read string, colons bool) {
 	line := clean(piece)
+	if colons && colonsSpaced(read) {
+		line = spaceColons(line)
+	}
 	content := strings.TrimRight(strings.TrimLeft(piece, " \t"), " ")
 	if end == textEnd {
 		address.last, address.hasLast, address.single = line, true, len(content) == 1
@@ -75,7 +106,7 @@ func (address *address) piece(piece string, end ending) {
 		address.output.WriteString(character + paragraphEnd)
 		return
 	}
-	if strings.Trim(line, " ") == "" {
+	if edits && strings.Trim(line, " ") == "" {
 		if address.paragraph == "" {
 			address.output.WriteString(lineEnd)
 			return
@@ -90,10 +121,6 @@ func (address *address) piece(piece string, end ending) {
 		if len(line) > 1 && line[len(line)-2] != ' ' {
 			line = line[:len(line)-1]
 		}
-		line += " "
-	}
-	if strings.HasSuffix(line, ":") && !strings.Contains(line, " ") &&
-		!strings.Contains(strings.TrimLeft(piece, " "), "\t") {
 		line += " "
 	}
 	overflow := address.paragraph != "" && address.size+2*(len(line)+lineEndSize) > paragraphLimit
@@ -172,7 +199,11 @@ func (address *address) flush() {
 
 // clean makes a line's tabs spaces and each run of spaces one, but those after a dot, and drops its leading spaces.
 func clean(line string) string {
-	line = strings.ReplaceAll(line, "\t", " ")
+	return strings.TrimLeft(collapse(strings.ReplaceAll(line, "\t", " ")), " ")
+}
+
+// collapse makes each run of two spaces or more one space, but those after a dot.
+func collapse(line string) string {
 	var cleaned strings.Builder
 	for index := 0; index < len(line); {
 		if line[index] != ' ' {
@@ -188,7 +219,7 @@ func clean(line string) string {
 		}
 		index = run
 	}
-	return strings.TrimLeft(cleaned.String(), " ")
+	return cleaned.String()
 }
 
 func spaceRun(text string, index int) int {
@@ -243,7 +274,7 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 		if index+1 < len(tokens) {
 			following, followingSpaces = tokens[index+1], len(spaces[index+1])
 		}
-		if dotted, closed, ok := sentenceEnding(token); ok && (following != "" || followingSpaces > 0) {
+		if dotted, closed, ok := sentenceEnding(token); ok {
 			kind := address.dotKind(dotted, initial, closed)
 			gap = address.dotGap(dotted, kind, followingSpaces, following)
 			if strings.HasSuffix(token, "\".") && kind == wordKind && followingSpaces >= 2 {
@@ -419,10 +450,15 @@ func (address *address) dotKind(token string, initial, closed bool) kind {
 func (address *address) plainKind(token string, initial bool) kind {
 	if strings.HasSuffix(token, "\".") {
 		letter := strings.TrimRight(token[:len(token)-2], ".!?")
-		if len(letter) == 1 && alphabetic(letter[0]) {
+		switch {
+		case len(letter) > 1:
+			return wordKind
+		case letter != "" && alphabetic(letter[0]):
 			return letterKindOf(letter[0])
+		case letter != "" && digit(letter[0]):
+			return numberKind
 		}
-		return wordKind
+		return emptyKind
 	}
 	word := core(token)
 	switch {

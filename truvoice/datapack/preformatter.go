@@ -3,6 +3,7 @@ package datapack
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -34,12 +35,55 @@ type Spreadsheet struct {
 }
 
 // Address is the words the address and e-mail contexts read: the function words, after which a dot ends no
-// sentence, and the abbreviations, after which no sentence starts, with those whose dot keeps a word's spaces.
+// sentence, and the abbreviations, after which no sentence starts, with those whose dot keeps a word's spaces; the
+// e-mail headers and the words written where a message starts.
 type Address struct {
 	FunctionWords       []string
 	Abbreviations       []string
 	SpacedAbbreviations []string
+	Headers             []Header
+	MessageStart        string
 }
+
+// Header is an e-mail header's name and what the e-mail reading does with a line of it outside a header block, in
+// one and right after one. A line of it is read as names once OutsideNames messages have started outside a block,
+// InsideNames in or right after one; 0 is never. A value of it that ends in a comma goes on in the next line if
+// Continues is set; a message it starts has no Author: line if ClearsAuthor is; and in or right after a header block
+// two `>` may quote it if QuotedTwice is.
+type Header struct {
+	Name                                 string
+	Outside, Block, After                HeaderAction
+	OutsideNames, InsideNames            int
+	Continues, ClearsAuthor, QuotedTwice bool
+}
+
+// HeaderAction is what the e-mail reading does with a header line.
+type HeaderAction int
+
+const (
+	NoHeader HeaderAction = iota
+	// DroppedHeader drops the line.
+	DroppedHeader
+	// BlockHeader drops the line and starts a header block.
+	BlockHeader
+	// MessageHeader writes the message start's words and starts a header block.
+	MessageHeader
+	// SenderHeader writes the name in the line's value and starts a header block.
+	SenderHeader
+	// KeptHeader writes the line.
+	KeptHeader
+	// DateHeader writes the line, never as a short line.
+	DateHeader
+	// SubjectHeader writes the line; in a header block, the line after it goes on.
+	SubjectHeader
+	// AuthorHeader writes the name in the line's value and starts a header block.
+	AuthorHeader
+	// NameHeader writes the name in the line's value.
+	NameHeader
+)
+
+var headerActions = map[string]HeaderAction{"dropped": DroppedHeader, "block": BlockHeader, "message": MessageHeader,
+	"sender": SenderHeader, "kept": KeptHeader, "date": DateHeader, "subject": SubjectHeader, "author": AuthorHeader}
 
 type preFormatterDescription struct {
 	Spreadsheet *spreadsheetDescription `json:"spreadsheet"`
@@ -47,9 +91,23 @@ type preFormatterDescription struct {
 }
 
 type addressDescription struct {
-	FunctionWords       []string `json:"functionWords"`
-	Abbreviations       []string `json:"abbreviations"`
-	SpacedAbbreviations []string `json:"spacedAbbreviations"`
+	FunctionWords       []string            `json:"functionWords"`
+	Abbreviations       []string            `json:"abbreviations"`
+	SpacedAbbreviations []string            `json:"spacedAbbreviations"`
+	Headers             []headerDescription `json:"headers"`
+	MessageStart        string              `json:"messageStart"`
+}
+
+type headerDescription struct {
+	Name         string `json:"name"`
+	Outside      string `json:"outside"`
+	Block        string `json:"block"`
+	After        string `json:"after"`
+	OutsideNames int    `json:"outsideNames"`
+	InsideNames  int    `json:"insideNames"`
+	Continues    bool   `json:"continues"`
+	ClearsAuthor bool   `json:"clearsAuthor"`
+	QuotedTwice  bool   `json:"quotedTwice"`
 }
 
 type spreadsheetDescription struct {
@@ -156,8 +214,66 @@ func parseAddress(description *addressDescription) (*Address, error) {
 			return nil, fmt.Errorf("address spaced abbreviation %q isn't an abbreviation", word)
 		}
 	}
+	if !printableWord(description.MessageStart) {
+		return nil, fmt.Errorf("address messageStart is %q, not a word of printable ASCII", description.MessageStart)
+	}
+	headers, err := parseHeaders(description.Headers)
+	if err != nil {
+		return nil, err
+	}
 	return &Address{FunctionWords: description.FunctionWords, Abbreviations: description.Abbreviations,
-		SpacedAbbreviations: description.SpacedAbbreviations}, nil
+		SpacedAbbreviations: description.SpacedAbbreviations, Headers: headers,
+		MessageStart: description.MessageStart}, nil
+}
+
+func parseHeaders(descriptions []headerDescription) ([]Header, error) {
+	if len(descriptions) == 0 {
+		return nil, fmt.Errorf("address headers is empty")
+	}
+	headers := make([]Header, 0, len(descriptions))
+	seen := map[string]bool{}
+	for index, description := range descriptions {
+		if !printableWord(description.Name) || strings.ContainsAny(description.Name, ": ") {
+			return nil, fmt.Errorf("address header %d's name is %q, not a word of printable ASCII without a colon",
+				index, description.Name)
+		}
+		if seen[description.Name] {
+			return nil, fmt.Errorf("address header %q comes twice", description.Name)
+		}
+		seen[description.Name] = true
+		header := Header{Name: description.Name, OutsideNames: description.OutsideNames,
+			InsideNames: description.InsideNames, Continues: description.Continues,
+			ClearsAuthor: description.ClearsAuthor, QuotedTwice: description.QuotedTwice}
+		actions := []struct {
+			state  string
+			action string
+			target *HeaderAction
+		}{
+			{"outside", description.Outside, &header.Outside},
+			{"block", description.Block, &header.Block},
+			{"after", description.After, &header.After},
+		}
+		for _, action := range actions {
+			if action.action == "" {
+				continue
+			}
+			value, known := headerActions[action.action]
+			if !known {
+				return nil, fmt.Errorf("address header %q's %s is %q, not an action", description.Name, action.state,
+					action.action)
+			}
+			*action.target = value
+		}
+		if header.OutsideNames < 0 || header.InsideNames < 0 {
+			return nil, fmt.Errorf("address header %q has a negative message count", description.Name)
+		}
+		if header.Outside == NoHeader && header.Block == NoHeader && header.After == NoHeader &&
+			header.OutsideNames == 0 && header.InsideNames == 0 {
+			return nil, fmt.Errorf("address header %q does nothing", description.Name)
+		}
+		headers = append(headers, header)
+	}
+	return headers, nil
 }
 
 func lowerWord(word string) bool {
