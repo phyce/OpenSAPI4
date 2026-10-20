@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), the normalizer's program and lists ([normalizer.md](normalizer.md) §2), what TextData converts texts with ([engine.md](engine.md) §1) and the modes (§3), what the visual events report ([engine.md](engine.md) §2.6), and what Phoneme converts its phonemes with (§6). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), the normalizer's program and lists ([normalizer.md](normalizer.md) §2), what TextData converts texts with ([engine.md](engine.md) §1) and the modes (§3), what the visual events report ([engine.md](engine.md) §2.6), what Phoneme converts its phonemes with (§6), and the words the pre-formatter writes in the spreadsheet context ([preformatter.md](preformatter.md)). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -20,6 +20,7 @@ normalizer.json
 text.json
 modes.json
 engine.json
+preformatter.json
 ```
 
 **Conventions.** JSON files are UTF-8. Every table value is an integer. Readers check every count and range when they load a file, so a damaged pack fails to load instead of failing during synthesis.
@@ -252,3 +253,25 @@ A **mode** has its mode information: `engine` and `mode` (GUIDs), `manufacturer`
 | `ipa` | Pairs `[s, t]` | The IPA string Phoneme gives for a symbol of its listing ([engine.md](engine.md) §6.4): `s` the symbol, a printable ASCII character listed once, and `t` its string, one character or more, without NULs. A symbol not listed gives nothing |
 
 Each symbol of `visuals` is a printable ASCII character, listed once, with an IPA character or a mouth shape. An IPA character is 1 to 65535 but no surrogate. A symbol not listed has neither.
+
+## 15. `preformatter.json`
+
+| Field | Values | Meaning |
+|---|---|---|
+| `spreadsheet` | Object | The words the pre-formatter writes in the spreadsheet context ([preformatter.md](preformatter.md) §2), below |
+
+The **spreadsheet** words:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `months` | 12 words | The months' names, January first (§2.1) |
+| `denominators` | 9 words | The words of the denominators 1 to 9 (§2.2) |
+| `teens` | 10 words | The words of the denominators 10 to 19 |
+| `tens` | 8 words | The words of the denominators 20, 30 and so on to 90 |
+| `ordinals` | 9 words | The words of the units 1 to 9 after other tens |
+| `otherUnits` | 2 words | The words of a second character that isn't a digit: after `1`, and after another character |
+| `minus` | Word | What a minus sign and an opening bracket are written as, with a space after it |
+| `and` | Word | What a fraction writes after a line's first word |
+| `exponent` | Word | What an exponent's `E` is written as, between spaces |
+
+Each word is printable ASCII, one character or more.

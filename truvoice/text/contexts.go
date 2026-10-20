@@ -1,6 +1,10 @@
 package text
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/phyce/OpenSAPI4/truvoice/preformatter"
+)
 
 const (
 	// What TextData puts around a text the pre-formatter formats in the address or e-mail context: flags 7 and 8
@@ -64,13 +68,15 @@ func (converter *Converter) applyContexts(text []byte, characterSet CharacterSet
 	return applied
 }
 
-// preFormat writes a text in code page 1252 as the context has it. The original's pre-formatter, which formats
-// a text in the address, e-mail or spreadsheet context, isn't ported: the port leaves the text as it is, between
-// formattedStart and formattedEnd in the address and e-mail contexts.
+// preFormat writes a text in code page 1252 as the context has it: pre-formatted in the spreadsheet context, and
+// between formattedStart and formattedEnd in the address and e-mail contexts. The pre-formatter of those two isn't
+// ported: the port leaves the text as it is there.
 func (converter *Converter) preFormat(text []byte) []byte {
 	switch converter.Context {
 	case AddressContext, EmailContext:
 		return slices.Concat([]byte(formattedStart), text, []byte(formattedEnd))
+	case SpreadsheetContext:
+		return preformatter.Spreadsheet(&converter.preFormatter.Spreadsheet, text)
 	}
 	return text
 }

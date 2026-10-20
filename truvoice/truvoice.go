@@ -32,18 +32,19 @@ var (
 // Data is what the engines of one data pack share: its tables, and what the original keeps for the whole process,
 // the prosody stage's shared state, the voice \Rst\ goes back to and the user lexicon.
 type Data struct {
-	Modes       *datapack.Modes
-	pipeline    *datapack.Pipeline
-	synthesizer *datapack.Synthesizer
-	parameters  *datapack.Parameters
-	vowels      *datapack.Vowels
-	input       *datapack.Input
-	normalizer  *datapack.Normalizer
-	lexical     *datapack.Lexical
-	dictionary  *datapack.Dictionary
-	prosody     *datapack.Prosody
-	text        *datapack.Text
-	engine      *datapack.Engine
+	Modes        *datapack.Modes
+	pipeline     *datapack.Pipeline
+	synthesizer  *datapack.Synthesizer
+	parameters   *datapack.Parameters
+	vowels       *datapack.Vowels
+	input        *datapack.Input
+	normalizer   *datapack.Normalizer
+	lexical      *datapack.Lexical
+	dictionary   *datapack.Dictionary
+	prosody      *datapack.Prosody
+	text         *datapack.Text
+	preFormatter *datapack.PreFormatter
+	engine       *datapack.Engine
 
 	process     *text.Process
 	shared      *prosody.Shared
@@ -65,6 +66,7 @@ func Load(pack *datapack.Pack) (*Data, error) {
 		func() { data.dictionary, err = pack.LoadDictionary() },
 		func() { data.prosody, err = pack.LoadProsody() },
 		func() { data.text, err = pack.LoadText() },
+		func() { data.preFormatter, err = pack.LoadPreFormatter() },
 		func() { data.engine, err = pack.LoadEngine() },
 	}
 	for _, load := range loads {
@@ -161,7 +163,7 @@ func (data *Data) NewEngineAccepting(voice int, accept AcceptFormat) (*Engine, e
 	engine := &Engine{data: data, format: format}
 	engine.state = pipeline.Engine{Pitch: uint16(defaults.Pitch), Speed: uint32(defaults.Speed), Volume: initialVolume,
 		Voice: int32(voice), SampleRate: format.SampleRate, Gain: initialGain, Pronounce: engine.pronounce}
-	engine.converter = text.New(data.text, data.Modes, data.process, int32(voice),
+	engine.converter = text.New(data.text, data.Modes, data.preFormatter, data.process, int32(voice),
 		text.Defaults{Pitch: uint16(defaults.Pitch), Speed: uint32(defaults.Speed), Volume: initialVolume})
 	return engine, nil
 }

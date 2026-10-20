@@ -41,13 +41,14 @@ type goldenCase struct {
 }
 
 type tables struct {
-	text     *datapack.Text
-	modes    *datapack.Modes
-	pipeline *datapack.Pipeline
+	text         *datapack.Text
+	modes        *datapack.Modes
+	preFormatter *datapack.PreFormatter
+	pipeline     *datapack.Pipeline
 }
 
-// counts are what the replays met: texts compared, texts left out because the original pre-formats them, and
-// cases left out because an Inject call changes what the conversion reads.
+// counts are what the replays met: texts compared, texts left out because the original pre-formats them in the
+// address or e-mail context, and cases left out because an Inject call changes what the conversion reads.
 type counts struct {
 	texts, preFormatted, injected, failed int
 }
@@ -74,6 +75,9 @@ func TestConversion(t *testing.T) {
 	if loaded.modes, err = pack.LoadModes(); err != nil {
 		t.Fatal(err)
 	}
+	if loaded.preFormatter, err = pack.LoadPreFormatter(); err != nil {
+		t.Fatal(err)
+	}
 	if loaded.pipeline, err = pack.LoadPipeline(); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +88,7 @@ func TestConversion(t *testing.T) {
 			cases++
 			replay(t, &loaded, golden, &total)
 		}, name)
-		t.Logf("%s: %d cases, %d texts compared, %d failed as expected, %d left in the pre-formatter's contexts, %d cases with Inject left out",
+		t.Logf("%s: %d cases, %d texts compared, %d failed as expected, %d left in the address and e-mail contexts, %d cases with Inject left out",
 			name, cases, total.texts, total.failed, total.preFormatted, total.injected)
 	}
 }
@@ -112,7 +116,7 @@ func replay(t *testing.T, loaded *tables, golden goldenCase, total *counts) {
 	}
 	voice := modeVoice(t, golden.Mode)
 	defaults := loaded.pipeline.Voices[voice]
-	converter := text.New(loaded.text, loaded.modes, text.NewProcess(), int32(voice),
+	converter := text.New(loaded.text, loaded.modes, loaded.preFormatter, text.NewProcess(), int32(voice),
 		text.Defaults{Pitch: uint16(defaults.Pitch), Speed: uint32(defaults.Speed), Volume: 0xffff})
 	var feeds [][]byte
 	for _, record := range golden.Records {
@@ -189,8 +193,8 @@ func replay(t *testing.T, loaded *tables, golden goldenCase, total *counts) {
 	}
 }
 
-// preFormatterReached is whether the original's text has characters in the address, e-mail or spreadsheet context,
-// which its pre-formatter formats; context is the engine's context before the text. The ESC[nX of a text that has
+// preFormatterReached is whether the original's text has characters in the address or e-mail context, whose
+// pre-formatter isn't ported; context is the engine's context before the text. The ESC[nX of a text that has
 // one of its own are the caller's, which change no context.
 func preFormatterReached(original []byte, context int, typed bool) bool {
 	original = bytes.TrimSuffix(original, []byte{0})
@@ -201,15 +205,8 @@ func preFormatterReached(original []byte, context int, typed bool) bool {
 	start := 0
 	for _, match := range append(changes, []int{len(original), len(original), 0, 0}) {
 		segment := string(original[start:match[0]])
-		switch context {
-		case text.AddressContext, text.EmailContext:
-			if segment != emptyFormatted {
-				return true
-			}
-		case text.SpreadsheetContext:
-			if segment != "" {
-				return true
-			}
+		if (context == text.AddressContext || context == text.EmailContext) && segment != emptyFormatted {
+			return true
 		}
 		if match[0] < len(original) {
 			context = int(original[match[2]] - '0')

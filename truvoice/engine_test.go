@@ -72,7 +72,7 @@ type goldenRuns struct {
 // The sets whose runs the engine's test replays.
 var engineSets = []string{"affixes", "conversion", "dictionary", "durations", "inject", "input", "letters", "lexical",
 	"lexicon", "normalizer", "parameters", "pause", "phoneme", "pipeline", "positions", "postlexical", "prosody",
-	"pronounce", "stage", "synthesizer"}
+	"pronounce", "spreadsheet", "stage", "synthesizer"}
 
 // The calls besides Speak and Queue the test makes.
 var portedCalls = []string{"Inject", "PitchGet", "PitchSet", "SpeedGet", "SpeedSet", "VolumeGet", "VolumeSet", "ModeGet",
@@ -407,7 +407,7 @@ func leftOut(golden goldenCase) string {
 	for _, value := range golden.texts() {
 		lowered := strings.ToLower(value)
 		if golden.PreFormatter == nil && strings.Contains(lowered, "ctx=") && (strings.Contains(lowered, "address") ||
-			strings.Contains(lowered, "mail") || strings.Contains(lowered, "spreadsheet")) {
+			strings.Contains(lowered, "mail")) {
 			return "pre-formatter"
 		}
 	}
@@ -690,8 +690,8 @@ func at(values []string, index int) string {
 // starts and ends, the words and bookmarks where they stand in the audio, the visual events where they stand, and,
 // for the runs that keep them, the calls with what they gave between the attribute changes and the texts' starts
 // and ends, and the user lexicon's file. It leaves out the runs with calls the engine doesn't have (RealTime,
-// QueryInterface), an empty \Vol=\ given to Inject, the racy runs and the runs with texts in the contexts of the
-// pre-formatter, which isn't ported.
+// QueryInterface), an empty \Vol=\ given to Inject, the racy runs and the runs with texts in the address and e-mail
+// contexts, whose pre-formatter isn't ported.
 func TestEngine(t *testing.T) {
 	pack := conformance.Pack(t)
 	seen := map[string]bool{}

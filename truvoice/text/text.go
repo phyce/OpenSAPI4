@@ -69,12 +69,13 @@ type Pronunciation struct {
 
 // Converter converts the texts of one engine. What it reads and changes of the engine is in its fields.
 type Converter struct {
-	tables  *datapack.Text
-	modes   *datapack.Modes
-	process *Process
+	tables       *datapack.Text
+	modes        *datapack.Modes
+	preFormatter *datapack.PreFormatter
+	process      *Process
 
 	// Context is the engine's context: \Ctx="..."\ sets it, and it lasts from text to text. A text in the
-	// address, e-mail or spreadsheet context goes through the original's pre-formatter, which isn't ported.
+	// address, e-mail or spreadsheet context goes through the pre-formatter, ported for the spreadsheet context only.
 	Context int
 	// WideOffsets doubles the word marks' offsets, as for a text of UTF-16 code units. A text through the ANSI
 	// interface clears it, and a text with word marks sets it after them.
@@ -88,9 +89,10 @@ type Converter struct {
 	pronunciationCount uint32
 }
 
-func New(tables *datapack.Text, modes *datapack.Modes, process *Process, voice int32, defaults Defaults) *Converter {
-	return &Converter{tables: tables, modes: modes, process: process, WideOffsets: true, Voice: voice, Defaults: defaults,
-		pronunciations: map[uint32]Pronunciation{}}
+func New(tables *datapack.Text, modes *datapack.Modes, preFormatter *datapack.PreFormatter, process *Process, voice int32,
+	defaults Defaults) *Converter {
+	return &Converter{tables: tables, modes: modes, preFormatter: preFormatter, process: process, WideOffsets: true, Voice: voice,
+		Defaults: defaults, pronunciations: map[uint32]Pronunciation{}}
 }
 
 // TakePronunciation returns the \Prn=\ record a text refers to by its number, once: the original frees it when the
