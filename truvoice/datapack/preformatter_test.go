@@ -18,4 +18,10 @@ func TestPreFormatter(t *testing.T) {
 		words.Exponent != "times 10 to the" {
 		t.Errorf("spreadsheet words %+v", words)
 	}
+	address := preFormatter.Address
+	if len(address.FunctionWords) != 59 || address.FunctionWords[0] != "about" || len(address.Abbreviations) != 163 ||
+		address.Abbreviations[0] != "abil" || len(address.SpacedAbbreviations) != 2 {
+		t.Errorf("address words %d function words, %d abbreviations, %d spaced", len(address.FunctionWords),
+			len(address.Abbreviations), len(address.SpacedAbbreviations))
+	}
 }

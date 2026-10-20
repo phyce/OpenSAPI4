@@ -2,7 +2,7 @@
 
 The files the Go engine reads instead of the TruVoice engine's own tables. A converter that is not part of this repo writes them from `tv_enua.dll`; the engine (`truvoice/datapack`) reads only these files. Like the Microsoft voices' pack ([../whistler/datapack.md](../whistler/datapack.md)), it is a separate download and is never added to this repo or to the app binary.
 
-**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), the normalizer's program and lists ([normalizer.md](normalizer.md) §2), what TextData converts texts with ([engine.md](engine.md) §1) and the modes (§3), what the visual events report ([engine.md](engine.md) §2.6), what Phoneme converts its phonemes with (§6), and the words the pre-formatter writes in the spreadsheet context ([preformatter.md](preformatter.md)). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
+**Status.** Format version 1 holds the synthesizer's tables ([synthesizer.md](synthesizer.md) §3 and §4), the pipeline's ([pipeline.md](pipeline.md)) and the parameter generator's transition shapes, phonemes, classes, rules, articulators and action 4's tables ([parameters.md](parameters.md) §2.5, §3 to §5, §9.2 and §12) and its vowel database (§11), the prosody stage's pitch ranges, pauses, durations, duration grids and function words' rules ([prosody.md](prosody.md) §3.4, §4.3 and §6), the lexical stage's function words' lists, dictionary, affixes, contexts and letter-to-sound's rules ([lexical.md](lexical.md) §3.4, §6 and §8 to §11), the escape parser's and the TextIn tokenizer's tables ([input.md](input.md) §1 and §4), the normalizer's program and lists ([normalizer.md](normalizer.md) §2), what TextData converts texts with ([engine.md](engine.md) §1) and the modes (§3), what the visual events report ([engine.md](engine.md) §2.6), what Phoneme converts its phonemes with (§6), and the pre-formatter's words for the spreadsheet, address and e-mail contexts ([preformatter.md](preformatter.md)). The tables of the other stages are added with the parts that use them. Until the first release with TruVoice the format can change without a version bump; after it, any change that an older engine can't read raises `formatVersion`.
 
 ## 1. Layout
 
@@ -259,6 +259,7 @@ Each symbol of `visuals` is a printable ASCII character, listed once, with an IP
 | Field | Values | Meaning |
 |---|---|---|
 | `spreadsheet` | Object | The words the pre-formatter writes in the spreadsheet context ([preformatter.md](preformatter.md) §2), below |
+| `address` | Object | The words the pre-formatter knows in the address and e-mail contexts ([preformatter.md](preformatter.md) §3.4), below |
 
 The **spreadsheet** words:
 
@@ -275,3 +276,13 @@ The **spreadsheet** words:
 | `exponent` | Word | What an exponent's `E` is written as, between spaces |
 
 Each word is printable ASCII, one character or more.
+
+The **address** words:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `functionWords` | 59 words | The function words, after which a dot ends no sentence and which a sentence's start skips |
+| `abbreviations` | 163 words | The abbreviations, after whose dot no sentence starts and one space follows |
+| `spacedAbbreviations` | 2 words | The abbreviations that get two spaces after their dot before a capitalized word, as other words do |
+
+Each address word is one lower-case letter or more, `a` to `z`, and each spaced abbreviation is one of the abbreviations.

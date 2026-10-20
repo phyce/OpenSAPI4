@@ -27,10 +27,40 @@ func Spreadsheet(words *datapack.Spreadsheet, text []byte) []byte {
 	return []byte(format(string(text), sheet.line))
 }
 
+// ending is how a piece of a text's line ends: where the reading cut the line, at a line feed or at the text's end.
+type ending int
+
+const (
+	cutEnding ending = iota
+	lineFeed
+	textEnd
+)
+
 // format reads a text's lines (section 1.1), cuts those too long (section 1.2), writes each through transform,
 // wraps it and ends it.
 func format(text string, transform func(string) string) string {
 	var output strings.Builder
+	read(text, func(piece string, end ending) {
+		switch {
+		case end == cutEnding:
+			output.WriteString(wrap(transform(piece)))
+			output.WriteString(paragraphEnd)
+		case piece != "" && end == lineFeed:
+			output.WriteString(wrap(transform(piece)))
+			output.WriteString(lineEnd)
+		case piece != "":
+			output.WriteString(wrap(transform(piece)))
+			output.WriteString(paragraphEnd)
+		case end == lineFeed:
+			output.WriteString(lineEnd)
+		}
+	})
+	return output.String()
+}
+
+// read reads a text's lines (section 1.1) and cuts those too long (section 1.2). It gives each piece, without its
+// carriage returns unless it continues a line it cut, with how it ends.
+func read(text string, handle func(piece string, end ending)) {
 	position := 0
 	continuation := false
 	for position < len(text) {
@@ -46,8 +76,7 @@ func format(text string, transform func(string) string) string {
 			if !continuation {
 				piece = strings.ReplaceAll(piece, "\r", "")
 			}
-			output.WriteString(wrap(transform(piece)))
-			output.WriteString(paragraphEnd)
+			handle(piece, cutEnding)
 			position = end
 			continuation = true
 			continue
@@ -56,15 +85,10 @@ func format(text string, transform func(string) string) string {
 		if !continuation {
 			piece = strings.ReplaceAll(piece, "\r", "")
 		}
-		switch {
-		case piece != "" && newline:
-			output.WriteString(wrap(transform(piece)))
-			output.WriteString(lineEnd)
-		case piece != "":
-			output.WriteString(wrap(transform(piece)))
-			output.WriteString(paragraphEnd)
-		case newline:
-			output.WriteString(lineEnd)
+		if newline {
+			handle(piece, lineFeed)
+		} else {
+			handle(piece, textEnd)
 		}
 		position = stop
 		if newline {
@@ -72,17 +96,17 @@ func format(text string, transform func(string) string) string {
 		}
 		continuation = false
 	}
-	return output.String()
 }
 
 // window is the characters a line can take from start: up to a line feed or the text's end, at most lineLimit.
-// It reports where they stop, whether there are lineLimit of them and whether a line feed ends them.
+// It reports where they stop, whether there are lineLimit of them before the text's end and whether a line feed
+// ends them.
 func window(text string, start int) (stop int, full, newline bool) {
 	stop = start
 	for stop < len(text) && stop-start < lineLimit && text[stop] != '\n' {
 		stop++
 	}
-	full = stop-start == lineLimit
+	full = stop-start == lineLimit && stop < len(text)
 	newline = !full && stop < len(text) && text[stop] == '\n'
 	return stop, full, newline
 }

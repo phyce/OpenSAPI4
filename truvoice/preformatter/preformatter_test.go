@@ -17,7 +17,7 @@ type goldenCase struct {
 }
 
 // TestSpreadsheet formats the golden texts in the spreadsheet context and compares the output with the original's,
-// but for the texts section 3 of the spec leaves out, which it only formats.
+// but for the texts section 4 of the spec leaves out, which it only formats.
 func TestSpreadsheet(t *testing.T) {
 	tables, err := conformance.Pack(t).LoadPreFormatter()
 	if err != nil {
@@ -47,6 +47,38 @@ func TestSpreadsheet(t *testing.T) {
 	}
 	t.Logf("%d texts compared, left out: %d with a month of more than three characters, %d long",
 		compared, left["month"], left["long"])
+}
+
+// TestAddress formats the golden texts in the address context and compares the output with the original's, but
+// for the texts section 4 of the spec leaves out, which it only formats.
+func TestAddress(t *testing.T) {
+	tables, err := conformance.Pack(t).LoadPreFormatter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	compared, failed := 0, 0
+	left := map[string]int{}
+	conformance.EachLine(t, func(golden goldenCase) {
+		if golden.Mode != 1 {
+			return
+		}
+		output := preformatter.Address(&tables.Address, latin1(golden.Text))
+		if golden.Differs != "" {
+			left[golden.Differs]++
+			return
+		}
+		compared++
+		if expected := latin1(*golden.Output); !bytes.Equal(output, expected) {
+			failed++
+			if failed <= 10 {
+				t.Errorf("%s: %q\n   gave %q\n   expected %q", golden.Set, golden.Text, output, expected)
+			}
+		}
+	}, "address.jsonl.gz")
+	if failed > 0 {
+		t.Errorf("%d of %d texts differ", failed, compared)
+	}
+	t.Logf("%d texts compared, left out: %d with a paragraph near the limit", compared, left["limit"])
 }
 
 func latin1(text string) []byte {
