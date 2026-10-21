@@ -61,7 +61,7 @@ func (address *address) email(piece string, end ending) (string, bool) {
 				return "", false
 			}
 			if !headerForm(piece, end) {
-				address.subjectLine(unquoted(piece), end)
+				address.subjectLine(piece, end)
 				address.hold(piece)
 				return "", false
 			}
@@ -279,11 +279,17 @@ func (address *address) continueNames(action datapack.HeaderAction, piece string
 }
 
 // subjectLine writes the line that goes on after a Subject: line in a header block (section 3.6): no blank line,
-// no colon spaces, and as the text's last line no dot.
-func (address *address) subjectLine(kept string, end ending) {
+// no colon spaces, and as the text's last line no dot, and a single character (the space after a quote's > counted)
+// as it is.
+func (address *address) subjectLine(piece string, end ending) {
+	kept := unquoted(piece)
 	if end == textEnd {
 		text := collapse(strings.ReplaceAll(strings.TrimLeft(kept, " "), "\t", " "))
-		if strings.Trim(text, " ") == "" {
+		bare := strings.TrimLeft(strings.ReplaceAll(piece, "\t", " "), " ")
+		if len(strings.TrimRight(strings.TrimPrefix(bare, ">"), " ")) <= 1 {
+			if trimmed := strings.Trim(text, " "); trimmed != "" {
+				text = trimmed
+			}
 			address.output.WriteString(text + paragraphEnd)
 			return
 		}
