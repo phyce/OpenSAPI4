@@ -2,13 +2,22 @@ package preformatter
 
 import "strings"
 
-// separatorUnits are the marks that go when one of them stands twice or more in a row, tried in this order.
+// separatorUnits are the marks that go everywhere in a paragraph where one of them stands twice in a row, tried in
+// this order.
 var separatorUnits = []string{"%%", "&&", "**", "++", "--", "//", "::", ";;", "<<", "==", "@@", "^^", "__", "||", "##",
 	">>", "+-", "+_", "-=", "-_", "<>"}
 
+// arrowMarks are the arrows, tried in this order.
+var arrowMarks = []string{"<-->", "<==>", "<->", "<=>", "-->", "==>", "->", "=>"}
+
 // marks reads a paragraph's marks before its words are spaced (section 3.4).
 func marks(paragraph string) string {
-	paragraph = separators(paragraph)
+	paragraph = arrows(paragraph)
+	for _, unit := range separatorUnits {
+		if strings.Contains(paragraph, unit+unit) {
+			paragraph = strings.ReplaceAll(paragraph, unit, "")
+		}
+	}
 	if strings.Contains(paragraph, `\\`) {
 		paragraph = strings.ReplaceAll(paragraph, `\`, "")
 	}
@@ -26,40 +35,40 @@ func marks(paragraph string) string {
 			words[index] = "colon"
 		}
 	}
-	words = strings.Split(approximately(strings.Join(words, " ")), " ")
-	for index, word := range words {
-		if word != "" && len(word) <= 3 && strings.Trim(word, "_") == "" {
-			words[index] = "~"
-		}
-	}
-	return strings.Join(words, " ")
+	return approximately(strings.Join(words, " "))
 }
 
-// separators drops each run of a separator unit twice or more.
-func separators(paragraph string) string {
+// arrows reads each arrow as "to and from" or "to", with a space on each side where there is none.
+func arrows(paragraph string) string {
 	var output strings.Builder
 	for index := 0; index < len(paragraph); {
-		if run := separatorRun(paragraph, index); run > index {
-			index = run
+		arrow := ""
+		for _, mark := range arrowMarks {
+			if strings.HasPrefix(paragraph[index:], mark) {
+				arrow = mark
+				break
+			}
+		}
+		if arrow == "" {
+			output.WriteByte(paragraph[index])
+			index++
 			continue
 		}
-		output.WriteByte(paragraph[index])
-		index++
+		stop := index + len(arrow)
+		if index == 0 || paragraph[index-1] != ' ' {
+			output.WriteByte(' ')
+		}
+		if arrow[0] == '<' {
+			output.WriteString("to and from")
+		} else {
+			output.WriteString("to")
+		}
+		if stop == len(paragraph) || paragraph[stop] != ' ' {
+			output.WriteByte(' ')
+		}
+		index = stop
 	}
 	return output.String()
-}
-
-func separatorRun(paragraph string, index int) int {
-	for _, unit := range separatorUnits {
-		run := index
-		for strings.HasPrefix(paragraph[run:], unit) {
-			run += len(unit)
-		}
-		if run-index >= 2*len(unit) {
-			return run
-		}
-	}
-	return index
 }
 
 // bars makes a comma of each | that ends a word.

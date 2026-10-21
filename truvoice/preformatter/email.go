@@ -193,7 +193,6 @@ func (address *address) headerLine(name, value string, action datapack.HeaderAct
 			}
 			text += value
 			short := end == lineFeed && !fromAddress && len(text) < shortHeader
-			text = dashed(text)
 			switch {
 			case short && strings.HasSuffix(text, "."):
 				text += "  "
@@ -411,9 +410,7 @@ func measured(line string) int {
 
 // joined is a line as a paragraph's line ends (section 3.3), with a dot after a long one.
 func joined(line string) string {
-	length := len(line)
-	line = dashed(line)
-	short := strings.HasSuffix(line, ":") || length < shortLine
+	short := strings.HasSuffix(line, ":") || len(line) < shortLine
 	switch {
 	case short && strings.HasSuffix(line, "."):
 		return line + "  "
@@ -432,14 +429,4 @@ func unquoted(piece string) string {
 		return piece
 	}
 	return strings.TrimPrefix(line[1:], " ")
-}
-
-func dashed(text string) string {
-	if !strings.HasSuffix(text, "-") {
-		return text
-	}
-	if len(text) > 1 && text[len(text)-2] != ' ' {
-		text = text[:len(text)-1]
-	}
-	return text + " "
 }

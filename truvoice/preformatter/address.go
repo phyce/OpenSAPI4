@@ -119,12 +119,6 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 		return
 	}
 	length := len(line)
-	if strings.HasSuffix(line, "-") {
-		if len(line) > 1 && line[len(line)-2] != ' ' {
-			line = line[:len(line)-1]
-		}
-		line += " "
-	}
 	overflow := address.paragraph != "" && address.size+2*(len(line)+lineEndSize) > paragraphLimit
 	if overflow {
 		address.flush()
@@ -256,7 +250,8 @@ const (
 // spacing spaces a paragraph's words (section 3.4), as a sentence's start if start is set or, with restart, if
 // it has a closed number. It reports whether the paragraph ends where a sentence starts.
 func (address *address) spacing(paragraph string, start, restart bool) (string, bool) {
-	paragraph = wordDashes(commas(startDots(address.dotRuns(paragraph))))
+	paragraph = startDots(address.dotRuns(address.loosened(commas(paragraph, true))))
+	paragraph = commas(underscores(slashes(dashes(pluses(paragraph)))), false)
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
 	tokens, spaces := words(paragraph)
 	initial := start
@@ -269,6 +264,7 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 	}
 	skipped, gap, joined := 0, 0, 0
 	terminalBefore := false
+	held := ""
 	for index, token := range tokens {
 		if index > 0 {
 			if initial && skipped > 0 && capitalized(token) {
@@ -278,9 +274,21 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 			if terminal(token) && !terminalBefore {
 				width = joined
 			}
+			if held != "" && !terminal(token) {
+				output.WriteString(held)
+				held = ""
+			}
 			output.WriteString(strings.Repeat(" ", width))
 		}
 		terminalBefore = index > 0 && terminal(token)
+		spread := strings.HasSuffix(token, keptSpace+"/")
+		if strings.HasSuffix(token, "/") && token != "/" && token != ">/" && !strings.HasSuffix(token, "(/") {
+			held = " /"
+			if spread {
+				held = "  /"
+			}
+			token = strings.TrimRight(token[:len(token)-1], keptSpace)
+		}
 		gap, joined = 0, 0
 		following, followingSpaces := "", trailing
 		if index+1 < len(tokens) {
@@ -289,10 +297,10 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 		if dotted, closed, ok := sentenceEnding(token); ok {
 			kind := address.dotKind(dotted, initial, closed)
 			gap = address.dotGap(dotted, kind, followingSpaces, following)
-			if followingSpaces >= 2 && (kind == wordKind || kind == startKind || kind == functionKind) {
-				if kind == wordKind {
-					joined = 1
-				}
+			if kind == wordKind && followingSpaces >= 2 {
+				joined = 1
+			}
+			if (followingSpaces >= 2 || spread) && (kind == wordKind || kind == startKind || kind == functionKind) {
 				if cut := cutClosers(token); cut != token {
 					token, joined = cut, 1
 				}
@@ -307,13 +315,18 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 			}
 		} else if exclaimed(token) {
 			gap = 2
-			bare := strings.TrimRight(strings.TrimRight(token, ",):;\""), "!?")
+			bare := strings.TrimRight(strings.TrimRight(strings.TrimRight(token, ",):;\""), "!?"), keptSpace)
 			if dotted, closed, ok := sentenceEnding(bare); ok {
 				initial, skipped = address.startsAfter(dotted, address.dotKind(dotted, initial, closed)), 0
 			} else if initial && address.skippable(bare) {
 				skipped++
 			} else {
 				initial, skipped = false, 0
+			}
+		} else if dotted, closed, rest, ok := splitEnding(token); ok {
+			initial, skipped = address.startsAfter(dotted, address.dotKind(dotted, initial, closed)), 0
+			if initial && rest != "" && strings.Trim(rest, ",;)") == "" {
+				skipped = 1
 			}
 		} else if initial && address.skippable(token) {
 			skipped++
@@ -322,6 +335,7 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 		}
 		output.WriteString(token)
 	}
+	output.WriteString(held)
 	output.WriteString(strings.Repeat(" ", trailing))
 	return strings.ReplaceAll(output.String(), keptSpace, " "), initial
 }
@@ -348,9 +362,11 @@ func (address *address) dotRuns(paragraph string) string {
 
 // dotRun is a run of dots and the spaces after it: a dot and two spaces, and a dot and a space more for every six
 // dots and spaces after the first two, a run before a word counted as if one space followed it and keeping its last
-// one or two dots on the word. A dot before one space or none stays. Two dots before a word are a dot, but after a
-// word that is no function word, letter or number and before a comma, a word of ! and ?, or one ending in a dot
-// before one space, a dot and a space that keeps the word whole.
+// one or two dots on the word. A dot before one space or none stays. Two dots before a word are a dot: before a + a
+// dot and two spaces; after a word that is no function word, letter or number (or a quoted one) and before what
+// splits it, or before a slash both parts keep, a dot and a space that keeps the word whole; after a single
+// character that is no digit, a dot, a space and a dot, but before a slash, a bracket, a dash or a word of commas,
+// semicolons, ! and ?.
 func (address *address) dotRun(paragraph string, start, dots, stop int) string {
 	count, spaces := dots-start, stop-dots
 	attached := spaces == 0 && stop < len(paragraph)
@@ -359,8 +375,17 @@ func (address *address) dotRun(paragraph string, start, dots, stop int) string {
 	}
 	if count == 2 && attached {
 		before := paragraph[strings.LastIndexAny(paragraph[:start], " ,")+1 : start]
-		if address.plainKind(before+".", false) == wordKind && splits(paragraph[stop:]) {
+		following := paragraph[stop:]
+		if strings.HasPrefix(following, "+") {
+			return ".  "
+		}
+		wordy := address.plainKind(before+".", false) == wordKind ||
+			strings.HasSuffix(before, "\"") && len(core(before+".")) > 1
+		if wordy && (splits(following) || strings.HasPrefix(following, "/") && kept(before+".")) {
 			return "." + keptSpace
+		}
+		if len(before) == 1 && !digit(before[0]) && !pairStays(following) {
+			return ". ."
 		}
 		return "."
 	}
@@ -372,7 +397,10 @@ func (address *address) dotRun(paragraph string, start, dots, stop int) string {
 }
 
 func splits(text string) bool {
-	if strings.HasPrefix(text, ",") {
+	switch {
+	case strings.HasPrefix(text, ",") || strings.HasPrefix(text, "-"):
+		return true
+	case strings.HasPrefix(text, "; ") || strings.HasPrefix(text, ") "):
 		return true
 	}
 	run := terminalRun(text, 0)
@@ -383,6 +411,19 @@ func splits(text string) bool {
 		return true
 	}
 	return strings.HasPrefix(text[run:], ". ") && (run+2 == len(text) || text[run+2] != ' ')
+}
+
+// pairStays is whether two dots after a single character stay a dot before a text: one that starts with a slash, an
+// opening bracket or a dash, or with commas, semicolons, ! and ? before a space, a dot, a comma or its end.
+func pairStays(text string) bool {
+	if text != "" && strings.IndexByte("/(-", text[0]) >= 0 {
+		return true
+	}
+	run := 0
+	for run < len(text) && strings.IndexByte(",;!?", text[run]) >= 0 {
+		run++
+	}
+	return run > 0 && (run == len(text) || text[run] == ' ' || text[run] == '.' || strings.Contains(text[1:run], ","))
 }
 
 func terminalRun(text string, index int) int {
@@ -404,39 +445,68 @@ func startDots(paragraph string) string {
 	return paragraph
 }
 
-// commas puts a space after each comma inside a word that doesn't start with one: after a character that is no
-// digit, dot or comma, or a dot after a character, if more of the word follows; after a digit or a dot that starts
-// the word, if the commas after it are followed by a character that is no digit, dot, comma or opening bracket.
-func commas(paragraph string) string {
+// commas spaces the commas of a paragraph's words, with signs only those before a sign.
+func commas(paragraph string, signs bool) string {
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
-		if strings.HasPrefix(word, ",") {
-			continue
-		}
-		var spaced strings.Builder
-		for character := 0; character < len(word); character++ {
-			spaced.WriteByte(word[character])
-			if word[character] == ',' && commaSpaced(word, character) {
-				spaced.WriteByte(' ')
-			}
-		}
-		words[index] = spaced.String()
+		words[index] = wordCommas(word, signs)
 	}
 	return strings.Join(words, " ")
 }
 
-func commaSpaced(word string, index int) bool {
+// wordCommas puts a space after each comma of a word that doesn't start with one: after a character that is no
+// digit, dot, comma or sign (+, - or /), or a dot after a character that is no dot, if more of the word follows;
+// after a digit, or a dot that starts the word, if the commas after it are followed by a character that is no digit,
+// dot, comma or opening bracket, nor a dash or a slash in a word that starts with a digit or a dot. With signs, only
+// the commas before a sign are spaced, and in a word that starts with no digit or dot a comma right before a + after
+// no sign is doubled first.
+func wordCommas(word string, signs bool) string {
+	if word == "" || word[0] == ',' {
+		return word
+	}
+	number := digit(word[0]) || word[0] == '.'
+	if signs && !number {
+		var doubled strings.Builder
+		for index := 0; index < len(word); index++ {
+			doubled.WriteByte(word[index])
+			if word[index] == ',' && index+1 < len(word) && word[index+1] == '+' && !sign(word[index-1]) {
+				doubled.WriteByte(',')
+			}
+		}
+		word = doubled.String()
+	}
+	var spaced strings.Builder
+	for index := 0; index < len(word); index++ {
+		spaced.WriteByte(word[index])
+		if word[index] == ',' && commaSpaced(word, index, number) && (!signs || signed(word[index+1:])) {
+			spaced.WriteByte(' ')
+		}
+	}
+	return spaced.String()
+}
+
+func commaSpaced(word string, index int, number bool) bool {
 	previous := word[index-1]
 	switch {
-	case previous == '.' && index >= 2:
+	case !digit(previous) && previous != '.' && previous != ',' && !sign(previous),
+		previous == '.' && index >= 2 && word[index-2] != '.':
 		return index+1 < len(word)
-	case previous == '.' || digit(previous):
+	case digit(previous) || number && previous == '.' && index == 1:
 		rest := strings.TrimLeft(word[index+1:], ",")
-		return rest != "" && !digit(rest[0]) && rest[0] != '.' && rest[0] != '('
-	case previous == ',':
-		return false
+		return rest != "" && !digit(rest[0]) && strings.IndexByte(".,(", rest[0]) < 0 &&
+			!(number && (rest[0] == '-' || rest[0] == '/'))
 	}
-	return index+1 < len(word)
+	return false
+}
+
+func sign(character byte) bool {
+	return character == '+' || character == '-' || character == '/'
+}
+
+// signed is whether a text starts with a sign after its commas.
+func signed(text string) bool {
+	text = strings.TrimLeft(text, ",")
+	return text != "" && sign(text[0])
 }
 
 // cutClosers keeps the last two of three or more closing marks before a word's last dot.
@@ -456,18 +526,6 @@ func cutClosers(token string) string {
 
 func terminal(token string) bool {
 	return terminalRun(token, 0) == len(token)
-}
-
-// wordDashes makes a space of each dash after a letter or a digit that ends a word.
-func wordDashes(paragraph string) string {
-	dashed := []byte(paragraph)
-	for index := 1; index < len(dashed); index++ {
-		if paragraph[index] == '-' && alphanumeric(paragraph[index-1]) &&
-			(index+1 == len(paragraph) || paragraph[index+1] == ' ') {
-			dashed[index] = ' '
-		}
-	}
-	return string(dashed)
 }
 
 // words splits a paragraph into its words and the spaces before each.
@@ -523,6 +581,18 @@ func sentenceEnding(token string) (dotted string, closed, ok bool) {
 		return token[:len(token)-1], false, true
 	}
 	return "", false, false
+}
+
+// splitEnding is whether a word that the spacing keeps whole ends like a sentence before its kept space. It gives
+// the word up to its dot, whether a bracket or a quote closes it, and the word's part after the space.
+func splitEnding(token string) (dotted string, closed bool, rest string, ok bool) {
+	before, after, found := strings.Cut(token, keptSpace)
+	if !found {
+		return "", false, "", false
+	}
+	dotted, closed, ok = sentenceEnding(before)
+	rest, _, _ = strings.Cut(after, keptSpace)
+	return dotted, closed, rest, ok
 }
 
 // startsAfter is whether a sentence starts after a word ending in a dot.
@@ -604,11 +674,11 @@ func (address *address) functionWord(word string) bool {
 	return len(word) > 1 && address.functionWords[lower(word)]
 }
 
-// skippable is whether a word keeps a sentence's start going: a function word or a number, in brackets or before
-// a comma.
+// skippable is whether a word keeps a sentence's start going: a function word or a number (a dot may start it), in
+// brackets or before a comma.
 func (address *address) skippable(token string) bool {
 	word := strings.TrimLeft(strings.TrimRight(strings.TrimLeft(token, "("), ",);:\""), "~")
-	return address.functionWord(word) || numeral(strings.TrimLeft(word, "\""), true)
+	return address.functionWord(word) || numeral(strings.TrimPrefix(strings.TrimLeft(word, "\""), "."), true)
 }
 
 // dotGap is how many spaces follow a word ending in a dot, which spaces follow in the paragraph.
