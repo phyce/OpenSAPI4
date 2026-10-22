@@ -11,6 +11,12 @@ const (
 	paragraphLimit = 5001
 	shortLine      = 39
 	dotRunSpaces   = 6
+	// bracketLimit is what a paragraph's length and brackets reach for its short lines to lose the spaces after a
+	// closing bracket, longRaw what its lines reach for it to be joined the long way and wideningLimit where a word
+	// starts for the gap before it to keep more spaces (section 3.3).
+	bracketLimit  = 4999
+	longRaw       = 5000
+	wideningLimit = 5000
 	// keptSpace is a space in a word that the spacing keeps whole.
 	keptSpace = "\x00"
 	// cutSpace is a space that a closing run keeps in its marks, droppedDot a dot that a dot run leaves out, and
@@ -22,9 +28,17 @@ const (
 	// it stays). A paragraph has no line feeds or tabs of its own.
 	joinedSpace   = "\n"
 	droppedSquare = "\t"
+	// keptGap is the two spaces a long paragraph keeps between two lines, and widenedOnce and widenedTwice a gap that
+	// keeps one or two spaces more when the word after it starts at wideningLimit or later.
+	keptGap      = "\x04"
+	widenedOnce  = "\x05"
+	widenedTwice = "\x06"
 	// closingRoom is how many marks a closing run keeps.
 	closingRoom = 4
 )
+
+// widenings marks a gap by how many spaces more it keeps.
+var widenings = [...]string{1: widenedOnce, 2: widenedTwice}
 
 // Address formats a text in the address and e-mail contexts (section 3): it reads the text's lines as the
 // spreadsheet context does (sections 1.1 and 1.2), joins them into paragraphs and spaces their words.
@@ -44,6 +58,11 @@ type address struct {
 	paragraph                                         string
 	// size is the measures of the paragraph's pieces (section 3.3).
 	size int
+	// longParagraph is the paragraph joined the long way, rawSize the measures that decide whether it is, and
+	// spacedCloses where the paragraph's short lines end in a closing bracket and spaces (section 3.3).
+	longParagraph string
+	rawSize       int
+	spacedCloses  []span
 	// lineStart is where the paragraph's last line starts in it.
 	lineStart int
 	// start is whether the next paragraph starts where a sentence starts.
@@ -109,6 +128,9 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 		lineEndSize = len(lineEnd)
 	}
 	measure := len(line) + lineEndSize
+	if trimmed := strings.TrimRight(line, " "); end == cutEnding && trimmed != line {
+		measure = len(trimmed) + 1
+	}
 	if end == cutEnding && len(content) <= 1 {
 		character := strings.Trim(line, " ")
 		if address.paragraph != "" {
@@ -139,13 +161,28 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 	if address.lineStart > 0 {
 		length++
 	}
+	short := strings.HasSuffix(line, ":") || end == lineFeed && length < shortLine
+	address.longParagraph += longJoined(line, end, short)
+	trimmed := strings.TrimRight(line, " ")
 	switch {
-	case strings.HasSuffix(line, ":") || end == lineFeed && length < shortLine:
+	case short:
+		if len(trimmed) < len(line) && strings.HasSuffix(trimmed, ")") {
+			start := len(address.paragraph)
+			address.spacedCloses = append(address.spacedCloses, span{start + len(trimmed), start + len(line)})
+		}
 		address.paragraph += line + ".  "
 	case end == lineFeed && endsInDotSpaces(line):
 		address.paragraph += line
 	default:
-		address.paragraph += strings.TrimRight(line, " ") + " "
+		address.paragraph += trimmed + " "
+	}
+	switch {
+	case end != lineFeed:
+		address.rawSize += rawLength(trimmed) + 1
+	case short:
+		address.rawSize += rawLength(line) + len(lineEnd) + 1
+	default:
+		address.rawSize += rawLength(line) + len(lineEnd)
 	}
 	if end == lineFeed {
 		address.lineStart = len(address.paragraph)
@@ -175,6 +212,7 @@ func (address *address) end() {
 	}
 	if last != "" && !address.single {
 		address.paragraph += last
+		address.longParagraph += last
 	}
 	if address.paragraph == "" {
 		address.output.WriteString(last + paragraphEnd)
@@ -191,22 +229,105 @@ func (address *address) end() {
 
 // flush reads the paragraph's marks (section 3.4), spaces its words and writes it. A paragraph starts where the one
 // before it ended, or where a sentence starts after a blank line; one that starts with a bracket where none does.
-// One that its marks leave no word of is a space.
+// One that its marks leave no word of is a space. One whose lines reach longRaw is joined the long way, without a
+// kept gap at its end (section 3.3).
 func (address *address) flush() {
-	marked := marks(address.paragraph)
-	var paragraph string
-	if strings.HasPrefix(address.paragraph, "(") {
-		paragraph, address.start = address.spacing(marked, false, false)
+	address.closeSpaces()
+	paragraph := address.paragraph
+	long := address.rawSize >= longRaw
+	if long {
+		paragraph, _ = strings.CutSuffix(address.longParagraph, keptGap+" ")
+	}
+	marked := marks(paragraph)
+	if strings.HasPrefix(paragraph, "(") {
+		paragraph, address.start = address.spacing(marked, false, false, long)
 	} else {
-		paragraph, address.start = address.spacing(marked, address.start, true)
+		paragraph, address.start = address.spacing(marked, address.start, true, long)
 	}
 	if strings.Trim(marked, " ") == "" {
 		paragraph = " "
 	} else {
 		paragraph = strings.TrimRight(unmarked(paragraph), " ")
 	}
-	address.output.WriteString(paragraph + paragraphEnd)
+	address.output.WriteString(widened(paragraph) + paragraphEnd)
 	address.paragraph, address.size, address.lineStart = "", 0, 0
+	address.longParagraph, address.rawSize, address.spacedCloses = "", 0, nil
+}
+
+// span is where a part of a paragraph starts and stops.
+type span struct {
+	start, stop int
+}
+
+// closeSpaces takes out the spaces after a closing bracket that end a short line, from the paragraph's last such line
+// back, where its closing brackets up to that line reach what its length and opening brackets leave of bracketLimit.
+func (address *address) closeSpaces() {
+	room := bracketLimit - len(address.paragraph) - strings.Count(address.paragraph, "(")
+	for index := len(address.spacedCloses) - 1; index >= 0; index-- {
+		spaces := address.spacedCloses[index]
+		if strings.Count(address.paragraph[:spaces.start], ")") >= room {
+			address.paragraph = address.paragraph[:spaces.start] + address.paragraph[spaces.stop:]
+		}
+	}
+}
+
+// rawLength is a line's length as the long paragraph test counts it: a run of dots and the spaces after it counts up
+// to two less, one for each of its dots and spaces after the fifth.
+func rawLength(line string) int {
+	length := len(line)
+	for index := 0; index < len(line); {
+		if line[index] != '.' {
+			index++
+			continue
+		}
+		dots := index
+		for dots < len(line) && line[dots] == '.' {
+			dots++
+		}
+		stop := spaceRun(line, dots)
+		if stop > dots {
+			length -= min(max(stop-index-5, 0), 2)
+		}
+		index = stop
+	}
+	return length
+}
+
+// longJoined is a piece as a long paragraph joins it: a short line as any paragraph does, and a line that ends in
+// spaces, a comma or a dash with two spaces kept whatever follows (its dot runs see the spaces it ends in).
+func longJoined(line string, end ending, short bool) string {
+	trimmed := strings.TrimRight(line, " ")
+	switch {
+	case short:
+		return line + ".  "
+	case end != lineFeed || trimmed == line && !strings.HasSuffix(trimmed, ",") && !strings.HasSuffix(trimmed, "-"):
+		return trimmed + " "
+	case trimmed != line:
+		return line + keptGap + " "
+	}
+	return trimmed + " " + keptGap + " "
+}
+
+// widened gives each gap that keeps more spaces its spaces when the word after it starts at wideningLimit or later
+// with them.
+func widened(paragraph string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); index++ {
+		var extra int
+		switch paragraph[index : index+1] {
+		case widenedOnce:
+			extra = 1
+		case widenedTwice:
+			extra = 2
+		default:
+			output.WriteByte(paragraph[index])
+			continue
+		}
+		if output.Len()+spaceRun(paragraph, index+1)-index-1+extra >= wideningLimit {
+			output.WriteString(strings.Repeat(" ", extra))
+		}
+	}
+	return output.String()
 }
 
 // clean makes a line's tabs spaces and each run of spaces one, but those after a dot, and drops its leading spaces.
@@ -260,11 +381,13 @@ const (
 )
 
 // spacing spaces a paragraph's words (section 3.4), as a sentence's start if start is set or, with restart, if
-// it has a closed number. It reports whether the paragraph ends where a sentence starts.
-func (address *address) spacing(paragraph string, start, restart bool) (string, bool) {
-	paragraph = startDots(namedMarks(address.dotRuns(address.loosened(commas(paragraph, true)))))
+// it has a closed number, and as a long paragraph if long is set (section 3.3). It reports whether the paragraph ends
+// where a sentence starts. A gap that keeps more spaces near the limit is marked widenedOnce or widenedTwice after its
+// first space.
+func (address *address) spacing(paragraph string, start, restart, long bool) (string, bool) {
+	paragraph = startDots(namedMarks(address.dotRuns(address.loosened(commas(paragraph, true)), long)))
 	paragraph = cappedTerminals(commasAndUnderscores(slashes(dashes(pluses(paragraph)))))
-	paragraph = closingRuns(starred(paragraph))
+	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
 	parts := words(paragraph)
 	initial := start
@@ -278,11 +401,17 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 	skipped, gap, joined := 0, 0, 0
 	terminalBefore := false
 	held := ""
+	// excess is how many spaces more the gap after a word keeps near the limit, one more before a capitalized word if
+	// capitalCounts; exclaiming is whether the word ended in ! or ?.
+	excess, capitalCounts, exclaiming := 0, false, false
 	for index, part := range parts {
 		token := part.token
 		if index > 0 {
 			if initial && skipped > 0 && capitalized(token) {
 				gap = 2
+				if exclaiming {
+					excess = max(excess, 1)
+				}
 			}
 			width := max(gap, 1)
 			joining := terminal(token) && !terminalBefore && joined == 0
@@ -292,19 +421,29 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 					output[last] = joinedWord(cmp.Or(parts[index-1].whole, output[last]))
 				}
 			}
-			if part.spaces == cutSpace {
+			switch part.spaces {
+			case cutSpace:
 				width = 1
+			case keptGap:
+				width, initial, skipped = 2, false, 0
 			}
 			if held != "" && !terminal(token) {
 				output = append(output, held)
 				held = ""
 			}
-			if joining && width == 0 {
+			if capitalCounts && capitalized(token) {
+				excess++
+			}
+			switch {
+			case excess > 0 && width >= 2:
+				output = append(output, " "+widenings[excess]+strings.Repeat(" ", width-1))
+			case joining && width == 0:
 				output = append(output, joinedSpace)
-			} else {
+			default:
 				output = append(output, strings.Repeat(" ", width))
 			}
 		}
+		excess, capitalCounts, exclaiming = 0, false, false
 		terminalBefore = index > 0 && terminal(token)
 		spread := strings.HasSuffix(token, keptSpace+"/")
 		if strings.HasSuffix(token, "/") && token != "/" && token != ">/" && !strings.HasSuffix(token, "(/") {
@@ -328,11 +467,11 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 		written, whole := token+cutMarks, cmp.Or(part.whole, token)+cutMarks
 		following, followingSpaces := "", trailing
 		if later < len(parts) {
-			following, followingSpaces = parts[later].token, len(parts[later].spaces)
+			following, followingSpaces = parts[later].token, spaceWidth(parts[later].spaces)
 		}
-		nextSpaces := trailing
+		nextSpaces, nextKept := trailing, false
 		if index+1 < len(parts) {
-			nextSpaces = len(parts[index+1].spaces)
+			nextSpaces, nextKept = spaceWidth(parts[index+1].spaces), parts[index+1].spaces == keptGap
 		}
 		if dotted, closed, ok := wholeEnding(written, whole); ok {
 			kind := address.dotKind(dotted, initial, closed)
@@ -345,6 +484,16 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 				}
 			}
 			gap = address.dotGap(dotted, kind, followingSpaces, following, written)
+			if (kind == wordKind || kind == startKind || kind == functionKind) && !closed {
+				typed := 1
+				if kind == wordKind && !nextKept {
+					typed = min(nextSpaces, 2)
+				}
+				excess, capitalCounts = typed-2, kind != functionKind
+				if exclaimed(dotted, closingRoom) {
+					excess++
+				}
+			}
 			if kind == wordKind && nextSpaces >= 2 {
 				joined = 1
 			}
@@ -360,7 +509,10 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 				initial, skipped = address.startsAfter(dotted, kind), 0
 			}
 		} else if exclaimed(written, closingRoom) {
-			gap = 2
+			gap, exclaiming = 2, true
+			if nextKept {
+				excess = 1
+			}
 			bare := strings.TrimRight(strings.TrimRight(unclosed(written), "!?"), keptSpace)
 			if dotted, closed, ok := sentenceEnding(bare); ok && !markedDot(bare) {
 				initial, skipped = address.startsAfter(dotted, address.dotKind(dotted, initial, closed)), 0
@@ -459,8 +611,9 @@ func cappedTerminals(paragraph string) string {
 	return output.String()
 }
 
-// dotRuns spaces each run of dots and the spaces after it, each as the runs before it left the paragraph.
-func (address *address) dotRuns(paragraph string) string {
+// dotRuns spaces each run of dots and the spaces after it, each as the runs before it left the paragraph, as a long
+// paragraph does if long is set.
+func (address *address) dotRuns(paragraph string, long bool) string {
 	var output strings.Builder
 	for index := 0; index < len(paragraph); {
 		if paragraph[index] != '.' {
@@ -473,10 +626,28 @@ func (address *address) dotRuns(paragraph string) string {
 			dots++
 		}
 		stop := spaceRun(paragraph, dots)
-		output.WriteString(address.dotRun(output.String(), paragraph[stop:], dots-index, stop-dots))
+		if long {
+			output.WriteString(address.longDotRun(output.String(), paragraph[stop:], dots-index, stop-dots))
+		} else {
+			output.WriteString(address.dotRun(output.String(), paragraph[stop:], dots-index, stop-dots))
+		}
 		index = stop
 	}
 	return output.String()
+}
+
+// longDotRun is a run of dots and the spaces after it in a long paragraph (section 3.3): after a word a lone dot for
+// each dot and space after the third, two at most, after anything else one after the fourth. Without lone dots, or
+// spaces, it is a run as any paragraph spaces it.
+func (address *address) longDotRun(built, following string, count, spaces int) string {
+	lone := min(max(count+spaces-4, 0), 1)
+	if address.plainKind(alonePart(built)+".", false) == wordKind {
+		lone = min(max(count+spaces-3, 0), 2)
+	}
+	if spaces == 0 || lone == 0 {
+		return address.dotRun(built, following, count, spaces)
+	}
+	return "." + strings.Repeat(" .", lone) + " "
 }
 
 // dotRun is a run of dots and the spaces after it, built being the paragraph before it as the runs before it left it
@@ -843,26 +1014,26 @@ type part struct {
 	spaces, token, whole string
 }
 
-// words splits a paragraph into its words, at spaces and cut spaces.
+// words splits a paragraph into its words, at spaces, cut spaces and kept gaps.
 func words(paragraph string) []part {
 	var parts []part
 	for index := 0; index < len(paragraph); {
 		run := index
-		for run < len(paragraph) && (paragraph[run] == ' ' || paragraph[run] == cutSpace[0]) {
+		for run < len(paragraph) && gapCharacter(paragraph[run]) {
 			run++
 		}
 		if run == len(paragraph) {
 			break
 		}
 		stop := run
-		for stop < len(paragraph) && paragraph[stop] != ' ' && paragraph[stop] != cutSpace[0] {
+		for stop < len(paragraph) && !gapCharacter(paragraph[stop]) {
 			stop++
 		}
 		spaces := paragraph[index:run]
-		if cut := strings.LastIndexByte(spaces, cutSpace[0]); cut >= 0 && cut == len(spaces)-1 {
-			spaces = cutSpace
+		if marker := strings.LastIndexAny(spaces, cutSpace+keptGap); marker >= 0 && marker == len(spaces)-1 {
+			spaces = spaces[marker:]
 		} else {
-			spaces = spaces[cut+1:]
+			spaces = spaces[marker+1:]
 		}
 		next := part{spaces: spaces, token: paragraph[run:stop]}
 		if strings.Contains(next.token, hidden) {
@@ -872,6 +1043,32 @@ func words(paragraph string) []part {
 		index = stop
 	}
 	return parts
+}
+
+func gapCharacter(character byte) bool {
+	return character == ' ' || character == cutSpace[0] || character == keptGap[0]
+}
+
+// keptGaps drops the spaces around each kept gap.
+func keptGaps(paragraph string) string {
+	gaps := strings.Split(paragraph, keptGap)
+	for index := range gaps {
+		if index > 0 {
+			gaps[index] = strings.TrimLeft(gaps[index], " ")
+		}
+		if index < len(gaps)-1 {
+			gaps[index] = strings.TrimRight(gaps[index], " ")
+		}
+	}
+	return strings.Join(gaps, keptGap)
+}
+
+// spaceWidth is how many spaces stand between two words: two for a kept gap.
+func spaceWidth(spaces string) int {
+	if spaces == keptGap {
+		return 2
+	}
+	return len(spaces)
 }
 
 // visible is a word without the marks a closing run hid.

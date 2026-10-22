@@ -124,7 +124,24 @@ The pre-formatter starts with an empty paragraph and takes each piece but the la
 
 ### 3.3 The paragraph limit
 
-The paragraph's **size** is the sum of the lengths of the pieces added to it, with 2 more for each line. A piece **doesn't fit** when the size and twice its length, with 2 more for a line, come to more than 5,001. The last line doesn't fit when the size and twice its length without its trailing spaces, plus 1, come to more than 5,001.
+The paragraph's **size** is the sum of the lengths of the pieces added to it, a cut piece's without its trailing spaces and 1 more if it has any, with 2 more for each line. A piece **doesn't fit** when the size and twice its length, trailing spaces and all, with 2 more for a line, come to more than 5,001. The last line doesn't fit when the size and twice its length without its trailing spaces, plus 1, come to more than 5,001.
+
+Near the limit, a paragraph is written differently. Its **raw size** is the sum of what its pieces count: a line its length and 2, and 1 more for a short line; a cut piece its length without its trailing spaces, and 1; a held line added to it (section 3.6) its length and 3. In a line or a cut piece, each run of dots and the spaces after it counts 1 less for each of its dots and spaces after the fifth, 2 less at most. The last line doesn't count. A paragraph whose raw size is 5,000 or more is **long**, and its pieces are joined this way instead of as section 3.2, step 4 has it:
+- a piece that ends in a colon, and a short line, with `.  ` after it, as in any paragraph;
+- a line that ends in spaces, with them, followed by a **kept gap** and a space; a line that ends in a comma or a dash, followed by a space, a kept gap and a space;
+- any other piece without its trailing spaces, followed by a space.
+
+A kept gap and the space after it at the paragraph's end go. Then the spacing (section 3.4) reads a long paragraph so:
+- In step 3, a run of dots that spaces follow becomes a dot, ` .` for each of its dots and spaces after the third, 2 at most, and a space when the paragraph's part before it, from its last space or its last comma that follows a character other than a comma or a space, with a dot after it, is of kind word (no sentence starting); after any other part, a dot, ` .` if its dots and spaces are more than four, and a space. A run that this gives no ` .` is read as in any paragraph: `the end.   More` is `the end. .  More`, `the end...  More` `the end. . .  More`, and `the end.  More` stays as it is.
+- A kept gap is a word of its own that steps 1 to 13 leave as it is, and then the spaces beside it go. The words before and after it are read as if two spaces stood between them, two spaces are written for it, and the word after it is read with no sentence starting. A line that isn't short and ends in `ran,` or `ran  `, then a line `away`, give `ran,  away` and `ran  away`.
+
+A paragraph that isn't long first loses, at each short line that ends in `)` and spaces, those spaces (the `.  ` after them stays) when the paragraph's length, its `(` and its `)` up to that line's end come to 4,999 or more.
+
+When the paragraph is written, a gap of two spaces or more after some words is **widened**: it gets one or two spaces more when, with them, 5,000 characters or more of the written paragraph come before the word after it (in the paragraph's order, the gaps before it widened as they are). The spaces it may get are:
+- after a word that ends in a dot (section 3.4, step 1), spaced as a word, a start or a function word, whose dot isn't closed: its **typed** spaces, with 1 more if its dotted part exclaims and 1 more if the word after it is capitalized and it isn't spaced as a function word, less 2. A word's typed spaces are those after it in the paragraph, 2 at most, or 1 before a kept gap; a start's and a function word's are 1;
+- after a word that exclaims (section 3.4, step 2): one before a kept gap, or before a capitalized word that gets two spaces because a sentence starts and words were skipped.
+
+`the end.  More` is `the end.   More` when 5,000 characters or more would come before `More`, and `the end!.  More` `the end!.    More`, while `the end!  More` and `the end.  more` stay as they are.
 
 ### 3.4 Writing a paragraph
 
@@ -288,5 +305,5 @@ The **names** in a value: the value's tabs become spaces, and it is split at its
 
 - **A month of more than three characters.** A date whose month has a number of 1 to 12 but more than three characters, such as `0001/2/3` or `65537/1/1`, doesn't give the original a usable result: it can crash. The port leaves the line as it is.
 - **Very long words and lines.** Where a fraction's token runs to about 60 characters, or the conversion makes a line grow to about 720 characters, the original's output doesn't follow section 2's rules. The port applies them all the same. Of the texts checked, 2,517 were such texts.
-- **Paragraphs near the limit.** In a paragraph of about 4,500 characters or more, the original keeps some of the spaces and tabs at a line's end where lines join, and writes different dots after a dot's run of spaces (section 3.4). The port applies section 3 all the same. Of the texts checked, 445 had such a paragraph.
+- **Paragraphs near the limit.** In a paragraph of about 4,500 characters or more, the original writes a lone dot before a word that isn't capitalized with two spaces after it in some texts and one in others, as the texts read before it leave it: `world. .  into` or `world. . into`. In a long paragraph (section 3.3) it joins the lines that follow a line of more than about 600 characters with single spaces, and in one text it widens a gap before a capitalized word that section 3.3 leaves as it is. The port applies section 3 all the same. Of the texts checked, 22 were such texts. In a long paragraph, and in other paragraphs of about 4,900 characters or more, the original also keeps some faces and runs of `!` and `?` that section 3.4 reads, and drops some of the spaces it puts between brackets; the port doesn't do this yet.
 - **Output size.** TextData gives the pre-formatter an output buffer of the text's length and 4,001 bytes, at least 13,500. The port has no such limit.

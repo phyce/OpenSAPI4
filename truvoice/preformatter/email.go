@@ -328,6 +328,8 @@ func (address *address) release(held, piece string, end ending) {
 		text = spaceColons(text)
 	}
 	address.paragraph += text + ".  "
+	address.longParagraph += text + ".  "
+	address.rawSize += len(text) + 3
 	address.lineStart = len(address.paragraph)
 }
 
