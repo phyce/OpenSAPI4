@@ -19,18 +19,34 @@ var faces = []struct{ face, reading string }{
 // markNames are the names of ! and ?, read in this order.
 var markNames = []struct{ mark, name string }{{"!", "exclamation"}, {"?", "question"}}
 
-// marks reads a paragraph's marks before its words are spaced (section 3.4).
-func marks(paragraph string) string {
-	paragraph = arrows(readFaces(paragraph))
+// marks reads a paragraph's marks before its words are spaced (section 3.4), rawSize being what its lines measure:
+// faces then arrows, each kind from the first, while rawSize and what they add stay below markLimit; a separator unit
+// that stands twice somewhere goes everywhere, then every backslash if two stand together. The brackets count the
+// paragraph with the spaces that went with separators and the two spaces around each quoted mark; after them a | that
+// ends a word is a comma.
+func marks(paragraph string, rawSize int) string {
+	room := markLimit - rawSize
+	for _, face := range faces {
+		paragraph, room = replaced(paragraph, face.face, face.reading, room)
+	}
+	for _, arrow := range arrowMarks {
+		reading := "to"
+		if arrow[0] == '<' {
+			reading = "to and from"
+		}
+		paragraph, room = replaced(paragraph, arrow, reading, room)
+	}
+	unwritten := 0
 	for _, unit := range separatorUnits {
 		if strings.Contains(paragraph, unit+unit) {
-			paragraph = strings.ReplaceAll(paragraph, unit, "")
+			var spaces int
+			paragraph, spaces = separated(paragraph, unit)
+			unwritten += spaces
 		}
 	}
 	if strings.Contains(paragraph, `\\`) {
 		paragraph = strings.ReplaceAll(paragraph, `\`, "")
 	}
-	paragraph = bars(paragraph)
 	paragraph = terminalMarks(paragraph)
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
@@ -38,7 +54,9 @@ func marks(paragraph string) string {
 			words[index] = word[:4]
 		}
 	}
-	words = strings.Split(terminalNames(strings.Join(words, " ")), " ")
+	paragraph, spaces := terminalNames(strings.Join(words, " "))
+	unwritten += spaces
+	words = strings.Split(paragraph, " ")
 	for index, word := range words {
 		switch {
 		case index == 0:
@@ -48,45 +66,93 @@ func marks(paragraph string) string {
 			words[index] = "colon"
 		}
 	}
-	return brackets(approximately(strings.Join(words, " ")))
+	paragraph = approximately(strings.Join(words, " "))
+	return bars(brackets(paragraph, len(paragraph)+unwritten, false))
 }
 
-// readFaces reads each face, with a space on each side.
-func readFaces(paragraph string) string {
-	var output strings.Builder
-	for index := 0; index < len(paragraph); {
-		read := false
-		for _, face := range faces {
-			if strings.HasPrefix(paragraph[index:], face.face) {
-				output.WriteString(" " + face.reading + " ")
-				index += len(face.face)
-				read = true
-				break
-			}
-		}
-		if !read {
-			output.WriteByte(paragraph[index])
-			index++
+// doubledSeparator is whether a separator unit stands twice in a paragraph.
+func doubledSeparator(paragraph string) bool {
+	for _, unit := range separatorUnits {
+		if strings.Contains(paragraph, unit+unit) {
+			return true
 		}
 	}
-	return output.String()
+	return false
+}
+
+// replaced reads each mark from the left as its reading while it fits the room: it takes the reading's length and two
+// spaces less the mark's. The reading gets a space on each side where there is none. It gives the room left.
+func replaced(paragraph, mark, reading string, room int) (string, int) {
+	parts := strings.Split(paragraph, mark)
+	growth := len(reading) + 2 - len(mark)
+	var output strings.Builder
+	output.WriteString(parts[0])
+	for _, part := range parts[1:] {
+		if growth >= room {
+			output.WriteString(mark + part)
+			continue
+		}
+		room -= growth
+		if !strings.HasSuffix(output.String(), " ") {
+			output.WriteByte(' ')
+		}
+		output.WriteString(reading)
+		if !strings.HasPrefix(part, " ") {
+			output.WriteByte(' ')
+		}
+		output.WriteString(part)
+	}
+	return output.String(), room
+}
+
+// separated takes a separator unit out of a paragraph, and with a run of it between spaces the space before it. It
+// gives how many spaces went.
+func separated(paragraph, unit string) (string, int) {
+	var output strings.Builder
+	spaces := 0
+	for index := 0; index < len(paragraph); {
+		if paragraph[index] == ' ' {
+			stop := index + 1
+			for strings.HasPrefix(paragraph[stop:], unit) {
+				stop += len(unit)
+			}
+			if stop > index+1 && stop < len(paragraph) && paragraph[stop] == ' ' {
+				spaces++
+				index = stop
+				continue
+			}
+		}
+		if strings.HasPrefix(paragraph[index:], unit) {
+			index += len(unit)
+			continue
+		}
+		output.WriteByte(paragraph[index])
+		index++
+	}
+	return output.String(), spaces
 }
 
 // terminalNames reads a ! or ? in quotes or brackets as its name, a word of its own, and a word of !s or !'s (?s or
-// ?'s) after a space as the plural of its name, with a comma on each side. The ! is read before the ?.
-func terminalNames(paragraph string) string {
+// ?'s) after a space as the plural of its name, with a comma on each side. The ! is read before the ?. It gives how
+// many spaces the quoted marks had around them.
+func terminalNames(paragraph string) (string, int) {
+	spaces := 0
 	for _, named := range markNames {
-		paragraph = quotedMark(paragraph, named.mark, named.name)
+		var quoted int
+		paragraph, quoted = quotedMark(paragraph, named.mark, named.name)
+		spaces += quoted
 		for _, plural := range []string{"s", "'s"} {
 			paragraph = pluralMark(paragraph, " "+named.mark+plural, ", "+named.name+"s"+named.mark+",")
 		}
 	}
-	return paragraph
+	return paragraph, spaces
 }
 
-// quotedMark reads each mark in quotes or brackets as its name, with a space on each side where there is none.
-func quotedMark(paragraph, mark, name string) string {
+// quotedMark reads each mark in quotes or brackets as its name, with a space on each side where there is none (the
+// paragraph's start and end count as none). It gives how many spaces there were.
+func quotedMark(paragraph, mark, name string) (string, int) {
 	var output strings.Builder
+	spaces := 0
 	for index := 0; index < len(paragraph); {
 		rest := paragraph[index:]
 		if !strings.HasPrefix(rest, `"`+mark+`"`) && !strings.HasPrefix(rest, "("+mark+")") {
@@ -95,16 +161,20 @@ func quotedMark(paragraph, mark, name string) string {
 			continue
 		}
 		stop := index + 3
-		if index == 0 || paragraph[index-1] != ' ' {
+		if index > 0 && paragraph[index-1] == ' ' {
+			spaces++
+		} else {
 			output.WriteByte(' ')
 		}
 		output.WriteString(paragraph[index:index+1] + name + paragraph[index+1:stop])
-		if !wordEnds(paragraph, stop) {
+		if stop < len(paragraph) && paragraph[stop] == ' ' {
+			spaces++
+		} else {
 			output.WriteByte(' ')
 		}
 		index = stop
 	}
-	return output.String()
+	return output.String(), spaces
 }
 
 // pluralMark reads each word that is a plural mark after a space, the space included, as its reading.
@@ -119,39 +189,6 @@ func pluralMark(paragraph, plural, reading string) string {
 		}
 		output.WriteByte(paragraph[index])
 		index++
-	}
-	return output.String()
-}
-
-// arrows reads each arrow as "to and from" or "to", with a space on each side where there is none.
-func arrows(paragraph string) string {
-	var output strings.Builder
-	for index := 0; index < len(paragraph); {
-		arrow := ""
-		for _, mark := range arrowMarks {
-			if strings.HasPrefix(paragraph[index:], mark) {
-				arrow = mark
-				break
-			}
-		}
-		if arrow == "" {
-			output.WriteByte(paragraph[index])
-			index++
-			continue
-		}
-		stop := index + len(arrow)
-		if index == 0 || paragraph[index-1] != ' ' {
-			output.WriteByte(' ')
-		}
-		if arrow[0] == '<' {
-			output.WriteString("to and from")
-		} else {
-			output.WriteString("to")
-		}
-		if stop == len(paragraph) || paragraph[stop] != ' ' {
-			output.WriteByte(' ')
-		}
-		index = stop
 	}
 	return output.String()
 }
@@ -249,45 +286,89 @@ func numeric(word string) bool {
 	return numeral(strings.TrimPrefix(word, "."), false)
 }
 
-// brackets spaces a paragraph's brackets: a ( has a space before it and none after it. In a paragraph with a (, a )
-// has none before it, a dot before two or more doubled, and one after it but before a comma, a dot or a question mark.
-func brackets(paragraph string) string {
+// brackets spaces a paragraph's brackets, size being its length as they count it. First a ( loses the spaces after
+// it and, in a paragraph with a (, a ) the spaces before it (a dot before two or more is doubled): each space that
+// goes gives one more of what size leaves of markLimit, and then each ( and ) takes one. A ( gets a space before it
+// while some is left; past that one with no space before it goes, but at the start and after a dot, comma, dash, plus
+// or slash. A ) then gets a space after it but before a comma, dot or question mark while some is left; past that it
+// loses the spaces after it before a comma, dot or ). In a long paragraph every ( is past the limit and nothing else
+// changes.
+func brackets(paragraph string, size int, long bool) string {
+	trimmed := paragraph
+	if !long {
+		trimmed = openingsTrimmed(paragraph)
+		if strings.Contains(trimmed, "(") {
+			trimmed = closingsTrimmed(trimmed)
+		}
+	}
+	room := markLimit - size + len(paragraph) - len(trimmed)
+	parts := strings.Split(trimmed, "(")
 	var opened strings.Builder
-	for index := 0; index < len(paragraph); index++ {
-		if paragraph[index] != '(' {
-			opened.WriteByte(paragraph[index])
-			continue
+	opened.WriteString(parts[0])
+	for _, part := range parts[1:] {
+		room--
+		written := opened.String()
+		switch {
+		case strings.HasSuffix(written, " "):
+			opened.WriteByte('(')
+		case !long && room > 0:
+			opened.WriteString(" (")
+		case written == "" || strings.IndexByte(".,-+/", written[len(written)-1]) >= 0:
+			opened.WriteByte('(')
 		}
-		if written := opened.String(); written == "" || written[len(written)-1] != ' ' {
-			opened.WriteByte(' ')
-		}
-		opened.WriteByte('(')
-		index = spaceRun(paragraph, index+1) - 1
+		opened.WriteString(part)
 	}
 	paragraph = opened.String()
-	if !strings.Contains(paragraph, "(") {
+	if long || len(parts) == 1 {
 		return paragraph
 	}
 	var closed strings.Builder
 	for index := 0; index < len(paragraph); index++ {
+		closed.WriteByte(paragraph[index])
+		if paragraph[index] != ')' {
+			continue
+		}
+		room--
+		stop := spaceRun(paragraph, index+1)
+		if stop == len(paragraph) {
+			continue
+		}
+		switch following := paragraph[stop]; {
+		case room > 0 && stop == index+1 && strings.IndexByte(",.?", following) < 0:
+			closed.WriteByte(' ')
+		case room <= 0 && strings.IndexByte(",.)", following) >= 0:
+			index = stop - 1
+		}
+	}
+	return closed.String()
+}
+
+// openingsTrimmed takes the spaces after each ( out of a paragraph.
+func openingsTrimmed(paragraph string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); index++ {
+		output.WriteByte(paragraph[index])
+		if paragraph[index] == '(' {
+			index = spaceRun(paragraph, index+1) - 1
+		}
+	}
+	return output.String()
+}
+
+// closingsTrimmed takes the spaces before each ) out of a paragraph, a dot before two or more doubled.
+func closingsTrimmed(paragraph string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); index++ {
 		if run := spaceRun(paragraph, index); run > index && run < len(paragraph) && paragraph[run] == ')' {
 			if run-index >= 2 && index > 0 && paragraph[index-1] == '.' {
-				closed.WriteByte('.')
+				output.WriteByte('.')
 			}
 			index = run - 1
 			continue
 		}
-		closed.WriteByte(paragraph[index])
+		output.WriteByte(paragraph[index])
 	}
-	paragraph = closed.String()
-	var spaced strings.Builder
-	for index := 0; index < len(paragraph); index++ {
-		spaced.WriteByte(paragraph[index])
-		if paragraph[index] == ')' && index+1 < len(paragraph) && strings.IndexByte(" ,.?", paragraph[index+1]) < 0 {
-			spaced.WriteByte(' ')
-		}
-	}
-	return spaced.String()
+	return output.String()
 }
 
 // angleRun is the words of a > from index, the spaces around them included: before a number one > stays, a space

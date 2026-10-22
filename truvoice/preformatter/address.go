@@ -11,10 +11,10 @@ const (
 	paragraphLimit = 5001
 	shortLine      = 39
 	dotRunSpaces   = 6
-	// bracketLimit is what a paragraph's length and brackets reach for its short lines to lose the spaces after a
-	// closing bracket, longRaw what its lines reach for it to be joined the long way and wideningLimit where a word
-	// starts for the gap before it to keep more spaces (section 3.3).
-	bracketLimit  = 4999
+	// markLimit is what a paragraph's measure and what its marks add stay below for them to be read (section 3.4),
+	// longRaw what its lines reach for it to be joined the long way and wideningLimit where a word starts for the gap
+	// before it to keep more spaces (section 3.3).
+	markLimit     = 4999
 	longRaw       = 5000
 	wideningLimit = 5000
 	// keptSpace is a space in a word that the spacing keeps whole.
@@ -58,11 +58,10 @@ type address struct {
 	paragraph                                         string
 	// size is the measures of the paragraph's pieces (section 3.3).
 	size int
-	// longParagraph is the paragraph joined the long way, rawSize the measures that decide whether it is, and
-	// spacedCloses where the paragraph's short lines end in a closing bracket and spaces (section 3.3).
+	// longParagraph is the paragraph joined the long way and rawSize the measures that decide whether it is (section
+	// 3.3).
 	longParagraph string
 	rawSize       int
-	spacedCloses  []span
 	// lineStart is where the paragraph's last line starts in it.
 	lineStart int
 	// start is whether the next paragraph starts where a sentence starts.
@@ -166,10 +165,6 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 	trimmed := strings.TrimRight(line, " ")
 	switch {
 	case short:
-		if len(trimmed) < len(line) && strings.HasSuffix(trimmed, ")") {
-			start := len(address.paragraph)
-			address.spacedCloses = append(address.spacedCloses, span{start + len(trimmed), start + len(line)})
-		}
 		address.paragraph += line + ".  "
 	case end == lineFeed && endsInDotSpaces(line):
 		address.paragraph += line
@@ -229,16 +224,23 @@ func (address *address) end() {
 
 // flush reads the paragraph's marks (section 3.4), spaces its words and writes it. A paragraph starts where the one
 // before it ended, or where a sentence starts after a blank line; one that starts with a bracket where none does.
-// One that its marks leave no word of is a space. One whose lines reach longRaw is joined the long way, without a
-// kept gap at its end (section 3.3).
+// One that its marks leave no word of is a space. One whose lines reach longRaw, one more if a separator unit stands
+// twice in it, is joined the long way, without a kept gap at its end, and of its marks only its opening brackets
+// change (section 3.3).
 func (address *address) flush() {
-	address.closeSpaces()
 	paragraph := address.paragraph
-	long := address.rawSize >= longRaw
+	rawSize := address.rawSize
+	if doubledSeparator(paragraph) {
+		rawSize--
+	}
+	long := rawSize >= longRaw
+	var marked string
 	if long {
 		paragraph, _ = strings.CutSuffix(address.longParagraph, keptGap+" ")
+		marked = brackets(paragraph, 0, true)
+	} else {
+		marked = marks(paragraph, address.rawSize)
 	}
-	marked := marks(paragraph)
 	if strings.HasPrefix(paragraph, "(") {
 		paragraph, address.start = address.spacing(marked, false, false, long)
 	} else {
@@ -251,24 +253,7 @@ func (address *address) flush() {
 	}
 	address.output.WriteString(widened(paragraph) + paragraphEnd)
 	address.paragraph, address.size, address.lineStart = "", 0, 0
-	address.longParagraph, address.rawSize, address.spacedCloses = "", 0, nil
-}
-
-// span is where a part of a paragraph starts and stops.
-type span struct {
-	start, stop int
-}
-
-// closeSpaces takes out the spaces after a closing bracket that end a short line, from the paragraph's last such line
-// back, where its closing brackets up to that line reach what its length and opening brackets leave of bracketLimit.
-func (address *address) closeSpaces() {
-	room := bracketLimit - len(address.paragraph) - strings.Count(address.paragraph, "(")
-	for index := len(address.spacedCloses) - 1; index >= 0; index-- {
-		spaces := address.spacedCloses[index]
-		if strings.Count(address.paragraph[:spaces.start], ")") >= room {
-			address.paragraph = address.paragraph[:spaces.start] + address.paragraph[spaces.stop:]
-		}
-	}
+	address.longParagraph, address.rawSize = "", 0
 }
 
 // rawLength is a line's length as the long paragraph test counts it: a run of dots and the spaces after it counts up
@@ -294,13 +279,16 @@ func rawLength(line string) int {
 }
 
 // longJoined is a piece as a long paragraph joins it: a short line as any paragraph does, and a line that ends in
-// spaces, a comma or a dash with two spaces kept whatever follows (its dot runs see the spaces it ends in).
+// spaces, a comma or a dash with two spaces kept whatever follows (its dot runs see the spaces it ends in), but not
+// one that ends in commas the spacing leaves a word of their own (after a space, comma, dash, plus or slash).
 func longJoined(line string, end ending, short bool) string {
 	trimmed := strings.TrimRight(line, " ")
+	ended := strings.HasSuffix(trimmed, ",") || strings.HasSuffix(trimmed, "-")
+	alone := len(trimmed) >= 2 && trimmed[len(trimmed)-1] == ',' && strings.IndexByte(" ,-+/", trimmed[len(trimmed)-2]) >= 0
 	switch {
 	case short:
 		return line + ".  "
-	case end != lineFeed || trimmed == line && !strings.HasSuffix(trimmed, ",") && !strings.HasSuffix(trimmed, "-"):
+	case end != lineFeed || trimmed == line && (!ended || alone):
 		return trimmed + " "
 	case trimmed != line:
 		return line + keptGap + " "
@@ -380,11 +368,25 @@ const (
 	functionKind
 )
 
+// dashRunsSpaced makes a space of the first dash of each run of dashes after something else.
+func dashRunsSpaced(paragraph string) string {
+	spaced := []byte(paragraph)
+	for index := 1; index+1 < len(paragraph); index++ {
+		if paragraph[index] == '-' && paragraph[index+1] == '-' && paragraph[index-1] != ' ' && paragraph[index-1] != '-' {
+			spaced[index] = ' '
+		}
+	}
+	return string(spaced)
+}
+
 // spacing spaces a paragraph's words (section 3.4), as a sentence's start if start is set or, with restart, if
-// it has a closed number, and as a long paragraph if long is set (section 3.3). It reports whether the paragraph ends
-// where a sentence starts. A gap that keeps more spaces near the limit is marked widenedOnce or widenedTwice after its
-// first space.
+// it has a closed number, and as a long paragraph if long is set (section 3.3), where a run of dashes after something
+// else starts with a space instead. It reports whether the paragraph ends where a sentence starts. A gap that keeps
+// more spaces near the limit is marked widenedOnce or widenedTwice after its first space.
 func (address *address) spacing(paragraph string, start, restart, long bool) (string, bool) {
+	if long {
+		paragraph = dashRunsSpaced(paragraph)
+	}
 	paragraph = startDots(namedMarks(address.dotRuns(address.loosened(commas(paragraph, true)), long)))
 	paragraph = cappedTerminals(commasAndUnderscores(slashes(dashes(pluses(paragraph)))))
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
