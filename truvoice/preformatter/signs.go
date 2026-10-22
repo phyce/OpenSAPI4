@@ -132,15 +132,32 @@ func kept(part string) bool {
 }
 
 // slashes spaces each word's slashes. One that ends a word after something has no space after it, and a word they
-// leave nothing of goes.
+// leave nothing of goes. A word that ends in a slash after something and the next word, when it has a slash after
+// something, are a path.
 func slashes(paragraph string) string {
 	words := strings.Split(paragraph, " ")
+	paths := make([]bool, len(words))
+	upcoming := make([]string, len(words))
+	last := -1
+	for index, word := range words {
+		if word == "" {
+			continue
+		}
+		if last >= 0 {
+			upcoming[last] = word
+			if strings.HasSuffix(words[last], "/") && strings.Trim(words[last], "/") != "" &&
+				strings.Contains(strings.TrimLeft(word, "/"), "/") {
+				paths[last], paths[index] = true, true
+			}
+		}
+		last = index
+	}
 	following := ""
 	for index := len(words) - 1; index >= 0; index-- {
 		word := words[index]
 		if strings.Contains(word, "/") {
 			ended := strings.HasSuffix(word, "/") && strings.Trim(word, "/") != ""
-			word = slashed(word, following)
+			word = slashed(word, following, paths[index], upcoming[index])
 			if ended {
 				word = strings.TrimSuffix(word, " ")
 			}
@@ -157,22 +174,34 @@ func slashes(paragraph string) string {
 	return strings.Join(words, " ")
 }
 
-// slashed is a word's slashes, following being the next word: the ones that start it stay, all stay in a path (two
-// slashes with something between them), the first of two or more together goes, and a single one stays if the
-// parts beside it (or the next word, for one that ends the word) keep it. A slash that stays has a space after it,
-// one that goes is a space. A ( or > that starts the word goes with the slash after it when the part after that
-// slash doesn't keep it (for a >, one not starting with a digit), or when another slash follows.
-func slashed(word, following string) string {
+// slashed is a word's slashes, following being the next word as its slashes left it and upcoming the next word as it
+// was: the ones that start it stay, all stay in a path (two slashes with something between them, or a word of a path
+// with more than one), the first of two or more together goes, and a single one stays in a path or if the parts
+// beside it (or the next word, for one that ends the word) keep it. A slash that stays has a space after it, one that
+// goes is a space. A ( or > that starts the word goes with the slash after it when the part after that slash doesn't
+// keep it (for a >, one not starting with a digit), or when another slash follows; for one that ends the word, a (
+// reads the upcoming word's part before its first slash, and goes with its slash, and nothing stays, when that word
+// starts with a slash.
+func slashed(word, following string, path bool, upcoming string) string {
 	rest := strings.TrimLeft(word, "/")
 	output := strings.Repeat("/ ", len(word)-len(rest))
 	if len(rest) >= 2 && (rest[0] == '(' || rest[0] == '>') && rest[1] == '/' {
 		after := rest[2:]
 		if strings.HasPrefix(after, "/") {
-			return output + slashed(after, following)
+			return output + slashed(after, following, path, "")
+		}
+		if rest[0] == '>' {
+			upcoming = ""
+		}
+		if after == "" && strings.HasPrefix(upcoming, "/") {
+			return output
 		}
 		first := following
-		if after != "" {
+		switch {
+		case after != "":
 			first, _, _ = strings.Cut(after, "/")
+		case upcoming != "":
+			first, _, _ = strings.Cut(upcoming, "/")
 		}
 		if !kept(first) && !(rest[0] == '>' && first != "" && digit(first[0])) {
 			return output + strings.ReplaceAll(after, "/", "/ ")
@@ -182,14 +211,14 @@ func slashed(word, following string) string {
 	switch {
 	case len(parts) == 1:
 		return output + rest
-	case strings.Join(parts[1:len(parts)-1], "") != "":
+	case strings.Join(parts[1:len(parts)-1], "") != "" || path && len(parts) > 2:
 		return output + strings.ReplaceAll(rest, "/", "/ ")
 	case len(parts) > 2:
 		return output + parts[0] + strings.Repeat("/ ", len(parts)-2) + parts[len(parts)-1]
 	}
 	left, right := parts[0], parts[1]
 	switch {
-	case !kept(left) || !kept(cmp.Or(right, following)):
+	case !path && (!kept(left) || !kept(cmp.Or(right, following))):
 		return output + left + " " + right
 	case left != "" && strings.Trim(left, "!?") == "":
 		return output + left + " / " + right

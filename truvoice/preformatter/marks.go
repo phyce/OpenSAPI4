@@ -35,7 +35,7 @@ func marks(paragraph string) string {
 			words[index] = "colon"
 		}
 	}
-	return approximately(strings.Join(words, " "))
+	return brackets(approximately(strings.Join(words, " ")))
 }
 
 // arrows reads each arrow as "to and from" or "to", with a space on each side where there is none.
@@ -111,8 +111,8 @@ func approximately(paragraph string) string {
 	return output.String()
 }
 
-// unmarked reads a paragraph's marks after its words are spaced (section 3.4): words of a > go, and a word's leading >
-// before a character that is no digit.
+// unmarked reads a paragraph's marks after its words are spaced (section 3.4): words of a > go, a word's leading >
+// before a character that is no digit, and a word's leading [ (unbracketed).
 func unmarked(paragraph string) string {
 	var output strings.Builder
 	for index := 0; index < len(paragraph); {
@@ -133,7 +133,66 @@ func unmarked(paragraph string) string {
 		}
 		output.WriteByte(paragraph[index])
 	}
-	return output.String()
+	words := strings.Split(output.String(), " ")
+	for index, word := range words {
+		words[index] = unbracketed(word)
+	}
+	return strings.Join(words, " ")
+}
+
+// unbracketed drops a [ that starts a word, after its opening brackets, before two characters or more that are no
+// number, the closing marks and dashes after them aside.
+func unbracketed(word string) string {
+	opening := len(word) - len(strings.TrimLeft(word, "("))
+	if opening == len(word) || word[opening] != '[' {
+		return word
+	}
+	rest := strings.TrimRight(word[opening+1:], "\"])!?.,;:/-")
+	if len(rest) >= 2 && !numeral(strings.TrimPrefix(rest, "."), false) {
+		return word[:opening] + word[opening+1:]
+	}
+	return word
+}
+
+// brackets spaces a paragraph's brackets: a ( has a space before it and none after it. In a paragraph with a (, a )
+// has none before it, a dot before two or more doubled, and one after it but before a comma, a dot or a question mark.
+func brackets(paragraph string) string {
+	var opened strings.Builder
+	for index := 0; index < len(paragraph); index++ {
+		if paragraph[index] != '(' {
+			opened.WriteByte(paragraph[index])
+			continue
+		}
+		if written := opened.String(); written == "" || written[len(written)-1] != ' ' {
+			opened.WriteByte(' ')
+		}
+		opened.WriteByte('(')
+		index = spaceRun(paragraph, index+1) - 1
+	}
+	paragraph = opened.String()
+	if !strings.Contains(paragraph, "(") {
+		return paragraph
+	}
+	var closed strings.Builder
+	for index := 0; index < len(paragraph); index++ {
+		if run := spaceRun(paragraph, index); run > index && run < len(paragraph) && paragraph[run] == ')' {
+			if run-index >= 2 && index > 0 && paragraph[index-1] == '.' {
+				closed.WriteByte('.')
+			}
+			index = run - 1
+			continue
+		}
+		closed.WriteByte(paragraph[index])
+	}
+	paragraph = closed.String()
+	var spaced strings.Builder
+	for index := 0; index < len(paragraph); index++ {
+		spaced.WriteByte(paragraph[index])
+		if paragraph[index] == ')' && index+1 < len(paragraph) && strings.IndexByte(" ,.?", paragraph[index+1]) < 0 {
+			spaced.WriteByte(' ')
+		}
+	}
+	return spaced.String()
 }
 
 // angleRun is the words of a > from index, the spaces around them included: before a number one > stays, a space
