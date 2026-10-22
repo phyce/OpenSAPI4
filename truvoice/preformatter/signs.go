@@ -123,10 +123,17 @@ func closes(after string, following []string) bool {
 	return last >= 0 && last <= 2 && !strings.ContainsAny(word[:last], "-/")
 }
 
-// kept is whether a part of a word beside a slash keeps it: one with a small letter, or of marks that don't stop it,
-// or none, a > that starts it not counted.
+// kept is whether a part of a word beside a slash keeps it, a space following the part.
 func kept(part string) bool {
-	part = strings.TrimPrefix(part, ">")
+	return keptBefore(part, " ")
+}
+
+// keptBefore is whether a part of a word beside a slash keeps it, after being what follows the part: one with a small
+// letter, or of marks that don't stop it, or none, a > that starts it not counted, up to the first comma its commas
+// space. It is read as its underscores make it.
+func keptBefore(part, after string) bool {
+	dotted := strings.HasPrefix(after, " ") && !strings.HasPrefix(after, "  ")
+	part, _, _ = strings.Cut(wordUnderscores(strings.TrimPrefix(part, ">"), dotted), " ")
 	return strings.ContainsFunc(part, func(character rune) bool { return character >= 'a' && character <= 'z' }) ||
 		strings.Trim(part, slashMarks) == ""
 }
@@ -138,6 +145,13 @@ func slashes(paragraph string) string {
 	words := strings.Split(paragraph, " ")
 	paths := make([]bool, len(words))
 	upcoming := make([]string, len(words))
+	endings := make([]string, len(words))
+	for index := 1; index < len(words); index++ {
+		endings[index-1] = "  "
+		if words[index] != "" {
+			endings[index-1] = " " + words[index][:1]
+		}
+	}
 	last := -1
 	for index, word := range words {
 		if word == "" {
@@ -157,7 +171,7 @@ func slashes(paragraph string) string {
 		word := words[index]
 		if strings.Contains(word, "/") {
 			ended := strings.HasSuffix(word, "/") && strings.Trim(word, "/") != ""
-			word = slashed(word, following, paths[index], upcoming[index])
+			word = slashed(word, following, paths[index], upcoming[index], endings[index])
 			if ended {
 				word = strings.TrimSuffix(word, " ")
 			}
@@ -174,21 +188,21 @@ func slashes(paragraph string) string {
 	return strings.Join(words, " ")
 }
 
-// slashed is a word's slashes, following being the next word as its slashes left it and upcoming the next word as it
-// was: the ones that start it stay, all stay in a path (two slashes with something between them, or a word of a path
-// with more than one), the first of two or more together goes, and a single one stays in a path or if the parts
-// beside it (or the next word, for one that ends the word) keep it. A slash that stays has a space after it, one that
-// goes is a space. A ( or > that starts the word goes with the slash after it when the part after that slash doesn't
-// keep it (for a >, one not starting with a digit), or when another slash follows; for one that ends the word, a (
-// reads the upcoming word's part before its first slash, and goes with its slash, and nothing stays, when that word
-// starts with a slash.
-func slashed(word, following string, path bool, upcoming string) string {
+// slashed is a word's slashes, following being the next word as its slashes left it, upcoming the next word as it
+// was and ending what follows the word: the ones that start it stay, all stay in a path (two slashes with something
+// between them, or a word of a path with more than one), the first of two or more together goes, and a single one
+// stays in a path or if the parts beside it (or the next word, for one that ends the word) keep it. A slash that stays
+// has a space after it, one that goes is a space. A ( or > that starts the word goes with the slash after it when the
+// part after that slash doesn't keep it (for a >, one not starting with a digit), or when another slash follows; for
+// one that ends the word, a ( reads the upcoming word's part before its first slash, and goes with its slash, and
+// nothing stays, when that word starts with a slash.
+func slashed(word, following string, path bool, upcoming, ending string) string {
 	rest := strings.TrimLeft(word, "/")
 	output := strings.Repeat("/ ", len(word)-len(rest))
 	if len(rest) >= 2 && (rest[0] == '(' || rest[0] == '>') && rest[1] == '/' {
 		after := rest[2:]
 		if strings.HasPrefix(after, "/") {
-			return output + slashed(after, following, path, "")
+			return output + slashed(after, following, path, "", ending)
 		}
 		if rest[0] == '>' {
 			upcoming = ""
@@ -217,8 +231,12 @@ func slashed(word, following string, path bool, upcoming string) string {
 		return output + parts[0] + strings.Repeat("/ ", len(parts)-2) + parts[len(parts)-1]
 	}
 	left, right := parts[0], parts[1]
+	rightKept := kept(following)
+	if right != "" {
+		rightKept = keptBefore(right, ending)
+	}
 	switch {
-	case !path && (!kept(left) || !kept(cmp.Or(right, following))):
+	case !path && (!kept(left) || !rightKept):
 		return output + left + " " + right
 	case left != "" && strings.Trim(left, "!?") == "":
 		return output + left + " / " + right
@@ -226,17 +244,31 @@ func slashed(word, following string, path bool, upcoming string) string {
 	return output + left + "/ " + right
 }
 
-// underscores spaces each word's underscores.
-func underscores(paragraph string) string {
+// commasAndUnderscores spaces the commas of a paragraph's words and reads their underscores.
+func commasAndUnderscores(paragraph string) string {
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
-		words[index] = underscored(word, index+1 < len(words) && (words[index+1] != "" || index+2 == len(words)))
+		words[index] = wordUnderscores(word, index+1 < len(words) && (words[index+1] != "" || index+2 == len(words)))
 	}
 	return strings.Join(words, " ")
 }
 
-// underscored makes a word of underscores, or one in underscores, a ~ and the word without its underscores. A comma
-// or a slash may end it, or a dot if dotted (one space follows the word).
+// wordUnderscores spaces a word's commas and reads the underscores of the words that leaves, dotted if one space
+// follows the word. In a word that doesn't end in a comma or a dot, what ends in a comma so spaced is no word in
+// underscores.
+func wordUnderscores(word string, dotted bool) string {
+	held := !strings.HasSuffix(word, ",") && !strings.HasSuffix(word, ".")
+	parts := strings.Split(wordCommas(word, false), " ")
+	for part := range parts {
+		if last := part == len(parts)-1; last || !held {
+			parts[part] = underscored(parts[part], last && dotted)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// underscored makes a word of underscores, or one in underscores, a ~ and the word without its underscores, in small
+// letters. A comma or a slash may end it, or a dot if dotted (one space follows the word).
 func underscored(word string, dotted bool) string {
 	lead := len(word) - len(strings.TrimLeft(word, "_"))
 	if lead == 0 {
@@ -254,13 +286,52 @@ func underscored(word string, dotted bool) string {
 			stop++
 		}
 		if ends(word[stop:]) {
-			return "~" + strings.ReplaceAll(word[lead:start], "_", "") + word[stop:]
+			return "~" + lower(strings.ReplaceAll(word[lead:start], "_", "")) + word[stop:]
 		}
 	}
 	if ends(word[lead:]) {
 		return "~" + word[lead:]
 	}
 	return word
+}
+
+// starred reads stars around words. A word that starts with a * and has a letter opens, but one with a dot after its
+// only star: its stars are a ~ (three before a single character, a slash after it aside, leave one). The first stars
+// after it in the paragraph that don't start a word close, and go when no letter or digit follows them in their word.
+func starred(paragraph string) string {
+	words := strings.Split(paragraph, " ")
+	opened := false
+	for index, word := range words {
+		prefix := ""
+		lettered := strings.ContainsFunc(word, func(character rune) bool {
+			return character < 0x80 && alphabetic(byte(character))
+		})
+		if strings.HasPrefix(word, "*") && !strings.HasPrefix(word, "*.") && lettered {
+			stars := len(word) - len(strings.TrimLeft(word, "*"))
+			word = word[stars:]
+			prefix = "~"
+			if stars == 3 && len(strings.TrimRight(word, "/")) == 1 {
+				prefix = "~*"
+			}
+			opened = true
+		}
+		if opened {
+			lead := len(word) - len(strings.TrimLeft(word, "*"))
+			if start := strings.IndexByte(word[lead:], '*'); start >= 0 {
+				start += lead
+				stop := start
+				for stop < len(word) && word[stop] == '*' {
+					stop++
+				}
+				if after := word[stop:]; !hasAlphanumeric(after) {
+					word = word[:start] + strings.ReplaceAll(after, "*", "")
+				}
+				opened = false
+			}
+		}
+		words[index] = prefix + word
+	}
+	return strings.Join(words, " ")
 }
 
 // loosened makes two dots and a dash or a slash after them two dots and a space where the dash or the slash goes

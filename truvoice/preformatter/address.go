@@ -18,6 +18,10 @@ const (
 	cutSpace   = "\x01"
 	droppedDot = "\x02"
 	hidden     = "\x03"
+	// joinedSpace stands between a word and the ! and ? joined to it, and droppedSquare for a [ that goes (a [ after
+	// it stays). A paragraph has no line feeds or tabs of its own.
+	joinedSpace   = "\n"
+	droppedSquare = "\t"
 	// closingRoom is how many marks a closing run keeps.
 	closingRoom = 4
 )
@@ -259,16 +263,17 @@ const (
 // it has a closed number. It reports whether the paragraph ends where a sentence starts.
 func (address *address) spacing(paragraph string, start, restart bool) (string, bool) {
 	paragraph = startDots(namedMarks(address.dotRuns(address.loosened(commas(paragraph, true)))))
-	paragraph = closingRuns(commas(underscores(slashes(dashes(pluses(paragraph)))), false))
+	paragraph = cappedTerminals(commasAndUnderscores(slashes(dashes(pluses(paragraph)))))
+	paragraph = closingRuns(starred(paragraph))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
 	parts := words(paragraph)
 	initial := start
 	for index := 0; !initial && restart && index < len(parts); index++ {
 		initial = restarts(parts[index].token)
 	}
-	var output strings.Builder
+	var output []string
 	if len(parts) > 0 {
-		output.WriteString(parts[0].spaces)
+		output = append(output, parts[0].spaces)
 	}
 	skipped, gap, joined := 0, 0, 0
 	terminalBefore := false
@@ -280,17 +285,25 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 				gap = 2
 			}
 			width := max(gap, 1)
+			joining := terminal(token) && !terminalBefore && joined == 0
 			if terminal(token) && !terminalBefore {
 				width = joined
+				if last := len(output) - 1; joining && strings.HasSuffix(output[last], "\"") {
+					output[last] = joinedWord(cmp.Or(parts[index-1].whole, output[last]))
+				}
 			}
 			if part.spaces == cutSpace {
 				width = 1
 			}
 			if held != "" && !terminal(token) {
-				output.WriteString(held)
+				output = append(output, held)
 				held = ""
 			}
-			output.WriteString(strings.Repeat(" ", width))
+			if joining && width == 0 {
+				output = append(output, joinedSpace)
+			} else {
+				output = append(output, strings.Repeat(" ", width))
+			}
 		}
 		terminalBefore = index > 0 && terminal(token)
 		spread := strings.HasSuffix(token, keptSpace+"/")
@@ -303,7 +316,7 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 		}
 		joined = 0
 		if part.spaces == cutSpace {
-			output.WriteString(token)
+			output = append(output, token)
 			continue
 		}
 		gap = 0
@@ -376,12 +389,74 @@ func (address *address) spacing(paragraph string, start, restart bool) (string, 
 		} else {
 			initial, skipped = false, 0
 		}
-		output.WriteString(token)
+		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
 	}
-	output.WriteString(held)
-	output.WriteString(strings.Repeat(" ", trailing))
-	paragraph = strings.ReplaceAll(output.String(), keptSpace, " ")
+	output = append(output, held, strings.Repeat(" ", trailing))
+	paragraph = strings.ReplaceAll(strings.Join(output, ""), keptSpace, " ")
 	return strings.ReplaceAll(paragraph, droppedDot, ""), initial
+}
+
+// settledSquare settles a [ that starts a word, after its opening brackets: it goes when a closing run cut the word
+// (cut), and before a dot that ends a sentence (two spaces or more follow it) the word without that dot decides.
+func settledSquare(token string, cut bool, spaces int) string {
+	opening := len(token) - len(strings.TrimLeft(token, "("))
+	if opening == len(token) || token[opening] != '[' {
+		return token
+	}
+	switch {
+	case cut:
+		return token[:opening] + droppedSquare + token[opening+1:]
+	case strings.HasSuffix(token, ".") && len(token) >= opening+2 && spaces >= 2:
+		if squareGoes(token[opening+1 : len(token)-1]) {
+			return token[:opening] + droppedSquare + token[opening+1:]
+		}
+		return token[:opening] + droppedSquare + token[opening:]
+	}
+	return token
+}
+
+// joinedWord is a word ending in a quote that a word of ! and ? joins: as written, its closing marks none hidden, and
+// then its closing marks and quote again (the last four) when they are more than four, or when something that is no
+// number stands before them. Opening brackets don't count, but a [ does when the word so written loses it.
+func joinedWord(token string) string {
+	start := len(strings.TrimRight(token[:len(token)-1], "!?)]:;.,"))
+	run := token[start:]
+	repeated := token + run[max(len(run)-closingRoom, 0):]
+	if len(run) > closingRoom {
+		return repeated
+	}
+	opening := len(token[:start]) - len(strings.TrimLeft(token[:start], "("))
+	square := opening < start && token[opening] == '['
+	before := token[opening:start]
+	if square {
+		before = before[1:]
+	}
+	switch {
+	case before != "" && numeric(before):
+		return token
+	case before != "":
+		return repeated
+	case square && squareGoes(repeated[opening+1:]):
+		return repeated
+	}
+	return token
+}
+
+// cappedTerminals keeps the first four marks of each word part of five ! and ? or more after a space, a + or a -, at
+// the end of its word.
+func cappedTerminals(paragraph string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); index++ {
+		output.WriteByte(paragraph[index])
+		if strings.IndexByte(" +-", paragraph[index]) < 0 {
+			continue
+		}
+		if run := terminalRun(paragraph, index+1); run-index-1 > closingRoom && wordEnds(paragraph, run) {
+			output.WriteString(paragraph[index+1 : index+1+closingRoom])
+			index = run - 1
+		}
+	}
+	return output.String()
 }
 
 // dotRuns spaces each run of dots and the spaces after it, each as the runs before it left the paragraph.
@@ -686,13 +761,14 @@ func signed(text string) bool {
 const closingMarks = "!?)]:;.," + keptSpace
 
 // closingRuns keeps the last four characters of each closing run: a run of closing marks (a quote may end it) before
-// a space or the end, after a character that is no mark after a character that is no space. What goes is kept
-// hidden, for the sentence end test, and a kept space in what stays is a cut space.
+// a space or the end, after a character that is no mark after a character that is no space, in a word with two
+// characters or more before it (a > that starts the word, the opening brackets after that and a [ after them aside).
+// What goes is kept hidden, for the sentence end test, and a kept space in what stays is a cut space.
 func closingRuns(paragraph string) string {
 	var output strings.Builder
 	for index := 0; index < len(paragraph); {
 		stop := closingRun(paragraph, index)
-		if stop-index <= closingRoom {
+		if stop-index <= closingRoom || !cuttable(paragraph[:index]) {
 			stop = max(stop, index+1)
 			output.WriteString(paragraph[index:stop])
 			index = stop
@@ -704,6 +780,14 @@ func closingRuns(paragraph string) string {
 		index = stop
 	}
 	return output.String()
+}
+
+// cuttable is whether a closing run may cut after the paragraph before it: its word there has two characters or
+// more, a > that starts it, the opening brackets after that and a [ after them aside.
+func cuttable(before string) bool {
+	before = before[strings.LastIndexAny(before, " "+keptSpace)+1:]
+	before = strings.TrimPrefix(strings.TrimLeft(strings.TrimPrefix(before, ">"), "("), "[")
+	return len(before) >= 2
 }
 
 // closingRun is where a closing run that starts at index ends, or index if none does.

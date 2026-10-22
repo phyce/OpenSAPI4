@@ -10,9 +10,18 @@ var separatorUnits = []string{"%%", "&&", "**", "++", "--", "//", "::", ";;", "<
 // arrowMarks are the arrows, tried in this order.
 var arrowMarks = []string{"<-->", "<==>", "<->", "<=>", "-->", "==>", "->", "=>"}
 
+// faces are the faces and how they are read, tried in this order.
+var faces = []struct{ face, reading string }{
+	{":-)", "ha ha"}, {"8-)", "ha ha"}, {":)", "ha ha"}, {";-)", "wink"}, {";)", "wink"}, {":-o", "uh oh"},
+	{":o", "uh oh"}, {":-(", "groan"}, {":-/", "oh yeah?"}, {"|-O", "yawn"},
+}
+
+// markNames are the names of ! and ?, read in this order.
+var markNames = []struct{ mark, name string }{{"!", "exclamation"}, {"?", "question"}}
+
 // marks reads a paragraph's marks before its words are spaced (section 3.4).
 func marks(paragraph string) string {
-	paragraph = arrows(paragraph)
+	paragraph = arrows(readFaces(paragraph))
 	for _, unit := range separatorUnits {
 		if strings.Contains(paragraph, unit+unit) {
 			paragraph = strings.ReplaceAll(paragraph, unit, "")
@@ -25,10 +34,14 @@ func marks(paragraph string) string {
 	paragraph = terminalMarks(paragraph)
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
+		if index > 0 && len(word) > 4 && terminal(word) {
+			words[index] = word[:4]
+		}
+	}
+	words = strings.Split(terminalNames(strings.Join(words, " ")), " ")
+	for index, word := range words {
 		switch {
 		case index == 0:
-		case len(word) > 4 && terminal(word):
-			words[index] = word[:4]
 		case word == ";":
 			words[index] = "semicolon"
 		case word == ":":
@@ -36,6 +49,78 @@ func marks(paragraph string) string {
 		}
 	}
 	return brackets(approximately(strings.Join(words, " ")))
+}
+
+// readFaces reads each face, with a space on each side.
+func readFaces(paragraph string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); {
+		read := false
+		for _, face := range faces {
+			if strings.HasPrefix(paragraph[index:], face.face) {
+				output.WriteString(" " + face.reading + " ")
+				index += len(face.face)
+				read = true
+				break
+			}
+		}
+		if !read {
+			output.WriteByte(paragraph[index])
+			index++
+		}
+	}
+	return output.String()
+}
+
+// terminalNames reads a ! or ? in quotes or brackets as its name, a word of its own, and a word of !s or !'s (?s or
+// ?'s) after a space as the plural of its name, with a comma on each side. The ! is read before the ?.
+func terminalNames(paragraph string) string {
+	for _, named := range markNames {
+		paragraph = quotedMark(paragraph, named.mark, named.name)
+		for _, plural := range []string{"s", "'s"} {
+			paragraph = pluralMark(paragraph, " "+named.mark+plural, ", "+named.name+"s"+named.mark+",")
+		}
+	}
+	return paragraph
+}
+
+// quotedMark reads each mark in quotes or brackets as its name, with a space on each side where there is none.
+func quotedMark(paragraph, mark, name string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); {
+		rest := paragraph[index:]
+		if !strings.HasPrefix(rest, `"`+mark+`"`) && !strings.HasPrefix(rest, "("+mark+")") {
+			output.WriteByte(paragraph[index])
+			index++
+			continue
+		}
+		stop := index + 3
+		if index == 0 || paragraph[index-1] != ' ' {
+			output.WriteByte(' ')
+		}
+		output.WriteString(paragraph[index:index+1] + name + paragraph[index+1:stop])
+		if !wordEnds(paragraph, stop) {
+			output.WriteByte(' ')
+		}
+		index = stop
+	}
+	return output.String()
+}
+
+// pluralMark reads each word that is a plural mark after a space, the space included, as its reading.
+func pluralMark(paragraph, plural, reading string) string {
+	var output strings.Builder
+	for index := 0; index < len(paragraph); {
+		if stop := index + len(plural); strings.HasPrefix(paragraph[index:], plural) && stop < len(paragraph) &&
+			paragraph[stop] == ' ' {
+			output.WriteString(reading)
+			index = stop
+			continue
+		}
+		output.WriteByte(paragraph[index])
+		index++
+	}
+	return output.String()
 }
 
 // arrows reads each arrow as "to and from" or "to", with a space on each side where there is none.
@@ -140,18 +225,28 @@ func unmarked(paragraph string) string {
 	return strings.Join(words, " ")
 }
 
-// unbracketed drops a [ that starts a word, after its opening brackets, before two characters or more that are no
-// number, the closing marks and dashes after them aside.
+// unbracketed drops a [ that starts a word, after its opening brackets, when what follows it makes it go, the ! and ?
+// joined to the word aside. A dropped square before it has settled that already.
 func unbracketed(word string) string {
 	opening := len(word) - len(strings.TrimLeft(word, "("))
-	if opening == len(word) || word[opening] != '[' {
-		return word
+	if opening < len(word) && word[opening] == '[' {
+		if rest, _, _ := strings.Cut(word[opening+1:], joinedSpace); squareGoes(rest) {
+			word = word[:opening] + word[opening+1:]
+		}
 	}
-	rest := strings.TrimRight(word[opening+1:], "\"])!?.,;:/-")
-	if len(rest) >= 2 && !numeral(strings.TrimPrefix(rest, "."), false) {
-		return word[:opening] + word[opening+1:]
-	}
-	return word
+	return strings.ReplaceAll(strings.ReplaceAll(word, joinedSpace, ""), droppedSquare, "")
+}
+
+// squareGoes is whether what follows a [ makes it go: two characters or more that are no number (a quote after it
+// counted in), a quote at its end and the closing marks, dashes and slashes before that aside.
+func squareGoes(rest string) bool {
+	rest = strings.TrimRight(strings.TrimSuffix(rest, "\""), "])!?.,;:/-")
+	return len(rest) >= 2 && !numeric(strings.TrimSuffix(rest, "\""))
+}
+
+// numeric is whether a word is a number, a dot may start it.
+func numeric(word string) bool {
+	return numeral(strings.TrimPrefix(word, "."), false)
 }
 
 // brackets spaces a paragraph's brackets: a ( has a space before it and none after it. In a paragraph with a (, a )
