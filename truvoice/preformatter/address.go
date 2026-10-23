@@ -132,13 +132,13 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 	}
 	if end == cutEnding && len(content) <= 1 {
 		character := strings.Trim(line, " ")
-		if address.paragraph != "" {
-			address.flush()
-			if character == "" {
-				character = " "
-			}
+		if address.paragraph == "" {
+			address.output.WriteString(character + paragraphEnd)
+			return
 		}
-		address.output.WriteString(character + paragraphEnd)
+		address.flush()
+		address.paragraph = character
+		address.flush()
 		return
 	}
 	if edits && strings.Trim(line, " ") == "" {
