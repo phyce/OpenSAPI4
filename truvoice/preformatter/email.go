@@ -10,6 +10,7 @@ const (
 	shortHeader = 38
 	colonSpace  = 12
 	heldLimit   = 743
+	articleWord = "Article"
 )
 
 // state is where the e-mail reading is (section 3.7): outside a header block, in one, or right after one.
@@ -30,7 +31,7 @@ func (address *address) email(piece string, end ending) (string, bool) {
 	if address.holding {
 		held := address.held
 		address.held, address.holding = "", false
-		if !colonForm(piece, true) {
+		if !colonForm(piece, true) && !article(piece, end) {
 			address.release(held, piece, end)
 			address.join(unquoted(piece), end, false, piece, true)
 			if end == textEnd {
@@ -49,6 +50,9 @@ func (address *address) email(piece string, end ending) (string, bool) {
 	}
 	switch address.state {
 	case inBlock:
+		if article(piece, end) {
+			return address.article(piece, end)
+		}
 		if address.subjectGoesOn {
 			address.subjectGoesOn = false
 			if blankHeaderLine(line) {
@@ -62,9 +66,12 @@ func (address *address) email(piece string, end ending) (string, bool) {
 			}
 			if !headerForm(piece, end) {
 				address.subjectLine(piece, end)
-				address.hold(piece)
+				address.hold(piece, false)
 				return "", false
 			}
+		}
+		if address.paragraph != "" {
+			address.flush()
 		}
 		if blankHeaderLine(line) {
 			address.output.WriteString(paragraphEnd)
@@ -79,21 +86,62 @@ func (address *address) email(piece string, end ending) (string, bool) {
 			address.continues(name, value, datapack.DroppedHeader)
 		}
 		address.output.WriteString(paragraphEnd)
-		address.hold(piece)
+		address.hold(piece, false)
 		return "", false
 	case afterBlock:
+		if article(piece, end) {
+			return address.article(piece, end)
+		}
 		if name, value, action, ok := address.header(line); ok {
 			address.headerLine(name, value, action, end, afterSubject)
 			return "", false
 		}
 		address.state = outside
 	default:
+		if address.opened && !address.articled && article(piece, end) {
+			return address.article(piece, end)
+		}
 		if name, value, action, ok := address.header(line); ok {
 			address.headerLine(name, value, action, end, afterSubject)
 			return "", false
 		}
 	}
 	return unquoted(piece), true
+}
+
+// article reads a line that starts with the word Article (section 3.7): it starts a message, and is left for the
+// paragraphs as a line of text with a header block after it, held when it ends in a comma like a line of the block.
+// One outside a header block counts as a message, and after it one outside a block is read only right after a blank
+// line no more. As the text's last line it ends the text without the space before the paragraph's end; held as the
+// text ends, it isn't written, nor the Article lines joined with it.
+func (address *address) article(piece string, end ending) (string, bool) {
+	if address.state == outside {
+		address.messages++
+		address.articled = true
+	}
+	address.state = inBlock
+	address.subjectGoesOn = false
+	address.articleEnded = end == textEnd
+	address.hold(piece, true)
+	return unquoted(piece), true
+}
+
+// article is whether a line starts with the word Article, leading spaces and one `>` left out. The text's last line
+// is read without the spaces it ends with, its colons spaced, and then without its last character.
+func article(piece string, end ending) bool {
+	line := piece
+	if end == textEnd {
+		line = strings.TrimRight(line, " ")
+		if colonsSpaced(line) {
+			line = spaceColons(line)
+		}
+		if line != "" {
+			line = line[:len(line)-1]
+		}
+	}
+	line = strings.TrimPrefix(strings.TrimLeft(line, " "), ">")
+	rest, found := strings.CutPrefix(line, articleWord)
+	return found && (rest == "" || rest[0] == ' ' || rest[0] == '\t')
 }
 
 // headerName is the header a line is, its name right before a colon, and its value. One `>` may quote it, and in
@@ -301,10 +349,11 @@ func (address *address) subjectLine(piece string, end ending) {
 	}
 }
 
-// hold keeps a line of a header block that ends in a comma and isn't a header line for the next one (section 3.7).
-func (address *address) hold(piece string) {
+// hold keeps a line of a header block that ends in a comma and isn't a header line for the next one (section 3.7),
+// noting whether it starts with Article.
+func (address *address) hold(piece string, articleLine bool) {
 	if strings.HasSuffix(piece, ",") && !colonForm(piece, true) {
-		address.held, address.holding = piece, true
+		address.held, address.holding, address.heldArticle = piece, true, articleLine
 	}
 }
 

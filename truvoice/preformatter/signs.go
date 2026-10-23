@@ -4,8 +4,6 @@ import (
 	"cmp"
 	"slices"
 	"strings"
-
-	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 )
 
 // slashMarks are the marks that don't stop a slash beside them.
@@ -271,7 +269,7 @@ func thinned(parts []string) []string {
 // plain keeps, and with a list word's mark.
 func (address *address) goneBefore(part string) string {
 	bare := strings.TrimRight(part, keptSpace)
-	if entry, ok := address.listed(bare, 1, ""); ok && entry.Kind != datapack.PlainWord {
+	if entry, ok := address.listed(bare, 1, ""); ok && !plainListed(entry.Kind) {
 		return part + slashGone
 	}
 	return bare + address.goneSlash(bare)

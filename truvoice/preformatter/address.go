@@ -81,14 +81,19 @@ type address struct {
 	state    state
 	messages int
 	author   bool
+	// opened is whether the piece before was a blank line or there was none, articled whether a line starting with
+	// Article has started a message outside a header block, and articleEnded whether the text's last line was one
+	// (section 3.7).
+	opened, articled, articleEnded bool
 	// afterSubject is whether the line before was a Subject: line, and subjectGoesOn whether it was one in a header
 	// block.
 	afterSubject, subjectGoesOn bool
 	// namesGoOn is how the next line goes on with an Author:, names or other value that ended in a comma.
 	namesGoOn datapack.HeaderAction
-	// held is a line of a header block that ended in a comma, if holding.
-	held    string
-	holding bool
+	// held is a line of a header block that ended in a comma, if holding, and heldArticle whether it starts with
+	// Article.
+	held                 string
+	holding, heldArticle bool
 }
 
 func newAddress(words *datapack.Address) *address {
@@ -102,7 +107,7 @@ func newAddress(words *datapack.Address) *address {
 	}
 	return &address{functionWords: wordSet(words.FunctionWords), abbreviations: wordSet(words.Abbreviations),
 		spacedAbbreviations: wordSet(words.SpacedAbbreviations), words: listed,
-		numberWords: wordSet(words.NumberWords), headers: headers, messageStart: words.MessageStart}
+		numberWords: wordSet(words.NumberWords), headers: headers, messageStart: words.MessageStart, opened: true}
 }
 
 func wordSet(words []string) map[string]bool {
@@ -116,7 +121,9 @@ func wordSet(words []string) map[string]bool {
 // piece reads a piece the reading gives as part of an e-mail message (section 3.7) and joins what is left of it
 // to the paragraph.
 func (address *address) piece(piece string, end ending) {
-	if rest, left := address.email(piece, end); left {
+	rest, left := address.email(piece, end)
+	address.opened = end == lineFeed && strings.Trim(clean(unquoted(piece)), " ") == ""
+	if left {
 		address.join(rest, end, true, piece, true)
 	}
 }
@@ -201,10 +208,25 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 
 // end writes the text's last line and ends the last paragraph (section 3.6).
 func (address *address) end() {
-	if !address.hasLast {
+	if address.articleEnded {
+		if address.hasLast {
+			last := strings.Trim(address.last, " ")
+			address.paragraph += last
+			address.longParagraph += last
+		}
 		if address.paragraph != "" {
 			address.flush()
-			address.output.WriteString(" " + paragraphEnd)
+		}
+		address.output.WriteString(paragraphEnd)
+		return
+	}
+	if !address.hasLast {
+		if address.paragraph != "" && !(address.holding && address.heldArticle) {
+			address.flush()
+			if address.state != inBlock {
+				address.output.WriteString(" ")
+			}
+			address.output.WriteString(paragraphEnd)
 		}
 		return
 	}
@@ -427,8 +449,13 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	// carrying is whether a word of ! and ? after a list word that is plain, or that a slash followed, takes one space
 	// after it, and carried whether the word before was such a word.
 	carrying, carried := false, false
+	// numbering is whether the words since a list word are numbers and function words, after which ! and ? take one
+	// space.
+	numbering := false
+	capitals := capitalsAround(parts)
 	for index, part := range parts {
 		token := part.token
+		read := token
 		if index > 0 {
 			if initial && skipped > 0 && capitalized(token) {
 				gap = 2
@@ -503,6 +530,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		if index+1 < len(parts) {
 			nextSpaces, nextKept = spaceWidth(parts[index+1].spaces), parts[index+1].spaces == keptGap
 		}
+		numbering = numbering && address.numbered(written)
 		if dotted, closed, ok := wholeEnding(written, whole); ok {
 			kind := address.dotKind(dotted, initial, closed)
 			if closingLength(whole)+later-index-1 > closingRoom {
@@ -540,6 +568,9 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			}
 		} else if exclaimed(written, closingRoom) {
 			gap, exclaiming = 2, true
+			if numbering {
+				gap = 1
+			}
 			if nextKept {
 				excess = 1
 			}
@@ -575,8 +606,15 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			joined = 1
 		}
 		following = unheld(following)
+		near := capitalsNear(capitals, index)
 		entry, ok := address.listed(token, followingSpaces, following)
-		if ok && !(spread && entry.Dotted) {
+		switch {
+		case ok && spread && entry.Dotted:
+			ok = false
+		case ok && entry.Kind == datapack.CapitalWord && near:
+			entry.Expansion = strings.TrimPrefix(entry.Expansion, "~")
+		}
+		if ok {
 			slash := 0
 			switch {
 			case holds && part.slash == slashDropped:
@@ -591,11 +629,13 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 				held, slash = " /", 2
 			}
 			token, gap = expanded(entry, token, following, followingSpaces, later >= len(parts), gap, slash)
-			if entry.Kind != datapack.PlainWord {
+			if !plainListed(entry.Kind) {
 				joined = 0
 			}
-			carrying = entry.Kind == datapack.PlainWord || slash > 0 || holds
-			initial, skipped = false, 0
+			carrying = plainListed(entry.Kind) || slash > 0 || holds
+			numbering, initial, skipped = true, false, 0
+		} else if !near {
+			token = address.tilded(token, read)
 		}
 		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
 	}
@@ -781,7 +821,7 @@ func (address *address) dotPair(built, following, alone string, split bool) stri
 		strings.HasSuffix(before, "\"") && len(core(before+".")) > 1
 	entry, listed := address.listed(before+".", 1, "")
 	if wordy && (splits(following) || strings.HasPrefix(following, "/") && kept(before+".")) ||
-		strings.HasPrefix(following, "/") && listed && entry.Kind != datapack.PlainWord {
+		strings.HasPrefix(following, "/") && listed && !plainListed(entry.Kind) {
 		return "." + keptSpace
 	}
 	if split {
@@ -1386,28 +1426,149 @@ const quotedPlain = "NY"
 
 // listed is the list word a word is (section 3.5), spaces being the spaces after it and following the next word. An
 // abbreviation or a title after opening brackets (a > may start them) and before closing marks (a kept space may stand
-// among them, a quote may end them); a dotted one only before just a dot and at most one space. A plain word, and NY
-// as one, also after quotes and a ~, and before quotes and stars that closing marks may follow. Before a word of ! and
-// ? that joins it, a dotted word is none, and one that ends in a quote only a plain word.
+// among them, a quote may end them); a dotted one only before just a dot and at most one space. A plain or capital
+// word, and NY as a plain one, also after quotes and a ~, and before quotes and stars that closing marks may follow.
+// Before a word of ! and ? that joins it, a dotted word is none, and one that ends in a quote only a plain or capital
+// word. A word that is none may be one with an ending.
 func (address *address) listed(token string, spaces int, following string) (datapack.Word, bool) {
 	opening, word, closing := parted(token)
 	entry, ok := address.words[word]
 	if !ok {
-		return datapack.Word{}, false
+		return address.ended(opening, word, closing)
 	}
 	joins := strings.HasSuffix(token, "\"") && following != "" && terminal(following)
-	if entry.Kind != datapack.PlainWord && !joins && listOpening(opening, false) && listClosing(closing) {
+	if !plainListed(entry.Kind) && !joins && listOpening(opening, false) && listClosing(closing) {
 		if entry.Dotted && (closing != "." || spaces > 1 || following != "" && terminal(following)) {
 			return datapack.Word{}, false
 		}
 		return entry, true
 	}
-	plain := entry.Kind == datapack.PlainWord || word == quotedPlain
-	if plain && listOpening(opening, true) && plainClosing(closing) {
-		entry.Kind = datapack.PlainWord
-		return entry, true
+	if (plainListed(entry.Kind) || word == quotedPlain) && listOpening(opening, true) && plainClosing(closing) {
+		return plainEntry(entry), true
 	}
 	return datapack.Word{}, false
+}
+
+// ended is the list word a word with an ending is (section 3.5): a plain or capital word, or NY, and an apostrophe
+// with what follows it, or an s after capitals, which is written 's; its marks are a plain word's. The ending goes
+// after the expansion.
+func (address *address) ended(opening, word, closing string) (datapack.Word, bool) {
+	base, rest, apostrophe := strings.Cut(word, "'")
+	var ending string
+	if apostrophe {
+		ending = "'" + rest
+	}
+	entry, ok := address.words[base]
+	if stem := strings.TrimSuffix(base, "s"); !ok && stem != base && capitalLetters(stem) {
+		entry, ok = address.words[stem]
+		ending = "'s" + ending
+	}
+	if !ok || ending == "" || !plainListed(entry.Kind) && entry.Word != quotedPlain || !listOpening(opening, true) ||
+		!plainClosing(closing) {
+		return datapack.Word{}, false
+	}
+	entry = plainEntry(entry)
+	entry.Expansion += ending
+	return entry, true
+}
+
+// plainEntry is a list word written as a plain word: a capital word keeps its kind.
+func plainEntry(entry datapack.Word) datapack.Word {
+	if entry.Kind != datapack.CapitalWord {
+		entry.Kind = datapack.PlainWord
+	}
+	return entry
+}
+
+// plainListed is whether a list word of a kind is written as a plain word: a plain or a capital word.
+func plainListed(kind datapack.WordKind) bool {
+	return kind == datapack.PlainWord || kind == datapack.CapitalWord
+}
+
+// numbered is whether a word after a list word keeps its numbers going (section 3.5): a number, digits, dots and
+// dashes that a dot may start, after a ( and a [ or a quote, or a function word after a (, before closing marks (a
+// quote may follow the number) and then a ! or ? that more of them, quotes, ! and ? may follow.
+func (address *address) numbered(token string) bool {
+	rest := strings.TrimPrefix(token, "(")
+	if letters := len(rest) - len(strings.TrimLeftFunc(rest, func(character rune) bool {
+		return character < 0x80 && letter(byte(character))
+	})); letters > 0 {
+		return address.functionWord(rest[:letters]) && numberClosing(rest[letters:])
+	}
+	if rest != "" && (rest[0] == '[' || rest[0] == '"') {
+		rest = rest[1:]
+	}
+	rest = strings.TrimPrefix(rest, ".")
+	if rest == "" || !digit(rest[0]) {
+		return false
+	}
+	return numberClosing(strings.TrimPrefix(strings.TrimLeft(rest, "0123456789.-"), "\""))
+}
+
+// numberClosing is whether marks close a number or function word that keeps a list word's numbers going: ) ] : ;
+// commas and dots, then a ! or ? that those marks, quotes, ! and ? may follow.
+func numberClosing(marks string) bool {
+	marks = strings.TrimLeft(marks, ")]:;.,")
+	return marks == "" || (marks[0] == '!' || marks[0] == '?') && strings.Trim(marks, ")]\":;.,!?") == ""
+}
+
+// capitalsAround is whether a space starts the paragraph and then whether each of its words is in capitals
+// (capitalsWord).
+func capitalsAround(parts []part) []bool {
+	if len(parts) == 0 {
+		return nil
+	}
+	capitals := make([]bool, 0, len(parts)+1)
+	capitals = append(capitals, strings.HasPrefix(parts[0].spaces, " "))
+	for _, part := range parts {
+		capitals = append(capitals, capitalsWord(part.token))
+	}
+	return capitals
+}
+
+// capitalsNear is whether a word in capitals stands within two words of the word at index, a space that starts the
+// paragraph counting as one before the first word (section 3.5).
+func capitalsNear(capitals []bool, index int) bool {
+	for position := max(index-1, 0); position < min(index+4, len(capitals)); position++ {
+		if position != index+1 && capitals[position] {
+			return true
+		}
+	}
+	return false
+}
+
+// capitalsWord is whether a word keeps a word in capitals near it from its ~ (section 3.5): one without a small
+// letter, but A, I, marks that end a sentence (a > or [ only alone) and numbers, dashes among their digits, between
+// quotes and brackets and before closing marks.
+func capitalsWord(token string) bool {
+	if hasSmall(token) || token == "A" || token == "I" || token == ">" || token == "[" ||
+		strings.Trim(token, "!\"(),.:;?]") == "" {
+		return false
+	}
+	number := strings.TrimPrefix(strings.TrimLeft(token, "\"(["), ".")
+	return number == "" || !digit(number[0]) ||
+		strings.Trim(strings.TrimLeft(number, "0123456789.,-"), ")]!?:;,.\"") != ""
+}
+
+// tilded is a word with a ~ before its word when the paragraph has it (read) as a function word in capitals after
+// opening brackets (a > may start them) and before closing marks (section 3.5).
+func (address *address) tilded(token, read string) string {
+	opening, word, closing := parted(read)
+	if !capitalLetters(word) || !address.functionWord(word) ||
+		strings.TrimLeft(strings.TrimPrefix(opening, ">"), "(") != "" || !listClosing(closing) {
+		return token
+	}
+	opening, _, _ = parted(token)
+	return opening + "~" + token[len(opening):]
+}
+
+// capitalLetters is whether a word is capital letters, one or more.
+func capitalLetters(word string) bool {
+	return word != "" && strings.Trim(word, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == ""
+}
+
+func hasSmall(word string) bool {
+	return strings.ContainsFunc(word, func(character rune) bool { return character >= 'a' && character <= 'z' })
 }
 
 // junked spaces the dot after a list word, an abbreviation or a title that isn't dotted, that starts a word of a
@@ -1492,7 +1653,7 @@ func expanded(entry datapack.Word, token, following string, spaces int, last boo
 	written := opening + entry.Expansion + closing
 	dot := strings.IndexByte(closing, '.')
 	switch {
-	case entry.Kind == datapack.PlainWord:
+	case plainListed(entry.Kind):
 		gap = 1
 		if strings.HasSuffix(closing, ".") && spaces >= 2 {
 			gap = 2
@@ -1548,19 +1709,26 @@ func dotKept(kind datapack.WordKind, spaces int, following string, last bool) (b
 }
 
 // raised is whether a word keeps the dot of a list word before it, a > that starts it, its ( and one [ after them and
-// quotes aside: one that starts with a capital; not one that starts with a small letter or a digit, or nothing; one
-// that starts with anything else when it has no small letter and something that is no quote, ( ) or ], comma, dot,
-// colon, semicolon, ! or ?.
+// quotes aside: one that starts with a capital; not one that starts with a small letter, nothing, or a number (digits,
+// dots, commas and dashes that a dot may start) before closing marks; any other when it has no small letter and
+// something that is no quote, ( ) or ], comma, dot, colon, semicolon, ! or ?.
 func raised(word string) bool {
 	word = strings.TrimLeft(strings.TrimPrefix(strings.TrimLeft(strings.TrimPrefix(word, ">"), "("), "["), "\"")
 	switch {
 	case word != "" && upper(word[0]):
 		return true
-	case word == "" || small(word[0]) || digit(word[0]):
+	case word == "" || small(word[0]) || raisingNumber(word):
 		return false
 	}
-	return !strings.ContainsFunc(word, func(character rune) bool { return character >= 'a' && character <= 'z' }) &&
-		strings.Trim(word, "\"()],.!?:;") != ""
+	return !hasSmall(word) && strings.Trim(word, "\"()],.!?:;") != ""
+}
+
+// raisingNumber is whether a word is a number, digits, dots, commas and dashes that a dot may start, before closing
+// marks.
+func raisingNumber(word string) bool {
+	word = strings.TrimPrefix(word, ".")
+	return word != "" && digit(word[0]) &&
+		strings.Trim(strings.TrimLeft(word, "0123456789.,-"), ")]\"!?:;.,") == ""
 }
 
 func (address *address) functionWord(word string) bool {

@@ -297,8 +297,10 @@ Each **list word**:
 |---|---|---|
 | `word` | Word | The word, case and all: letters `A` to `Z` and `a` to `z` and `'`, one character or more; each word comes once |
 | `expansion` | Word | What it is written as, printable ASCII, one character or more |
-| `kind` | `abbreviation`, `title` or `plain` | How its dot and the spaces after it are written |
+| `kind` | `abbreviation`, `title`, `plain` or `capital` | How its dot and the spaces after it are written; a capital word is written as a plain one, and only when no word in capitals stands near it |
 | `dotted` | `true` or absent | Whether it is a list word only before a dot |
+
+A capital word's expansion is the word after a `~`.
 
 Each **header**:
 

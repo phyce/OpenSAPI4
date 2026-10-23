@@ -25,10 +25,11 @@ func TestPreFormatter(t *testing.T) {
 		t.Errorf("address words %d function words, %d abbreviations, %d spaced", len(address.FunctionWords),
 			len(address.Abbreviations), len(address.SpacedAbbreviations))
 	}
-	first, mister := address.Words[0], address.Words[214]
-	if len(address.Words) != 368 || first.Word != "Acct" || first.Expansion != "Account" ||
+	first, mister, all := address.Words[0], address.Words[218], address.Words[3]
+	if len(address.Words) != 375 || first.Word != "Acct" || first.Expansion != "Account" ||
 		first.Kind != datapack.AbbreviationWord || first.Dotted || mister.Word != "Mr" || mister.Expansion != "Mister" ||
-		mister.Kind != datapack.TitleWord || !mister.Dotted {
+		mister.Kind != datapack.TitleWord || !mister.Dotted || all.Word != "ALL" || all.Expansion != "~ALL" ||
+		all.Kind != datapack.CapitalWord {
 		t.Errorf("%d list words, the first %+v", len(address.Words), first)
 	}
 	if len(address.NumberWords) != 19 || address.NumberWords[0] != "apr" {

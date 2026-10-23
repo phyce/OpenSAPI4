@@ -66,9 +66,13 @@ const (
 	TitleWord
 	// PlainWord's dot and spaces stay.
 	PlainWord
+	// CapitalWord is written as a plain word; its expansion is the word after a ~, and it is written out only when
+	// no capitals word stands near it.
+	CapitalWord
 )
 
-var wordKinds = map[string]WordKind{"abbreviation": AbbreviationWord, "title": TitleWord, "plain": PlainWord}
+var wordKinds = map[string]WordKind{"abbreviation": AbbreviationWord, "title": TitleWord, "plain": PlainWord,
+	"capital": CapitalWord}
 
 // Header is an e-mail header's name and what the e-mail reading does with a line of it outside a header block, in
 // one and right after one. A line of it is read as names once OutsideNames messages have started outside a block,
@@ -287,6 +291,10 @@ func parseWords(descriptions []wordDescription) ([]Word, error) {
 		kind, known := wordKinds[description.Kind]
 		if !known {
 			return nil, fmt.Errorf("address word %q's kind is %q, not a kind", description.Word, description.Kind)
+		}
+		if kind == CapitalWord && description.Expansion != "~"+description.Word {
+			return nil, fmt.Errorf("address capital word %q's expansion is %q, not the word after a ~",
+				description.Word, description.Expansion)
 		}
 		words = append(words, Word{Word: description.Word, Expansion: description.Expansion, Kind: kind,
 			Dotted: description.Dotted})
