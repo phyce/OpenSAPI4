@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+
+	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 )
 
 // slashMarks are the marks that don't stop a slash beside them.
@@ -68,7 +70,7 @@ func dashes(paragraph string) string {
 			for stop < len(word) && word[stop] == '-' {
 				stop++
 			}
-			spaced.WriteString(spacedDash(stop-character, word[:character], word[stop:], following))
+			spaced.WriteString(spacedDash(stop-character, word[:character], word[stop:], following, index > 0))
 			character = stop
 		}
 		words[index] = spaced.String()
@@ -76,12 +78,15 @@ func dashes(paragraph string) string {
 	return strings.Join(words, " ")
 }
 
-// spacedDash is a run of dashes in a word, with the word's characters before and after it and the two words after
-// the word. Dashes two or more together each get a space on each side. A word's first dash, or one after a slash,
-// gets a space after it but before the ! and ? that end the word, and one after an opening quote or bracket that a
-// closing one follows closely; a dash between digits stays, any other is a space, none at the word's end.
-func spacedDash(run int, before, after string, following []string) string {
+// spacedDash is a run of dashes in a word, with the word's characters before and after it and the two words after the
+// word, spaced if a space stands before the word. Dashes two or more together each get a space on each side, the space
+// before the word counting for the first. A word's first dash, or one after a slash, gets a space after it but before
+// the ! and ? that end the word, and one after an opening quote or bracket that a closing one follows closely; a dash
+// between digits stays, any other is a space, none at the word's end.
+func spacedDash(run int, before, after string, following []string, spaced bool) string {
 	switch {
+	case run > 1 && spaced && before == "":
+		return strings.Repeat(" - ", run)[1:]
 	case run > 1:
 		return strings.Repeat(" - ", run)
 	case before == "" || strings.HasSuffix(before, "/"):
@@ -141,7 +146,7 @@ func keptBefore(part, after string) bool {
 // slashes spaces each word's slashes. One that ends a word after something has no space after it, and a word they
 // leave nothing of goes. A word that ends in a slash after something and the next word, when it has a slash after
 // something, are a path.
-func slashes(paragraph string) string {
+func (address *address) slashes(paragraph string) string {
 	words := strings.Split(paragraph, " ")
 	paths := make([]bool, len(words))
 	upcoming := make([]string, len(words))
@@ -171,7 +176,7 @@ func slashes(paragraph string) string {
 		word := words[index]
 		if strings.Contains(word, "/") {
 			ended := strings.HasSuffix(word, "/") && strings.Trim(word, "/") != ""
-			word = slashed(word, following, paths[index], upcoming[index], endings[index])
+			word = address.slashed(word, following, paths[index], upcoming[index], endings[index])
 			if ended {
 				word = strings.TrimSuffix(word, " ")
 			}
@@ -188,21 +193,23 @@ func slashes(paragraph string) string {
 	return strings.Join(words, " ")
 }
 
-// slashed is a word's slashes, following being the next word as its slashes left it, upcoming the next word as it
-// was and ending what follows the word: the ones that start it stay, all stay in a path (two slashes with something
-// between them, or a word of a path with more than one), the first of two or more together goes, and a single one
-// stays in a path or if the parts beside it (or the next word, for one that ends the word) keep it. A slash that stays
-// has a space after it, one that goes is a space. A ( or > that starts the word goes with the slash after it when the
-// part after that slash doesn't keep it (for a >, one not starting with a digit), or when another slash follows; for
-// one that ends the word, a ( reads the upcoming word's part before its first slash, and goes with its slash, and
-// nothing stays, when that word starts with a slash.
-func slashed(word, following string, path bool, upcoming, ending string) string {
+// slashed is a word's slashes, following being the next word as its slashes left it, upcoming the next word as it was
+// and ending what follows the word: the ones that start it stay, all stay in a path (two slashes with something between
+// them, or a word of a path with more than one) but the first of a run between two parts, the first of two or more
+// together is a space, and a single one stays in a path or if the parts beside it (or the next word, for one that ends
+// the word, but none at the paragraph's end) keep it, a kept space before it going with it otherwise, as one before a
+// run does (goneBefore). A slash that stays has a space after it, one that goes is a space. A list word before a single
+// slash that stays drops it (slashDropped after the slash), and one before a slash that went is marked (slashGone). A (
+// or > that starts the word goes with the slash after it when the part after that slash doesn't keep it (for a >, one
+// not starting with a digit), or when another slash follows; for one that ends the word, a ( reads the upcoming word's
+// part before its first slash, and goes with its slash, and nothing stays, when that word starts with a slash.
+func (address *address) slashed(word, following string, path bool, upcoming, ending string) string {
 	rest := strings.TrimLeft(word, "/")
 	output := strings.Repeat("/ ", len(word)-len(rest))
 	if len(rest) >= 2 && (rest[0] == '(' || rest[0] == '>') && rest[1] == '/' {
 		after := rest[2:]
 		if strings.HasPrefix(after, "/") {
-			return output + slashed(after, following, path, "", ending)
+			return output + address.slashed(after, following, path, "", ending)
 		}
 		if rest[0] == '>' {
 			upcoming = ""
@@ -226,29 +233,69 @@ func slashed(word, following string, path bool, upcoming, ending string) string 
 	case len(parts) == 1:
 		return output + rest
 	case strings.Join(parts[1:len(parts)-1], "") != "" || path && len(parts) > 2:
-		return output + strings.ReplaceAll(rest, "/", "/ ")
+		return output + strings.Join(thinned(parts), "/ ")
 	case len(parts) > 2:
-		return output + parts[0] + strings.Repeat("/ ", len(parts)-2) + parts[len(parts)-1]
+		return output + address.goneBefore(parts[0]) + strings.Repeat(" /", len(parts)-2) + " " + parts[len(parts)-1]
 	}
 	left, right := parts[0], parts[1]
-	rightKept := kept(following)
+	rightKept := following != "" && kept(following)
 	if right != "" {
 		rightKept = keptBefore(right, ending)
 	}
 	switch {
 	case !path && (!kept(left) || !rightKept):
-		return output + left + " " + right
+		return output + address.goneBefore(left) + " " + right
 	case left != "" && strings.Trim(left, "!?") == "":
 		return output + left + " / " + right
+	}
+	if _, ok := address.listed(left, 1, ""); ok {
+		return output + left + "/" + slashDropped + " " + right
 	}
 	return output + left + "/ " + right
 }
 
-// commasAndUnderscores spaces the commas of a paragraph's words and reads their underscores.
+// thinned is the parts between a word's slashes when they all stay: a run of slashes after a part and before one
+// with a letter or digit loses its first.
+func thinned(parts []string) []string {
+	var kept []string
+	for index, part := range parts {
+		if part == "" && index > 0 && parts[index-1] != "" && slices.ContainsFunc(parts[index+1:], hasAlphanumeric) {
+			continue
+		}
+		kept = append(kept, part)
+	}
+	return kept
+}
+
+// goneBefore is a part before a slash that went: without the kept spaces that end it, which a list word that isn't
+// plain keeps, and with a list word's mark.
+func (address *address) goneBefore(part string) string {
+	bare := strings.TrimRight(part, keptSpace)
+	if entry, ok := address.listed(bare, 1, ""); ok && entry.Kind != datapack.PlainWord {
+		return part + slashGone
+	}
+	return bare + address.goneSlash(bare)
+}
+
+// goneSlash is the mark a list word gets for the slash after it that went.
+func (address *address) goneSlash(part string) string {
+	if _, ok := address.listed(part, 1, ""); ok {
+		return slashGone
+	}
+	return ""
+}
+
+// commasAndUnderscores spaces the commas of a paragraph's words and reads their underscores. A slash's mark that
+// ends a word stays at its end.
 func commasAndUnderscores(paragraph string) string {
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
-		words[index] = wordUnderscores(word, index+1 < len(words) && (words[index+1] != "" || index+2 == len(words)))
+		mark := ""
+		if strings.HasSuffix(word, slashDropped) || strings.HasSuffix(word, slashGone) {
+			word, mark = word[:len(word)-1], word[len(word)-1:]
+		}
+		dotted := index+1 < len(words) && (words[index+1] != "" || index+2 == len(words))
+		words[index] = wordUnderscores(word, dotted) + mark
 	}
 	return strings.Join(words, " ")
 }

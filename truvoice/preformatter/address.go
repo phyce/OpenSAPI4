@@ -33,6 +33,10 @@ const (
 	keptGap      = "\x04"
 	widenedOnce  = "\x05"
 	widenedTwice = "\x06"
+	// slashDropped ends a list word whose slash after it stays in the text but isn't read, and slashGone one whose
+	// slash after it went (section 3.5).
+	slashDropped = "\x07"
+	slashGone    = "\x08"
 	// closingRoom is how many marks a closing run keeps.
 	closingRoom = 4
 )
@@ -396,10 +400,15 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	}
 	paragraph = address.numberDots(address.dotRuns(address.loosened(commas(paragraph, true)), long))
 	paragraph = startDots(namedMarks(paragraph))
-	paragraph = cappedTerminals(commasAndUnderscores(slashes(dashes(pluses(paragraph)))))
+	paragraph = address.junked(address.slashes(dashes(pluses(paragraph))))
+	paragraph = cappedTerminals(commasAndUnderscores(paragraph))
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
 	parts := words(paragraph)
+	for index := range parts {
+		parts[index].slash, parts[index].token = slashMarked(parts[index].token)
+		_, parts[index].whole = slashMarked(parts[index].whole)
+	}
 	initial := start
 	for index := 0; !initial && restart && index < len(parts); index++ {
 		initial = restarts(parts[index].token)
@@ -410,10 +419,14 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	}
 	skipped, gap, joined := 0, 0, 0
 	terminalBefore := false
-	held := ""
+	// held is the slash a word holds and heldIndex that word's index.
+	held, heldIndex := "", -1
 	// excess is how many spaces more the gap after a word keeps near the limit, one more before a capitalized word if
 	// capitalCounts; exclaiming is whether the word ended in ! or ?.
 	excess, capitalCounts, exclaiming := 0, false, false
+	// carrying is whether a word of ! and ? after a list word that is plain, or that a slash followed, takes one space
+	// after it, and carried whether the word before was such a word.
+	carrying, carried := false, false
 	for index, part := range parts {
 		token := part.token
 		if index > 0 {
@@ -430,6 +443,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 				if last := len(output) - 1; joining && strings.HasSuffix(output[last], "\"") {
 					output[last] = joinedWord(cmp.Or(parts[index-1].whole, output[last]))
 				}
+			} else if terminal(token) && carried {
+				width = 1
 			}
 			switch part.spaces {
 			case cutSpace:
@@ -437,7 +452,10 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			case keptGap:
 				width, initial, skipped = 2, false, 0
 			}
-			if held != "" && !terminal(token) {
+			if held != "" && (!terminal(token) || index > heldIndex+1) {
+				if index > heldIndex+1 {
+					held = " /"
+				}
 				output = append(output, held)
 				held = ""
 			}
@@ -454,11 +472,12 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			}
 		}
 		excess, capitalCounts, exclaiming = 0, false, false
+		carried, carrying = carrying && terminal(token), false
 		terminalBefore = index > 0 && terminal(token)
 		spread := strings.HasSuffix(token, keptSpace+"/")
-		holds := strings.HasSuffix(token, "/") && token != "/" && token != ">/" && !strings.HasSuffix(token, "(/")
+		holds := holdsSlash(token)
 		if holds {
-			held = " /"
+			held, heldIndex = " /", index
 			if spread {
 				held = "  /"
 			}
@@ -552,11 +571,36 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		} else {
 			initial, skipped = false, 0
 		}
-		if entry, ok := address.listed(token, followingSpaces, following); ok && !holds {
-			token, gap = expanded(entry, token, following, followingSpaces, later >= len(parts))
+		if spread {
+			joined = 1
+		}
+		following = unheld(following)
+		entry, ok := address.listed(token, followingSpaces, following)
+		if ok && !(spread && entry.Dotted) {
+			slash := 0
+			switch {
+			case holds && part.slash == slashDropped:
+				held = ""
+				slash = 1
+				if spread {
+					slash = 2
+				}
+			case part.slash == slashGone:
+				slash = 1
+			case holds && spread:
+				held, slash = " /", 2
+			}
+			token, gap = expanded(entry, token, following, followingSpaces, later >= len(parts), gap, slash)
+			if entry.Kind != datapack.PlainWord {
+				joined = 0
+			}
+			carrying = entry.Kind == datapack.PlainWord || slash > 0 || holds
 			initial, skipped = false, 0
 		}
 		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
+	}
+	if held != "" && heldIndex < len(parts)-1 {
+		held = " /"
 	}
 	output = append(output, held, strings.Repeat(" ", trailing))
 	paragraph = strings.ReplaceAll(strings.Join(output, ""), keptSpace, " ")
@@ -711,13 +755,14 @@ func (address *address) dotRun(built, following string, count, spaces int) strin
 	return ".  " + strings.Repeat(". ", extra)
 }
 
-// dotPair is two dots before a word, built being the paragraph before them, alone its single character before them
-// and split whether that splits there: a dot, but a dot and two spaces before a +; a dot after a word of two
-// characters or more whose closing marks a closing run would cut; a dot and a space that keeps the word whole after a
-// word (a function word whose closing marks are more than a closing run keeps, a quoted word) and before what splits
-// it, or a slash both parts keep; a dot, a space and a dot after a single character that is no digit, also before
-// marks that aren't those ending a word of signs, a slash, a bracket or a dash; a dropped dot and a dot after a letter
-// before those marks, or after a letter or a digit and closing marks with a ! or ?.
+// dotPair is two dots before a word, built being the paragraph before them, alone its single character before them and
+// split whether that splits there: a dot, but a dot and two spaces before a +; a dot after a word of two characters or
+// more whose closing marks a closing run would cut; a dot and a space that keeps the word whole after a word (a
+// function word whose closing marks are more than a closing run keeps, a quoted word) and before what splits it, or a
+// slash both parts keep, and after a list word that isn't plain before a slash; a dot, a space and a dot after a single
+// character that is no digit, also before marks that aren't those ending a word of signs, a slash, a bracket or a dash;
+// a dropped dot and a dot after a letter before those marks, or after a letter or a digit and closing marks with a ! or
+// ?.
 func (address *address) dotPair(built, following, alone string, split bool) string {
 	before := built[strings.LastIndexAny(built, " ,")+1:]
 	if strings.HasPrefix(following, "+") {
@@ -734,7 +779,9 @@ func (address *address) dotPair(built, following, alone string, split bool) stri
 	kind := address.plainKind(before+".", false)
 	wordy := kind == wordKind || kind == functionKind && run > closingRoom ||
 		strings.HasSuffix(before, "\"") && len(core(before+".")) > 1
-	if wordy && (splits(following) || strings.HasPrefix(following, "/") && kept(before+".")) {
+	entry, listed := address.listed(before+".", 1, "")
+	if wordy && (splits(following) || strings.HasPrefix(following, "/") && kept(before+".")) ||
+		strings.HasPrefix(following, "/") && listed && entry.Kind != datapack.PlainWord {
 		return "." + keptSpace
 	}
 	if split {
@@ -964,10 +1011,11 @@ func signed(text string) bool {
 // closingMarks are the marks of a closing run, a kept space among them.
 const closingMarks = "!?)]:;.," + keptSpace
 
-// closingRuns keeps the last four characters of each closing run: a run of closing marks (a quote may end it) before
-// a space or the end, after a character that is no mark after a character that is no space, in a word with two
-// characters or more before it (a > that starts the word, the opening brackets after that and a [ after them aside).
-// What goes is kept hidden, for the sentence end test, and a kept space in what stays is a cut space.
+// closingRuns keeps the last four characters of each closing run: a run of closing marks (a quote may end it) before a
+// space, the end or the mark of a slash that went, after a character that is no mark after a character that is no
+// space, in a word with two characters or more before it (a > that starts the word, the opening brackets after that and
+// a [ after them aside). What goes is kept hidden, for the sentence end test, and a kept space in what stays is a cut
+// space.
 func closingRuns(paragraph string) string {
 	var output strings.Builder
 	for index := 0; index < len(paragraph); {
@@ -1010,7 +1058,7 @@ func closingRun(paragraph string, index int) int {
 	if stop < len(paragraph) && paragraph[stop] == '"' {
 		stop++
 	}
-	if !wordEnds(paragraph, stop) {
+	if !wordEnds(paragraph, stop) && !strings.HasPrefix(paragraph[stop:], slashGone) {
 		return index
 	}
 	return stop
@@ -1042,9 +1090,35 @@ func terminal(token string) bool {
 }
 
 // part is a word of a paragraph being spaced, or a piece of one after a cut space: the spaces before it (or the cut
-// space), its characters as written and, if a closing run hid marks of it, its characters with them.
+// space), its characters as written, its characters with the marks a closing run hid of it if it did, and the mark of
+// the slash after a list word (slashDropped or slashGone).
 type part struct {
-	spaces, token, whole string
+	spaces, token, whole, slash string
+}
+
+// slashMarked is the mark of a word's slash, if it has one, and the word without it.
+func slashMarked(token string) (string, string) {
+	mark := ""
+	switch {
+	case strings.Contains(token, slashDropped):
+		mark = slashDropped
+	case strings.Contains(token, slashGone):
+		mark = slashGone
+	}
+	return mark, strings.NewReplacer(slashDropped, "", slashGone, "").Replace(token)
+}
+
+// holdsSlash is whether a word holds the slash that ends it: one with something before it but a > or a (.
+func holdsSlash(token string) bool {
+	return strings.HasSuffix(token, "/") && token != "/" && token != ">/" && !strings.HasSuffix(token, "(/")
+}
+
+// unheld is a word without the slash it holds and the kept spaces before that slash.
+func unheld(token string) string {
+	if holdsSlash(token) {
+		return strings.TrimRight(token[:len(token)-1], keptSpace)
+	}
+	return token
 }
 
 // words splits a paragraph into its words, at spaces, cut spaces and kept gaps.
@@ -1307,60 +1381,186 @@ func (address *address) abbreviation(token string) bool {
 	return address.abbreviations[lower(core(token))]
 }
 
-// listed is the list word a word is (section 3.5): alone, before a dot or before a comma, in a case the list has it
-// in. A dotted word is one only before a dot and at most one space (spaces, the spaces after the word), and not
-// before a word of ! and ? that joins it.
+// quotedPlain is the list word that is also a plain word after quotes, a ~ and stars, or before them (section 3.5).
+const quotedPlain = "NY"
+
+// listed is the list word a word is (section 3.5), spaces being the spaces after it and following the next word. An
+// abbreviation or a title after opening brackets (a > may start them) and before closing marks (a kept space may stand
+// among them, a quote may end them); a dotted one only before just a dot and at most one space. A plain word, and NY
+// as one, also after quotes and a ~, and before quotes and stars that closing marks may follow. Before a word of ! and
+// ? that joins it, a dotted word is none, and one that ends in a quote only a plain word.
 func (address *address) listed(token string, spaces int, following string) (datapack.Word, bool) {
-	word, mark := token, byte(0)
-	if strings.HasSuffix(token, ".") || strings.HasSuffix(token, ",") {
-		word, mark = token[:len(token)-1], token[len(token)-1]
-	}
+	opening, word, closing := parted(token)
 	entry, ok := address.words[word]
-	if !ok || entry.Dotted && (mark != '.' || spaces > 1 || following != "" && terminal(following)) {
+	if !ok {
 		return datapack.Word{}, false
 	}
-	return entry, true
+	joins := strings.HasSuffix(token, "\"") && following != "" && terminal(following)
+	if entry.Kind != datapack.PlainWord && !joins && listOpening(opening, false) && listClosing(closing) {
+		if entry.Dotted && (closing != "." || spaces > 1 || following != "" && terminal(following)) {
+			return datapack.Word{}, false
+		}
+		return entry, true
+	}
+	plain := entry.Kind == datapack.PlainWord || word == quotedPlain
+	if plain && listOpening(opening, true) && plainClosing(closing) {
+		entry.Kind = datapack.PlainWord
+		return entry, true
+	}
+	return datapack.Word{}, false
 }
 
-// expanded is a list word written out and the gap after it, 0 for any word's (section 3.5).
-func expanded(entry datapack.Word, token, following string, spaces int, last bool) (string, int) {
-	dotted := entry.Expansion
-	if !strings.HasSuffix(dotted, ".") {
-		dotted += "."
+// junked spaces the dot after a list word, an abbreviation or a title that isn't dotted, that starts a word of a
+// paragraph, when what follows the dot, a slash mark at its end aside, isn't closing marks, doesn't start with ^[, has
+// no @ or kept space and, without the slash and the ! , . : ; and ? that end it, is two characters or more or a digit.
+func (address *address) junked(paragraph string) string {
+	words := strings.Split(paragraph, " ")
+	for index, word := range words {
+		dot := strings.IndexByte(word, '.')
+		if dot < 0 || dot == len(word)-1 {
+			continue
+		}
+		opening, name, closing := parted(word[:dot])
+		entry, ok := address.words[name]
+		if !ok || closing != "" || entry.Kind == datapack.PlainWord || entry.Dotted || !listOpening(opening, false) {
+			continue
+		}
+		rest := word[dot+1:]
+		bare := strings.TrimSuffix(strings.TrimSuffix(rest, slashDropped), slashGone)
+		trimmed := strings.TrimRight(strings.TrimSuffix(bare, "/"), "!,.:;?")
+		if listClosing(bare) || strings.HasPrefix(rest, "^[") || strings.ContainsAny(rest, "@"+keptSpace) ||
+			len(trimmed) < 2 && !(len(trimmed) == 1 && digit(trimmed[0])) {
+			continue
+		}
+		words[index] = word[:dot] + ". " + rest
+	}
+	return strings.Join(words, " ")
+}
+
+// parted is a word's opening marks, its word from its first letter or digit to its last, and its closing marks.
+func parted(token string) (opening, word, closing string) {
+	start := 0
+	for start < len(token) && !alphanumeric(token[start]) {
+		start++
+	}
+	if start == len(token) {
+		return token, "", ""
+	}
+	stop := len(token)
+	for !alphanumeric(token[stop-1]) {
+		stop--
+	}
+	return token[:start], token[start:stop], token[stop:]
+}
+
+// listOpening is whether a list word may stand after opening marks: a > may start them, then come ( and one [, and
+// after that ( or, for a plain word, ( quotes and ~.
+func listOpening(opening string, plain bool) bool {
+	opening = strings.TrimPrefix(strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("), "[")
+	if plain {
+		return strings.Trim(opening, "(\"'~") == ""
+	}
+	return strings.Trim(opening, "(") == ""
+}
+
+// listClosing is whether an abbreviation or a title may stand before closing marks: brackets, ! ? : ; commas and dots,
+// one kept space among them, a quote at their end.
+func listClosing(closing string) bool {
+	closing = strings.TrimSuffix(closing, "\"")
+	return strings.Trim(closing, ")]!?:;,."+keptSpace) == "" && strings.Count(closing, keptSpace) <= 1
+}
+
+// plainClosing is whether a plain word may stand before closing marks: a quote or a star and then any of those marks,
+// quotes, stars and kept spaces, or brackets, ! ? : ; commas, dots and kept spaces, a quote at their end.
+func plainClosing(closing string) bool {
+	if closing != "" && strings.IndexByte("\"'*", closing[0]) >= 0 {
+		return strings.Trim(closing, ")]!?:;,.\"'*"+keptSpace) == ""
+	}
+	return strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
+}
+
+// expanded is a list word written out with its marks, and the gap after it (section 3.5), gap being what the sentence
+// end test gave and the gap 0 at the paragraph's end (last). A plain word keeps its marks, with two spaces after a dot
+// before two spaces or more and one otherwise. Another without a dot keeps its marks and the gap, and gets a dot at the
+// paragraph's end unless it ends in one. Another with a dot keeps it as dotKept says from the spaces right after the
+// dot: none before more marks, two for a kept space, and slash (one, two after a kept space) when the slash after the
+// word went or was dropped; with marks on both sides of the dot, a quote after it aside, the next word doesn't keep
+// it. A ! or ? among its marks makes the gap two, and an expansion that ends in a dot takes none right after it. After
+// a slash that went or was dropped one space follows.
+func expanded(entry datapack.Word, token, following string, spaces int, last bool, gap, slash int) (string, int) {
+	opening, _, closing := parted(token)
+	written := opening + entry.Expansion + closing
+	dot := strings.IndexByte(closing, '.')
+	switch {
+	case entry.Kind == datapack.PlainWord:
+		gap = 1
+		if strings.HasSuffix(closing, ".") && spaces >= 2 {
+			gap = 2
+		}
+	case dot < 0:
+		if last && !strings.HasSuffix(written, ".") {
+			written += "."
+		}
+	default:
+		before, after := closing[:dot], closing[dot+1:]
+		dotSpaces := 0
+		switch {
+		case strings.HasPrefix(after, keptSpace):
+			dotSpaces, after = 2, after[1:]
+		case slash > 0:
+			dotSpaces = slash
+		case after == "":
+			dotSpaces = spaces
+		case before != "" && !strings.HasPrefix(after, "\""):
+			following = ""
+		}
+		var keep bool
+		keep, gap = dotKept(entry.Kind, dotSpaces, following, last)
+		if gap > 0 && strings.ContainsAny(closing, "!?") {
+			gap = 2
+		}
+		written = opening + entry.Expansion + before
+		if keep && (before != "" || !strings.HasSuffix(entry.Expansion, ".")) {
+			written += "."
+		}
+		written += after
 	}
 	switch {
-	case strings.HasSuffix(token, ",") && last && entry.Kind != datapack.PlainWord:
-		return entry.Expansion + ",.", 0
-	case strings.HasSuffix(token, ","):
-		return entry.Expansion + ",", 0
-	case !strings.HasSuffix(token, "."):
-		if last && entry.Kind != datapack.PlainWord {
-			return dotted, 0
-		}
-		return entry.Expansion, 0
 	case last:
-		return dotted, 0
-	case entry.Kind == datapack.PlainWord && spaces >= 2:
-		return dotted, 2
-	case entry.Kind == datapack.PlainWord:
-		return dotted, 1
-	case entry.Kind == datapack.TitleWord && spaces >= 2:
-		return dotted, 1
-	case entry.Kind == datapack.TitleWord:
-		return entry.Expansion, 1
-	case raised(following):
-		return dotted, 2
-	case spaces >= 2:
-		return dotted, 1
+		return written, 0
+	case slash > 0:
+		return written, 1
 	}
-	return entry.Expansion, 1
+	return written, gap
 }
 
-// raised is whether a word keeps the dot of an abbreviation before it: a capital starts it, after opening brackets
-// and quotes.
+// dotKept is whether a list word's dot stays, spaces being the spaces right after it, and the gap after the word, 0 at
+// the paragraph's end (last), where the dot stays. An abbreviation's stays before a word that keeps it, two spaces
+// following; otherwise a dot stays before two spaces or more, one space following.
+func dotKept(kind datapack.WordKind, spaces int, following string, last bool) (bool, int) {
+	switch {
+	case last:
+		return true, 0
+	case kind != datapack.TitleWord && raised(following):
+		return true, 2
+	}
+	return spaces >= 2, 1
+}
+
+// raised is whether a word keeps the dot of a list word before it, a > that starts it, its ( and one [ after them and
+// quotes aside: one that starts with a capital; not one that starts with a small letter or a digit, or nothing; one
+// that starts with anything else when it has no small letter and something that is no quote, ( ) or ], comma, dot,
+// colon, semicolon, ! or ?.
 func raised(word string) bool {
-	word = strings.TrimLeft(word, "([\"")
-	return word != "" && upper(word[0])
+	word = strings.TrimLeft(strings.TrimPrefix(strings.TrimLeft(strings.TrimPrefix(word, ">"), "("), "["), "\"")
+	switch {
+	case word != "" && upper(word[0]):
+		return true
+	case word == "" || small(word[0]) || digit(word[0]):
+		return false
+	}
+	return !strings.ContainsFunc(word, func(character rune) bool { return character >= 'a' && character <= 'z' }) &&
+		strings.Trim(word, "\"()],.!?:;") != ""
 }
 
 func (address *address) functionWord(word string) bool {
