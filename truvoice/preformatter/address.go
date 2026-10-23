@@ -52,6 +52,8 @@ func Address(words *datapack.Address, text []byte) []byte {
 // address is the address context's words and what it has written of a text.
 type address struct {
 	functionWords, abbreviations, spacedAbbreviations map[string]bool
+	words                                             map[string]datapack.Word
+	numberWords                                       map[string]bool
 	headers                                           map[string]datapack.Header
 	messageStart                                      string
 	output                                            strings.Builder
@@ -71,7 +73,7 @@ type address struct {
 	hasLast bool
 	single  bool
 	// state is where the e-mail reading is, messages how many messages it has seen start, and author whether the
-	// last block had an Author: line (section 3.6).
+	// last block had an Author: line (section 3.7).
 	state    state
 	messages int
 	author   bool
@@ -90,8 +92,13 @@ func newAddress(words *datapack.Address) *address {
 	for _, header := range words.Headers {
 		headers[header.Name] = header
 	}
+	listed := make(map[string]datapack.Word, len(words.Words))
+	for _, word := range words.Words {
+		listed[word.Word] = word
+	}
 	return &address{functionWords: wordSet(words.FunctionWords), abbreviations: wordSet(words.Abbreviations),
-		spacedAbbreviations: wordSet(words.SpacedAbbreviations), headers: headers, messageStart: words.MessageStart}
+		spacedAbbreviations: wordSet(words.SpacedAbbreviations), words: listed,
+		numberWords: wordSet(words.NumberWords), headers: headers, messageStart: words.MessageStart}
 }
 
 func wordSet(words []string) map[string]bool {
@@ -102,7 +109,7 @@ func wordSet(words []string) map[string]bool {
 	return set
 }
 
-// piece reads a piece the reading gives as part of an e-mail message (section 3.6) and joins what is left of it
+// piece reads a piece the reading gives as part of an e-mail message (section 3.7) and joins what is left of it
 // to the paragraph.
 func (address *address) piece(piece string, end ending) {
 	if rest, left := address.email(piece, end); left {
@@ -188,7 +195,7 @@ func (address *address) join(piece string, end ending, edits bool, read string, 
 	}
 }
 
-// end writes the text's last line and ends the last paragraph (section 3.5).
+// end writes the text's last line and ends the last paragraph (section 3.6).
 func (address *address) end() {
 	if !address.hasLast {
 		if address.paragraph != "" {
@@ -387,7 +394,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	if long {
 		paragraph = dashRunsSpaced(paragraph)
 	}
-	paragraph = startDots(namedMarks(address.dotRuns(address.loosened(commas(paragraph, true)), long)))
+	paragraph = address.numberDots(address.dotRuns(address.loosened(commas(paragraph, true)), long))
+	paragraph = startDots(namedMarks(paragraph))
 	paragraph = cappedTerminals(commasAndUnderscores(slashes(dashes(pluses(paragraph)))))
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
@@ -448,7 +456,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		excess, capitalCounts, exclaiming = 0, false, false
 		terminalBefore = index > 0 && terminal(token)
 		spread := strings.HasSuffix(token, keptSpace+"/")
-		if strings.HasSuffix(token, "/") && token != "/" && token != ">/" && !strings.HasSuffix(token, "(/") {
+		holds := strings.HasSuffix(token, "/") && token != "/" && token != ">/" && !strings.HasSuffix(token, "(/")
+		if holds {
 			held = " /"
 			if spread {
 				held = "  /"
@@ -543,6 +552,10 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		} else {
 			initial, skipped = false, 0
 		}
+		if entry, ok := address.listed(token, followingSpaces, following); ok && !holds {
+			token, gap = expanded(entry, token, following, followingSpaces, later >= len(parts))
+			initial, skipped = false, 0
+		}
 		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
 	}
 	output = append(output, held, strings.Repeat(" ", trailing))
@@ -634,6 +647,24 @@ func (address *address) dotRuns(paragraph string, long bool) string {
 			output.WriteString(address.dotRun(output.String(), paragraph[stop:], dots-index, stop-dots))
 		}
 		index = stop
+	}
+	return output.String()
+}
+
+// numberDots makes the dot after a number word (a word at the start or after a space, in any case) a dot and a lone
+// dot when two spaces or more follow it (section 3.5).
+func (address *address) numberDots(paragraph string) string {
+	var output strings.Builder
+	start := 0
+	for index := 0; index < len(paragraph); index++ {
+		output.WriteByte(paragraph[index])
+		switch {
+		case paragraph[index] == ' ':
+			start = index + 1
+		case paragraph[index] == '.' && strings.HasPrefix(paragraph[index+1:], "  ") &&
+			address.numberWords[lower(paragraph[start:index])]:
+			output.WriteString(" .")
+		}
 	}
 	return output.String()
 }
@@ -1274,6 +1305,62 @@ func (address *address) abbreviation(token string) bool {
 		token = token[:len(token)-2] + "."
 	}
 	return address.abbreviations[lower(core(token))]
+}
+
+// listed is the list word a word is (section 3.5): alone, before a dot or before a comma, in a case the list has it
+// in. A dotted word is one only before a dot and at most one space (spaces, the spaces after the word), and not
+// before a word of ! and ? that joins it.
+func (address *address) listed(token string, spaces int, following string) (datapack.Word, bool) {
+	word, mark := token, byte(0)
+	if strings.HasSuffix(token, ".") || strings.HasSuffix(token, ",") {
+		word, mark = token[:len(token)-1], token[len(token)-1]
+	}
+	entry, ok := address.words[word]
+	if !ok || entry.Dotted && (mark != '.' || spaces > 1 || following != "" && terminal(following)) {
+		return datapack.Word{}, false
+	}
+	return entry, true
+}
+
+// expanded is a list word written out and the gap after it, 0 for any word's (section 3.5).
+func expanded(entry datapack.Word, token, following string, spaces int, last bool) (string, int) {
+	dotted := entry.Expansion
+	if !strings.HasSuffix(dotted, ".") {
+		dotted += "."
+	}
+	switch {
+	case strings.HasSuffix(token, ",") && last && entry.Kind != datapack.PlainWord:
+		return entry.Expansion + ",.", 0
+	case strings.HasSuffix(token, ","):
+		return entry.Expansion + ",", 0
+	case !strings.HasSuffix(token, "."):
+		if last && entry.Kind != datapack.PlainWord {
+			return dotted, 0
+		}
+		return entry.Expansion, 0
+	case last:
+		return dotted, 0
+	case entry.Kind == datapack.PlainWord && spaces >= 2:
+		return dotted, 2
+	case entry.Kind == datapack.PlainWord:
+		return dotted, 1
+	case entry.Kind == datapack.TitleWord && spaces >= 2:
+		return dotted, 1
+	case entry.Kind == datapack.TitleWord:
+		return entry.Expansion, 1
+	case raised(following):
+		return dotted, 2
+	case spaces >= 2:
+		return dotted, 1
+	}
+	return entry.Expansion, 1
+}
+
+// raised is whether a word keeps the dot of an abbreviation before it: a capital starts it, after opening brackets
+// and quotes.
+func raised(word string) bool {
+	word = strings.TrimLeft(word, "([\"")
+	return word != "" && upper(word[0])
 }
 
 func (address *address) functionWord(word string) bool {

@@ -36,14 +36,39 @@ type Spreadsheet struct {
 
 // Address is the words the address and e-mail contexts read: the function words, after which a dot ends no
 // sentence, and the abbreviations, after which no sentence starts, with those whose dot keeps a word's spaces; the
-// e-mail headers and the words written where a message starts.
+// words written out and the number words, after which a dot before two spaces is a dot and a lone dot; the e-mail
+// headers and the words written where a message starts.
 type Address struct {
 	FunctionWords       []string
 	Abbreviations       []string
 	SpacedAbbreviations []string
+	Words               []Word
+	NumberWords         []string
 	Headers             []Header
 	MessageStart        string
 }
+
+// Word is a word the address context writes out, in one case: its expansion and how the dot after it is spaced. A
+// dotted word is written out only before a dot.
+type Word struct {
+	Word, Expansion string
+	Kind            WordKind
+	Dotted          bool
+}
+
+// WordKind is how the dot after a word written out is spaced.
+type WordKind int
+
+const (
+	// AbbreviationWord's dot stays before a capital, and before two spaces or more.
+	AbbreviationWord WordKind = iota
+	// TitleWord's dot goes before one space.
+	TitleWord
+	// PlainWord's dot and spaces stay.
+	PlainWord
+)
+
+var wordKinds = map[string]WordKind{"abbreviation": AbbreviationWord, "title": TitleWord, "plain": PlainWord}
 
 // Header is an e-mail header's name and what the e-mail reading does with a line of it outside a header block, in
 // one and right after one. A line of it is read as names once OutsideNames messages have started outside a block,
@@ -94,8 +119,17 @@ type addressDescription struct {
 	FunctionWords       []string            `json:"functionWords"`
 	Abbreviations       []string            `json:"abbreviations"`
 	SpacedAbbreviations []string            `json:"spacedAbbreviations"`
+	Words               []wordDescription   `json:"words"`
+	NumberWords         []string            `json:"numberWords"`
 	Headers             []headerDescription `json:"headers"`
 	MessageStart        string              `json:"messageStart"`
+}
+
+type wordDescription struct {
+	Word      string `json:"word"`
+	Expansion string `json:"expansion"`
+	Kind      string `json:"kind"`
+	Dotted    bool   `json:"dotted"`
 }
 
 type headerDescription struct {
@@ -194,6 +228,7 @@ func parseAddress(description *addressDescription) (*Address, error) {
 		{"functionWords", description.FunctionWords},
 		{"abbreviations", description.Abbreviations},
 		{"spacedAbbreviations", description.SpacedAbbreviations},
+		{"numberWords", description.NumberWords},
 	}
 	for _, list := range lists {
 		if len(list.words) == 0 {
@@ -217,13 +252,46 @@ func parseAddress(description *addressDescription) (*Address, error) {
 	if !printableWord(description.MessageStart) {
 		return nil, fmt.Errorf("address messageStart is %q, not a word of printable ASCII", description.MessageStart)
 	}
+	words, err := parseWords(description.Words)
+	if err != nil {
+		return nil, err
+	}
 	headers, err := parseHeaders(description.Headers)
 	if err != nil {
 		return nil, err
 	}
 	return &Address{FunctionWords: description.FunctionWords, Abbreviations: description.Abbreviations,
-		SpacedAbbreviations: description.SpacedAbbreviations, Headers: headers,
-		MessageStart: description.MessageStart}, nil
+		SpacedAbbreviations: description.SpacedAbbreviations, Words: words, NumberWords: description.NumberWords,
+		Headers: headers, MessageStart: description.MessageStart}, nil
+}
+
+func parseWords(descriptions []wordDescription) ([]Word, error) {
+	if len(descriptions) == 0 {
+		return nil, fmt.Errorf("address words is empty")
+	}
+	words := make([]Word, 0, len(descriptions))
+	seen := map[string]bool{}
+	for index, description := range descriptions {
+		if !letterWord(description.Word) {
+			return nil, fmt.Errorf("address word %d is %q, not a word of letters and apostrophes", index,
+				description.Word)
+		}
+		if seen[description.Word] {
+			return nil, fmt.Errorf("address word %q comes twice", description.Word)
+		}
+		seen[description.Word] = true
+		if !printableWord(description.Expansion) {
+			return nil, fmt.Errorf("address word %q's expansion is %q, not printable ASCII", description.Word,
+				description.Expansion)
+		}
+		kind, known := wordKinds[description.Kind]
+		if !known {
+			return nil, fmt.Errorf("address word %q's kind is %q, not a kind", description.Word, description.Kind)
+		}
+		words = append(words, Word{Word: description.Word, Expansion: description.Expansion, Kind: kind,
+			Dotted: description.Dotted})
+	}
+	return words, nil
 }
 
 func parseHeaders(descriptions []headerDescription) ([]Header, error) {
@@ -282,6 +350,19 @@ func lowerWord(word string) bool {
 	}
 	for index := 0; index < len(word); index++ {
 		if word[index] < 'a' || word[index] > 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+func letterWord(word string) bool {
+	if word == "" {
+		return false
+	}
+	for index := 0; index < len(word); index++ {
+		character := word[index] | 0x20
+		if (character < 'a' || character > 'z') && word[index] != '\'' {
 			return false
 		}
 	}

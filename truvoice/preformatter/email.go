@@ -12,7 +12,7 @@ const (
 	heldLimit   = 743
 )
 
-// state is where the e-mail reading is (section 3.6): outside a header block, in one, or right after one.
+// state is where the e-mail reading is (section 3.7): outside a header block, in one, or right after one.
 type state int
 
 const (
@@ -21,7 +21,7 @@ const (
 	afterBlock
 )
 
-// email reads a piece as part of an e-mail message (section 3.6). It reports whether the piece is left for the
+// email reads a piece as part of an e-mail message (section 3.7). It reports whether the piece is left for the
 // paragraphs, and gives what is left of it.
 func (address *address) email(piece string, end ending) (string, bool) {
 	line := strings.TrimLeft(piece, " ")
@@ -135,7 +135,7 @@ func (address *address) header(line string) (name, value string, action datapack
 	return name, value, action, action != datapack.NoHeader
 }
 
-// headerLine writes a header line and moves the reading on (section 3.7).
+// headerLine writes a header line and moves the reading on (section 3.8).
 func (address *address) headerLine(name, value string, action datapack.HeaderAction, end ending, afterSubject bool) {
 	spaced := strings.HasPrefix(value, " ") || strings.HasPrefix(value, "\t")
 	if colonsSpaced(name + ":" + value) {
@@ -208,7 +208,7 @@ func (address *address) headerLine(name, value string, action datapack.HeaderAct
 	address.move(name, action, inside, afterSubject)
 }
 
-// move is where the reading goes after a header line (section 3.6).
+// move is where the reading goes after a header line (section 3.7).
 func (address *address) move(name string, action datapack.HeaderAction, inside, afterSubject bool) {
 	author := action == datapack.AuthorHeader && !afterSubject
 	starts := action == datapack.BlockHeader || action == datapack.MessageHeader || action == datapack.SenderHeader
@@ -250,7 +250,7 @@ func (address *address) continues(name, value string, action datapack.HeaderActi
 	}
 }
 
-// continueNames writes a line that goes on with an Author: or names value (section 3.6).
+// continueNames writes a line that goes on with an Author: or names value (section 3.7).
 func (address *address) continueNames(action datapack.HeaderAction, piece string, end ending) {
 	if strings.HasSuffix(strings.TrimRight(piece, " \t"), ",") {
 		address.namesGoOn = action
@@ -277,7 +277,7 @@ func (address *address) continueNames(action datapack.HeaderAction, piece string
 	address.flush()
 }
 
-// subjectLine writes the line that goes on after a Subject: line in a header block (section 3.6): no blank line,
+// subjectLine writes the line that goes on after a Subject: line in a header block (section 3.7): no blank line,
 // no colon spaces, and as the text's last line no dot, and a single character (the space after a quote's > counted)
 // as it is.
 func (address *address) subjectLine(piece string, end ending) {
@@ -301,7 +301,7 @@ func (address *address) subjectLine(piece string, end ending) {
 	}
 }
 
-// hold keeps a line of a header block that ends in a comma and isn't a header line for the next one (section 3.6).
+// hold keeps a line of a header block that ends in a comma and isn't a header line for the next one (section 3.7).
 func (address *address) hold(piece string) {
 	if strings.HasSuffix(piece, ",") && !colonForm(piece, true) {
 		address.held, address.holding = piece, true

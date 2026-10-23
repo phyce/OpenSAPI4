@@ -7,7 +7,7 @@ const (
 	nameSeparators    = " ,;"
 )
 
-// person is the name in a sender's value (section 3.7), and whether it was taken out of an address: a bracketed
+// person is the name in a sender's value (section 3.8), and whether it was taken out of an address: a bracketed
 // name after a word with `@`, the part before a bracket, or the part before a delimiter.
 func person(value string) (name string, fromAddress bool) {
 	value = strings.Trim(strings.ReplaceAll(value, "\t", " "), " ")
@@ -44,7 +44,7 @@ func person(value string) (name string, fromAddress bool) {
 	return title(collapse(strings.Trim(name, " "))), fromAddress
 }
 
-// people is the names in an Author: or names value (section 3.7): each name of its list as item takes it, the
+// people is the names in an Author: or names value (section 3.8): each name of its list as item takes it, the
 // commas and semicolons between them kept, and whether the last was taken out of an address.
 func people(value string) (string, bool) {
 	value = strings.ReplaceAll(value, "\t", " ")
@@ -108,7 +108,7 @@ func item(value string) (string, bool) {
 	return name, true
 }
 
-// continued is a line that goes on with an Author: or names value (section 3.6): its first word as it is, the rest
+// continued is a line that goes on with an Author: or names value (section 3.7): its first word as it is, the rest
 // read as names, and whether the last was taken out of an address.
 func continued(piece string) (string, bool) {
 	if blankHeaderLine(strings.Trim(piece, " \t")) {

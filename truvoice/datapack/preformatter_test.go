@@ -3,6 +3,7 @@ package datapack_test
 import (
 	"testing"
 
+	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 	"github.com/phyce/OpenSAPI4/truvoice/internal/conformance"
 )
 
@@ -23,5 +24,14 @@ func TestPreFormatter(t *testing.T) {
 		address.Abbreviations[0] != "abil" || len(address.SpacedAbbreviations) != 2 {
 		t.Errorf("address words %d function words, %d abbreviations, %d spaced", len(address.FunctionWords),
 			len(address.Abbreviations), len(address.SpacedAbbreviations))
+	}
+	first, mister := address.Words[0], address.Words[214]
+	if len(address.Words) != 368 || first.Word != "Acct" || first.Expansion != "Account" ||
+		first.Kind != datapack.AbbreviationWord || first.Dotted || mister.Word != "Mr" || mister.Expansion != "Mister" ||
+		mister.Kind != datapack.TitleWord || !mister.Dotted {
+		t.Errorf("%d list words, the first %+v", len(address.Words), first)
+	}
+	if len(address.NumberWords) != 19 || address.NumberWords[0] != "apr" {
+		t.Errorf("number words %v", address.NumberWords)
 	}
 }
