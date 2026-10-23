@@ -288,7 +288,7 @@ The **address** words:
 | `numberWords` | 19 words | The words whose dot gets a lone dot after it before two spaces or more (§3.5) |
 | `headers` | Array of objects | The e-mail headers ([preformatter.md](preformatter.md) §3.7), below |
 | `messageStart` | Word | What a message header line writes where a message starts (§3.8) |
-| `letters` | Object | The tables that write words in capitals of two and three letters ([preformatter.md](preformatter.md) §3.9), below |
+| `letters` | Object | The tables that write words in capitals of two to four letters ([preformatter.md](preformatter.md) §3.9), below |
 
 Each function word, abbreviation and number word is one lower-case letter or more, `a` to `z`, and each spaced abbreviation is one of the abbreviations. The message start is printable ASCII, one character or more.
 
@@ -328,10 +328,17 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `codas` | Object | The pairs that may end a word of three capitals after a vowel: each pair's vowels |
 | `firstPairs` | Words of 2 vowels | The vowel pairs that may start a word of three capitals |
 | `lastPairs` | Words of 2 vowels | The vowel pairs that may end one |
-| `spelled` | Words of 2 or 3 letters | The words that are always spelled |
+| `spelled` | Words of 2 to 4 letters | The words that are always spelled |
 | `markedSpelled` | Words of 2 or 3 letters | The words that are spelled when marked |
 | `unkept` | Words of 3 letters | The words of three capitals that are never said |
-| `kept` | Words of 3 letters | The words of three capitals that are always said |
+| `kept` | Words of 3 or 4 letters | The words of three and four capitals that are always said |
 | `respelled` | Object | The words written otherwise: each word's writing |
+| `heads` | Words of 3 letters | The first three capitals of a word of four that are said apart from the last |
+| `tails` | Words of 3 letters | The last three capitals of a word of four that are said apart from the first |
+| `openHeads` | Words of 3 letters | The first three capitals that may be said in a word of four with a soft start |
+| `unkeptHeads` | Object | The first three capitals of a word of four that is said only before certain letters: each one's letters |
+| `clusters` | Object | The consonant pairs that start a word of four, or follow the vowel that starts one, before certain consonants: each pair's consonants |
+| `vowelCodas` | Words of 2 letters | The pairs that may end a word of four after a first pair, or its rest after a `Q`, `XO` or `XU` |
+| `codaPairs` | Words of 2 letters | The pairs that may end a word of four after a vowel |
 
-Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two or three capitals and its writing printable ASCII, one character or more. No word is both kept and unkept.
+Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to four capitals and its writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.

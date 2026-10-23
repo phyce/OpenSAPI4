@@ -7,21 +7,24 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 )
 
-// letterTables is the address context's tables for words in capitals of two and three letters (section 3.9).
+// letterTables is the address context's tables for words in capitals of two to four letters (section 3.9).
 type letterTables struct {
 	twoLetters, onsets, firstPairs, lastPairs, spelled, markedSpelled, unkept, kept map[string]bool
-	codas, respelled                                                                map[string]string
+	heads, tails, openHeads, vowelCodas, codaPairs                                  map[string]bool
+	codas, respelled, unkeptHeads, clusters                                         map[string]string
 }
 
 func newLetterTables(letters *datapack.Letters) letterTables {
 	return letterTables{twoLetters: wordSet(letters.TwoLetters), onsets: wordSet(letters.Onsets),
 		firstPairs: wordSet(letters.FirstPairs), lastPairs: wordSet(letters.LastPairs),
 		spelled: wordSet(letters.Spelled), markedSpelled: wordSet(letters.MarkedSpelled),
-		unkept: wordSet(letters.Unkept), kept: wordSet(letters.Kept), codas: letters.Codas,
-		respelled: letters.Respelled}
+		unkept: wordSet(letters.Unkept), kept: wordSet(letters.Kept), heads: wordSet(letters.Heads),
+		tails: wordSet(letters.Tails), openHeads: wordSet(letters.OpenHeads), vowelCodas: wordSet(letters.VowelCodas),
+		codaPairs: wordSet(letters.CodaPairs), codas: letters.Codas, respelled: letters.Respelled,
+		unkeptHeads: letters.UnkeptHeads, clusters: letters.Clusters}
 }
 
-// lowered is a word in capitals of two or three letters with no opening marks, before closing marks (brackets,
+// lowered is a word in capitals of two to four letters with no opening marks, before closing marks (brackets,
 // ! ? : ; commas, dots, quotes, stars and kept spaces), that starts with Q, X or Z before a consonant (not ZW, and not
 // of Roman numerals' letters only), with that letter small and a space after it (section 3.9); "" for any other word.
 func lowered(token string) string {
@@ -30,7 +33,7 @@ func lowered(token string) string {
 		letters++
 	}
 	word, closing := token[:letters], token[letters:]
-	if len(word) < 2 || len(word) > 3 || strings.Trim(closing, ")]!?:;,.\"'*"+keptSpace) != "" ||
+	if len(word) < 2 || len(word) > 4 || strings.Trim(closing, ")]!?:;,.\"'*"+keptSpace) != "" ||
 		strings.IndexByte("QXZ", word[0]) < 0 || !consonant(word[1]) || word[:2] == "ZW" ||
 		strings.Trim(word, "CDILMVX") == "" {
 		return ""
@@ -129,8 +132,7 @@ func spelled(word string, start, end bool) string {
 
 // keeps is whether a word in capitals of three letters is said as a word (section 3.9), bare as spelledEntry says.
 func (tables *letterTables) keeps(word string, bare bool) bool {
-	first, middle, last := word[0], word[1], word[2]
-	finalS := bare && last == 'S'
+	first, middle := word[0], word[1]
 	switch {
 	case tables.unkept[word]:
 		return false
@@ -157,19 +159,15 @@ func (tables *letterTables) keeps(word string, bare bool) bool {
 		word == "GNU", word == "EDU", word == "USE":
 		return true
 	}
-	pattern := make([]byte, len(word))
-	for index := range len(word) {
-		switch {
-		case vowel(word[index]):
-			pattern[index] = 'V'
-		case word[index] == 'Y':
-			pattern[index] = 'Y'
-		default:
-			pattern[index] = 'C'
-		}
-	}
+	return tables.saidPattern(word, bare)
+}
+
+// saidPattern is whether three capitals are said as a word by their pattern (section 3.9), bare as spelledEntry says.
+func (tables *letterTables) saidPattern(word string, bare bool) bool {
+	first, middle, last := word[0], word[1], word[2]
+	finalS := bare && last == 'S'
 	wAfterIOrU := last == 'W' && (middle == 'I' || middle == 'U')
-	switch string(pattern) {
+	switch letterKinds(word) {
 	case "CVC", "YVC":
 		return !finalS && !wAfterIOrU
 	case "CYC", "YYC":
@@ -192,7 +190,7 @@ func (tables *letterTables) keeps(word string, bare bool) bool {
 	return false
 }
 
-// written is how a word in capitals of two or three letters is written (section 3.9), run being whether it stands in
+// written is how a word in capitals of two to four letters is written (section 3.9), run being whether it stands in
 // a run of words in capitals and bare and marked as spelledEntry says.
 func (tables *letterTables) written(word string, run, bare, marked bool) string {
 	if respelled, ok := tables.respelled[word]; ok {
@@ -207,6 +205,8 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 		return word
 	case len(word) == 2:
 		return spelled(word, true, true)
+	case len(word) == 4:
+		return tables.fourLetters(word)
 	case word[:2] == "QU" && strings.IndexByte("AEIOUSW", word[2]) < 0:
 		return "KEW" + word[2:]
 	case tables.keeps(word, bare):
@@ -220,14 +220,15 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 	return spelled(word, true, true)
 }
 
-// spelledEntry is a word whose word in capitals of two or three letters the letter rules change, with a plain list
+// spelledEntry is a word whose word in capitals of two to four letters the letter rules change, with a plain list
 // word's marks around it, as a plain list word whose expansion is what they write (section 3.9). A function word with
-// the marks that tilded reads and a word that lowered changes are none. The word is bare when no quote or ~ stands
-// before it and its closing marks are an abbreviation's, a quote perhaps at their end; marked when the marks before
-// it have a ' or ~, or two of [ and quotes.
+// the marks that tilded reads and a word that lowered changes, but a respelled one, are none. The word is bare when
+// no quote or ~ stands before it and its closing marks are an abbreviation's, a quote perhaps at their end; marked
+// when the marks before it have a ' or ~, or two of [ and quotes.
 func (address *address) spelledEntry(token string, run bool) (datapack.Word, bool) {
 	opening, word, closing := parted(token)
-	if len(word) < 2 || len(word) > 3 || !capitalLetters(word) || lowered(token) != "" ||
+	_, respelled := address.letters.respelled[word]
+	if len(word) < 2 || len(word) > 4 || !capitalLetters(word) || lowered(token) != "" && !respelled ||
 		address.functionWord(word) && tildeMarks(opening, closing) || !listOpening(opening, true) ||
 		!plainClosing(closing) {
 		return datapack.Word{}, false

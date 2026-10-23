@@ -38,9 +38,15 @@ func TestPreFormatter(t *testing.T) {
 	letters := address.Letters
 	if len(letters.TwoLetters) != 39 || letters.TwoLetters[0] != "AD" || len(letters.Onsets) != 36 ||
 		len(letters.Codas) != 13 || letters.Codas["PH"] != "AEIOU" || len(letters.FirstPairs) != 9 ||
-		len(letters.LastPairs) != 14 || len(letters.Spelled) != 30 || letters.Spelled[0] != "ATM" ||
-		len(letters.Unkept) != 16 || len(letters.Kept) != 11 || len(letters.MarkedSpelled) != 2 ||
-		len(letters.Respelled) != 2 || letters.Respelled["ISO"] != "eye-SO" {
+		len(letters.LastPairs) != 14 || len(letters.Spelled) != 48 || letters.Spelled[0] != "ATM" ||
+		len(letters.Unkept) != 16 || len(letters.Kept) != 116 || len(letters.MarkedSpelled) != 2 ||
+		len(letters.Respelled) != 7 || letters.Respelled["ISO"] != "eye-SO" || letters.Respelled["XMAS"] != "X-MAS" {
 		t.Errorf("address letters %+v", letters)
+	}
+	if len(letters.Heads) != 13 || letters.Heads[0] != "ALT" || len(letters.Tails) != 10 || letters.Tails[3] != "EDU" ||
+		len(letters.OpenHeads) != 7 || letters.OpenHeads[6] != "USH" || len(letters.UnkeptHeads) != 20 ||
+		letters.UnkeptHeads["XYX"] != "JQT" || len(letters.Clusters) != 11 || letters.Clusters["ST"] != "R" ||
+		len(letters.VowelCodas) != 11 || len(letters.CodaPairs) != 69 || letters.CodaPairs[68] != "XT" {
+		t.Errorf("four-letter tables %+v", letters)
 	}
 }

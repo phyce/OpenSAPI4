@@ -336,9 +336,9 @@ The **names** in a value: the value's tabs become spaces, and it is split at its
 
 ### 3.9 Words in capitals
 
-The **letter rules** read a word of section 3.4, read without its pieces, whose part between its opening and closing marks (section 3.5) is two or three capitals. The vowels are `A`, `E`, `I`, `O` and `U`; `Y` is neither a vowel nor a consonant, and the other capitals are consonants. The tables are the data pack's `address` `letters` ([datapack.md](datapack.md) §15).
+The **letter rules** read a word of section 3.4, read without its pieces, whose part between its opening and closing marks (section 3.5) is two to four capitals. The vowels are `A`, `E`, `I`, `O` and `U`; `Y` is neither a vowel nor a consonant, and the other capitals are consonants. The tables are the data pack's `address` `letters` ([datapack.md](datapack.md) §15).
 
-A word is **lowered** when it has no opening marks, its closing marks are `) ] ! ? : ; , . " ' *` and kept spaces, and its capitals start with `Q`, `X` or `Z` followed by a consonant, but not `ZW`, and not when they are `C`, `D`, `I`, `L`, `M`, `V` and `X` only. Its first capital then becomes a small letter with a space after it: `QB` is `q B`, `QBC` `q BC` and `QB.` `q B.`, while `"QBS` is `"Q-B-S`. The `>` that quotes an e-mail line is gone by then: `>ZBH` is `z BH`. Sections 3.4 and 3.5 read a word lowered where they say so, and so do the runs below; a word that is no list word and that the letter rules don't change is written lowered after its step of section 3.4.
+A word is **lowered** when it has no opening marks, its closing marks are `) ] ! ? : ; , . " ' *` and kept spaces, and its capitals start with `Q`, `X` or `Z` followed by a consonant, but not `ZW`, and not when they are `C`, `D`, `I`, `L`, `M`, `V` and `X` only. Its first capital then becomes a small letter with a space after it: `QB` is `q B`, `QBC` `q BC`, `QBCD` `q BCD` and `QB.` `q B.`, while `"QBS` is `"Q-B-S`. The `>` that quotes an e-mail line is gone by then: `>ZBH` is `z BH`. Sections 3.4 and 3.5 read a word lowered where they say so, and so do the runs below; a word that is no list word and that the letter rules don't change is written lowered after its step of section 3.4.
 
 A word, read with its pieces and lowered, **counts** when it has two capitals or more. A **run** is three words that count or more, one after the other. A word that doesn't count ends a run, and so does a single dash that became a space or went in step 7 of section 3.4, or a single slash that became a space in step 8, before the word after it. A word that counts and holds a slash, or that ends in one of `) ] ! ? : ; , . "`, read with its pieces and its hidden marks and without the kept spaces at its end, ends a run after itself. `ABC DEF GHI` and `BCD BCD BCD` stay as they are, while `BCD BCD. BCD` is `B-C-D B-C-D. B-C-D`, `BCD - BCD BCD BCD` `B-C-D - BCD BCD BCD` and `BCD/BCD IBM COD BEG` `B-C-D BCD IBM C-O-D BEG`.
 
@@ -347,11 +347,12 @@ A word is **bare** when its opening marks have no quote, `'` or `~`, and its clo
 2. A word of `spelled`, and a word of `markedSpelled` that is marked, spelled: `COD` is `C-O-D` and `~CYA` `~C-Y-Aye`, while `CYA` stays as it is.
 3. A word in a run as it is.
 4. Two capitals as they are when they are one of `twoLetters`, and spelled otherwise: `PC` is `P-C`.
-5. Three capitals that start with `QU`, before a letter that is no vowel, `S` or `W`, as `KEW` and that letter: `QUT` is `KEWT`.
-6. Three capitals that are said (below) as they are: `CAT` stays as it is.
-7. Three capitals that end in `PC` as the first capital spelled, then `-PC`: `DPC` is `D-PC`.
-8. Three capitals whose first two are one of `twoLetters`, a vowel and a letter that is no vowel, before a consonant that is no `S` in a bare word, the last two not being one of `onsets`, as the first two, a dash and the last: `ANT` is `AN-T` and `"ADS` `"AD-S`.
-9. Any other spelled: `ADS` is `A-D-S`, `IBM` `eye-B-M`, `NBA` `N-B-Aye` and `BBC` `B-B-C`.
+5. Four capitals as below.
+6. Three capitals that start with `QU`, before a letter that is no vowel, `S` or `W`, as `KEW` and that letter: `QUT` is `KEWT`.
+7. Three capitals that are said (below) as they are: `CAT` stays as it is.
+8. Three capitals that end in `PC` as the first capital spelled, then `-PC`: `DPC` is `D-PC`.
+9. Three capitals whose first two are one of `twoLetters`, a vowel and a letter that is no vowel, before a consonant that is no `S` in a bare word, the last two not being one of `onsets`, as the first two, a dash and the last: `ANT` is `AN-T` and `"ADS` `"AD-S`.
+10. Any other spelled: `ADS` is `A-D-S`, `IBM` `eye-B-M`, `NBA` `N-B-Aye` and `BBC` `B-B-C`.
 
 Three capitals are **said** by their pattern, `V` for a vowel, `Y` for `Y` and `C` for a consonant, the first of these that applies deciding. A **last S** is an `S` that ends a bare word.
 - Those of `unkept` never are, and those of `kept` always are.
@@ -361,7 +362,84 @@ Three capitals are **said** by their pattern, `V` for a vowel, `Y` for `Y` and `
 
 `BAS` is `B-A-S`, while `"BAS"` stays as it is; `SOS` is `S-O-S` and `'SOS'` `'S-O-S'`, while `"SOS"` stays as it is.
 
-The letter rules read a word that is no list word and whose marks are a plain list word's (section 3.5), but not a lowered word, and not a function word in capitals with the marks that give it a `~` (section 3.5): `"AND` is `"AN-D`, `[WAS` `W-A-S` and `AND'` `AN-D'`, while `AND"` is `~AND"`. When they change the word, it is written and spaced as a plain list word whose expansion is what they write.
+**Four capitals** are written by the first of these that applies:
+1. When they read their `QU` as `KEW` (below), with `KEW` for it.
+2. When they are said (below), as they are.
+3. Split (below).
+
+In what follows a capital of the word is **spelled** as it is in the word spelled: an `I` that starts the word is `eye` and an `A` that ends it `Aye`. A **pair** is a vowel or `Y` and a vowel or `Y`.
+
+Four capitals read their `QU` as `KEW` when they start with `QU`, but not before `LA`, `NY` or `PC`, and go on with a consonant other than `W`, with `W` and a vowel or `Y`, or with `Y` and a capital other than `Y`; and when their second and third are `QU`, before `Y`, before a consonant other than `S` and `W`, or before a `W` when a `W` starts them. With `QU` second they are written as their first capital, `KEW` and their last, a dash after the first when it is a vowel, which is spelled; with `QU` first as `KEW` and their last two, a dash between these when they are `GH`, `GM`, `GN`, `MB` or `ZS`. `QUBB` is `KEWBB`, `QUGH` `KEWG-H`, `QUWA` `KEWWA`, `QUYA` `KEWYA`, `SQUB` `SKEWB`, `AQUB` `A-KEWB`, `IQUB` `eye-KEWB` and `WQUW` `WKEWW`, while `QUYY` is `Q-U-Y-Y`, `BQUW` `BQU-W` and `QULA` stays as it is.
+
+Four capitals are **said**, the first of these that applies deciding:
+- Those of `kept` are. Those whose last three are one of `tails`, or whose first three are one of `heads`, aren't.
+- Those that end in `LA`, `NY` or `US` are, but not after `NY`.
+- Those that start with `CE`, `CI`, `GE`, `GI`, `IO`, `NY`, `OS`, `PC`, `UC`, `UK`, `US`, `XO` or `XU`, or with `Q` before `A`, `E`, `I` or `O`, aren't, unless their first three are one of `openHeads`.
+- Those that start with `LA` are when their third or last is a vowel or `Y`.
+- Those that end in `QU` after a capital that is neither a vowel nor `Q`, that end in `QUE` or `QUO` after one that is no vowel, that end in `GNU` after a vowel, and that start with `GNU` before a consonant other than `W` or before `E`, `O` or `Y`, are.
+- Those that start with the same vowel three times, or end with the same capital three times, aren't; nor those that start with `X`, then `I` or `Y`, then `W`, then a vowel or `Y`.
+- Those whose first three are one of `unkeptHeads` are when their last is one of its capitals, and aren't otherwise.
+- Those that end in `Q`, their **head** the three before it, or in `QS`, their head the two before it, are said by the head (below).
+- Those that start with `W` and end in `W` with `A` or `E` third, that start with `H` and end in `H` with a vowel third, and that start with `J`, `Q` or `X`, then `Y`, then a vowel or `Y`, and whose first capital, `Y` and last capital are one of `unkept`, aren't.
+- Those that end in `W` after `I` or `U`, or after `Y` when their second isn't a vowel or a `Y` starts them, aren't.
+- Those with a `Q` second or third, not after `Y`, before `A`, `E`, `I` or `O`, or before `Y` when the capitals before the `Q` aren't one of `firstPairs`, aren't, unless they start with `X`.
+- Those that end in `YY`, or whose last three are one of `unkept`, aren't.
+- Any other is said by its sounds (below).
+
+A word ending in `Q` or `QS` is said by its head, the first of these that applies deciding:
+- Not when the head has no vowel or `Y`, or holds `IW` or `UW`.
+- Not when the head holds a `Q` that is none of these: in a word that starts with `X`; first in the head, when the head is two capitals or its third is a vowel, `Y`, `H` or `Q`; after a `Y` that follows a capital other than a vowel.
+- Not when the head is `YY` and a consonant other than `Q`, or two vowels that aren't one of `firstPairs`.
+- When the head is three capitals and starts with a vowel: with a consonant or `Y` second, only when its third is a consonant; with a vowel second, only when its first two are one of `firstPairs`.
+- Said otherwise.
+
+`BAYQ`, `BAQS`, `EAQS` and `ABCQ` stay as they are, while `BBQS` is `B-B-Q-S`, `AEQS` `A-E-Q-S`, `AIWQ` `A-I-W-Q`, `ABQQ` `A-B-Q-Q` and `YYBQ` `YYB-Q`.
+
+The **sounds** of four capitals are `V` for a vowel and `C` for a consonant, a `Y` read as a vowel (`V`) when one of the two capitals before it is read as a consonant, and as a consonant (`C`) otherwise. They are said by their sounds:
+- CVCC as below. CCVC when they start with one of `onsets`. CVVC and CVCV always. CVVV when their last two are an **end pair**: one of `lastPairs`, or a vowel and `Y` either way round. CCVV when they start with one of `onsets` and end in an end pair. VCCV when their second and third are one of `onsets`. VVCV and VVVC when they start with one of `firstPairs`, and VVVV when they also end in an end pair. VVCC when they start with one of `firstPairs` and end in one of `vowelCodas`, but not `W` third after `I` or `U`. CCCV when their third is one of the capitals `clusters` has for their first two. VCCC when they end in `PHH`, `SHH` or `THH`, or when they start with `A`, `E` or `O` before `WH` or `WR`. No others.
+- CVCC that start with `JY`, `QY`, `XY` or `YY` are said when they start with `X` and end in `J` after a capital other than `Q`, or in `NX` or `RX`; not when they end in `SS` or `ZS` or have `W` third; and otherwise when their third is `H`, their last two are the same or their last is `S` or `Z`.
+- Other CVCC that start with `J` or `X` and have no `W` third aren't said when they end in `GH`, `GM`, `GN`, `MB`, `PC` or `ZS`, nor with `Q` third but `XQZ`, nor when they start with `X` and have `J` third before a capital other than `J`, `S` and `Z`; they are said otherwise.
+- Any other CVCC is said when its last two are a **coda** after its second: not with a `W` first after `I`, `U` or `Y`, but `WJ` and `WX` after `Y`; not `SS` after `Y`; `QZ` after `Y`; not `JX`, `QJ`, `QQ`, `QX`, `QY`, `QZ` or `ZS`; and otherwise one of `codaPairs`, two same capitals, or a consonant before `J`, `S`, `X` or `Z`.
+
+`CORP`, `BATS`, `HAWS`, `XYJS`, `GNUE`, `ECHO` and `STAY` stay as they are, while `BAGH` is `BAG-H`, `JAQZ` `J-A-Q-Z` and `WAWS` `W-A-WS`.
+
+Four capitals that aren't said are **split**, the first of these that applies deciding:
+1. Those that start with `CE`, `CI`, `GE` or `GI` before a pair that is no end pair, but not when their last three are the same capital, as their first two capitals spelled, the last two left out: `CEAA` is `C-E`, while `CEYO` is `C-E-Y-O`.
+2. Those that start with `EDU` as `ed-yoo-` and the last spelled: `EDUC` is `ed-yoo-C`.
+3. Those that start with `IO` as `eye-ONE` when they end in `NE`, as `eye-O-N-` and the last when `N` is third, and as `eye-O-` and the last two otherwise: `IONE` is `eye-ONE`, `IONS` `eye-O-N-S` and `IOTA` `eye-O-TA`.
+4. Those that start with `OS` or `PC` as the first two spelled, then a dash and the last two: `OSXX` is `O-S-XX`.
+5. Those that start with `NY` as `NY-` and the last two when one of them is a vowel or `Y`, spelled otherwise: `NYAB` is `NY-AB` and `NYBC` `N-Y-B-C`.
+6. Those that start with `UC` or `UK` spelled: `UCLB` is `U-C-L-B`.
+7. Those that start with `US` as `U-` and the last three when they have `U` third and their last three are said as a tail (below), or end in `ED` or `ES`; as the first three, a dash and the last when they start with `USE`, or with `USH` when their first three are said as a head (below); spelled otherwise: `USUN` is `U-SUN`, `USED` `U-SED` and `USEX` `USE-X`.
+8. Those that start with `Q` before `A`, `E`, `I` or `O`, or with `XO` or `XU`, as their first capital, a dash and then the **rest**, their last three: the rest as it is when it is one of `tails`; `triple-` and the last spelled when the rest is the same capital three times; the second, a dash and `PC` when the rest ends in `PC`; the rest as it is when it is said (below); and otherwise the rest's first two, a dash and its last when its first two are one of `twoLetters` before a consonant and its last two aren't one of `onsets`, or the rest spelled (but no `eye`). `QATS` is `Q-AT-S`, `QABC` `Q-A-B-C`, `QOPC` `Q-O-PC`, `QAAA` `Q-triple-Aye`, `QIRA` `Q-IRA` and `XOMB` `X-O-M-B`.
+9. Those that start with the same vowel three times, or end with the same vowel three times, spelled as below.
+10. Those that start with `LA` spelled: `LALT` is `L-A-L-T`.
+11. Those whose first three are one of `heads` as these, a dash and the last spelled, and those whose last three are one of `tails` as the first spelled, a dash and these: `BITX` is `BIT-X` and `ROMX` `ROM-X`.
+12. Those that start with `CE`, `CI`, `GE` or `GI` as the first three, a dash and the last spelled when the first three are one of `openHeads`; as the first two spelled, then `-PC`, when they end in `PC`; spelled otherwise: `CEPC` is `C-E-PC` and `CIWS` `C-I-W-S`.
+13. Those whose first three are said as a head (below) as these, a dash and the last spelled: `BAGH` is `BAG-H`.
+14. Those whose last three are said as a tail (below) as the first spelled, a dash and these: `YBAB` is `Y-BAB`.
+15. Those that start with one of `twoLetters` that starts with a vowel, before a consonant, but not before `PC`, as the first two, a dash and then their last two spelled: `ANBX` is `AN-B-X`.
+16. Any other spelled as below.
+
+The first three are said as a **head**, the first of these that applies deciding:
+- Not with `P` third and `C` last.
+- With `Q` third when they start with `X` and have a vowel second, when their second is `Y`, when they start with a vowel and have `Q` second, or when their first two are one of `firstPairs`; not otherwise.
+- Not when their third and last are vowels or `Y`.
+- When they end in `QU` after a capital that is no vowel.
+- By their pattern (`V`, `Y` and `C` as for three capitals): `YC` first, never; VCC, not before `Q`, when their second and third are the same or are one of `clusters` with the last one of its capitals, but not `W` second; VYC, CVV, YVV, CYY and YYY always; VVC and VVV when they start with one of `firstPairs`, but not `W` third before `H`, `Q` or `R`; and any other when they are `GNU`, or are said as a **piece**: when they aren't one of `unkept` and the pattern rule for three capitals (the fourth of **said** above) says them as it does in a word that isn't bare.
+
+The last three are said as a **tail**, the first of these that applies deciding: when they are `GNU`; with a vowel second, only when they end in `QY` after a capital that is no vowel; not with `Q` second before `A`, `E`, `I` or `O`, nor with `Y` second before a consonant; when they are three consonants, only after a `Y` and when they are `SPH` or start with `WH` or `WR`; otherwise when they are said as a piece.
+
+The rest after a `Q`, `XO` or `XU` is said by its pattern: VCV unless its middle is `Q` before a capital other than `U`; VVC unless it ends in `W` after `I` or `U`; VCY, VVY and VYV always; VVV when its last two are one of `lastPairs`; VCC and VYC when it is said as a piece, or when its last two are one of `vowelCodas` without a `W` first; no other.
+
+Four capitals are **spelled as below**: when they start with the same vowel three times, as `triple-`, that vowel and then the last spelled (`AAAB` is `triple-A-B`); when they end with the same vowel three times, as the first spelled, then `-triple-` and the last spelled (`BAAA` is `B-triple-Aye`); when they **keep their end** (below), as their first two spelled and then their last two, but as the first two, then `-PC`, when they end in `PC` after one of `twoLetters` (`ABPC` is `A-B-PC` and `ADPC` `AD-PC`); spelled otherwise (`ABCD` is `A-B-C-D`). They keep their end:
+- When they end in `PC`.
+- When they start with `H` or `W` before a vowel or `Y` and end with that capital twice, or with it and `S` or `Z`: `WAWS` is `W-A-WS`.
+- When they end in `HH`, `HS` or `HZ` after `IW`, `UW` or `YY`; in `JJ`, `JS` or `JZ` after `JY`, `QY` or `YY`; in `XS`, `XX` or `XZ` after `JY`, `QY`, `XY` or `YY`; in `QS`, `RR`, `RS`, `RZ` or `WQ` after `IW` or `UW`.
+- When they end in `WS`, `WW` or `WZ` after `I`, `U` or `Y` second and a capital other than a vowel first.
+- When they end in `W` and a vowel or `Y` after `XI` or `XY`, or in `X` and a vowel or `Y` after `XY`.
+
+The letter rules read a word that is no list word and whose marks are a plain list word's (section 3.5), but not a lowered word that isn't one of `respelled` (`XMAS` is `X-MAS`), and not a function word in capitals with the marks that give it a `~` (section 3.5): `"AND` is `"AN-D`, `[WAS` `W-A-S` and `AND'` `AN-D'`, while `AND"` is `~AND"`. When they change the word, it is written and spaced as a plain list word whose expansion is what they write.
 
 ## 4. Where the port differs
 
