@@ -35,4 +35,12 @@ func TestPreFormatter(t *testing.T) {
 	if len(address.NumberWords) != 19 || address.NumberWords[0] != "apr" {
 		t.Errorf("number words %v", address.NumberWords)
 	}
+	letters := address.Letters
+	if len(letters.TwoLetters) != 39 || letters.TwoLetters[0] != "AD" || len(letters.Onsets) != 36 ||
+		len(letters.Codas) != 13 || letters.Codas["PH"] != "AEIOU" || len(letters.FirstPairs) != 9 ||
+		len(letters.LastPairs) != 14 || len(letters.Spelled) != 30 || letters.Spelled[0] != "ATM" ||
+		len(letters.Unkept) != 16 || len(letters.Kept) != 11 || len(letters.MarkedSpelled) != 2 ||
+		len(letters.Respelled) != 2 || letters.Respelled["ISO"] != "eye-SO" {
+		t.Errorf("address letters %+v", letters)
+	}
 }

@@ -3,6 +3,7 @@ package datapack
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -37,7 +38,7 @@ type Spreadsheet struct {
 // Address is the words the address and e-mail contexts read: the function words, after which a dot ends no
 // sentence, and the abbreviations, after which no sentence starts, with those whose dot keeps a word's spaces; the
 // words written out and the number words, after which a dot before two spaces is a dot and a lone dot; the e-mail
-// headers and the words written where a message starts.
+// headers and the words written where a message starts; and the tables that write words in capitals.
 type Address struct {
 	FunctionWords       []string
 	Abbreviations       []string
@@ -46,6 +47,24 @@ type Address struct {
 	NumberWords         []string
 	Headers             []Header
 	MessageStart        string
+	Letters             Letters
+}
+
+// Letters is how the address context writes a word in capitals of two or three letters, letters A to Z: the words of
+// two letters it says; the onsets, two consonants that start a word, and the codas, two letters that end one after
+// the vowels they map to; the first and last vowel pairs, which start and end a word; the words it spells letter by
+// letter, and those it spells only after a ' or ~ or two quotes; the words of three letters it never and always says
+// whatever their letters; and the words it writes otherwise, with what it writes.
+type Letters struct {
+	TwoLetters    []string
+	Onsets        []string
+	Codas         map[string]string
+	FirstPairs    []string
+	LastPairs     []string
+	Spelled       []string
+	MarkedSpelled []string
+	Unkept, Kept  []string
+	Respelled     map[string]string
 }
 
 // Word is a word the address context writes out, in one case: its expansion and how the dot after it is spaced. A
@@ -127,6 +146,20 @@ type addressDescription struct {
 	NumberWords         []string            `json:"numberWords"`
 	Headers             []headerDescription `json:"headers"`
 	MessageStart        string              `json:"messageStart"`
+	Letters             *lettersDescription `json:"letters"`
+}
+
+type lettersDescription struct {
+	TwoLetters    []string          `json:"twoLetters"`
+	Onsets        []string          `json:"onsets"`
+	Codas         map[string]string `json:"codas"`
+	FirstPairs    []string          `json:"firstPairs"`
+	LastPairs     []string          `json:"lastPairs"`
+	Spelled       []string          `json:"spelled"`
+	MarkedSpelled []string          `json:"markedSpelled"`
+	Unkept        []string          `json:"unkept"`
+	Kept          []string          `json:"kept"`
+	Respelled     map[string]string `json:"respelled"`
 }
 
 type wordDescription struct {
@@ -264,9 +297,76 @@ func parseAddress(description *addressDescription) (*Address, error) {
 	if err != nil {
 		return nil, err
 	}
+	letters, err := parseLetters(description.Letters)
+	if err != nil {
+		return nil, err
+	}
 	return &Address{FunctionWords: description.FunctionWords, Abbreviations: description.Abbreviations,
 		SpacedAbbreviations: description.SpacedAbbreviations, Words: words, NumberWords: description.NumberWords,
-		Headers: headers, MessageStart: description.MessageStart}, nil
+		Headers: headers, MessageStart: description.MessageStart, Letters: *letters}, nil
+}
+
+func parseLetters(description *lettersDescription) (*Letters, error) {
+	if description == nil {
+		return nil, fmt.Errorf("address letters is missing")
+	}
+	lists := []struct {
+		name       string
+		words      []string
+		shortest   int
+		longest    int
+		vowelsOnly bool
+	}{
+		{"twoLetters", description.TwoLetters, 2, 2, false},
+		{"onsets", description.Onsets, 2, 2, false},
+		{"firstPairs", description.FirstPairs, 2, 2, true},
+		{"lastPairs", description.LastPairs, 2, 2, true},
+		{"spelled", description.Spelled, 2, 3, false},
+		{"markedSpelled", description.MarkedSpelled, 2, 3, false},
+		{"unkept", description.Unkept, 3, 3, false},
+		{"kept", description.Kept, 3, 3, false},
+	}
+	for _, list := range lists {
+		if len(list.words) == 0 {
+			return nil, fmt.Errorf("address letters %s is empty", list.name)
+		}
+		seen := map[string]bool{}
+		for index, word := range list.words {
+			if len(word) < list.shortest || len(word) > list.longest || !capitalWord(word) ||
+				list.vowelsOnly && strings.Trim(word, vowelLetters) != "" {
+				return nil, fmt.Errorf("address letters %s[%d] is %q", list.name, index, word)
+			}
+			if seen[word] {
+				return nil, fmt.Errorf("address letters %s has %q twice", list.name, word)
+			}
+			seen[word] = true
+		}
+	}
+	for _, word := range description.Kept {
+		if slices.Contains(description.Unkept, word) {
+			return nil, fmt.Errorf("address letters %q is kept and unkept", word)
+		}
+	}
+	if len(description.Codas) == 0 {
+		return nil, fmt.Errorf("address letters codas is empty")
+	}
+	for pair, after := range description.Codas {
+		if len(pair) != 2 || !capitalWord(pair) || after == "" || strings.Trim(after, vowelLetters) != "" {
+			return nil, fmt.Errorf("address letters coda %q after %q", pair, after)
+		}
+	}
+	if len(description.Respelled) == 0 {
+		return nil, fmt.Errorf("address letters respelled is empty")
+	}
+	for word, written := range description.Respelled {
+		if len(word) < 2 || len(word) > 3 || !capitalWord(word) || !printableWord(written) {
+			return nil, fmt.Errorf("address letters respelled %q is %q", word, written)
+		}
+	}
+	return &Letters{TwoLetters: description.TwoLetters, Onsets: description.Onsets, Codas: description.Codas,
+		FirstPairs: description.FirstPairs, LastPairs: description.LastPairs, Spelled: description.Spelled,
+		MarkedSpelled: description.MarkedSpelled, Unkept: description.Unkept, Kept: description.Kept,
+		Respelled: description.Respelled}, nil
 }
 
 func parseWords(descriptions []wordDescription) ([]Word, error) {
@@ -362,6 +462,17 @@ func lowerWord(word string) bool {
 		}
 	}
 	return true
+}
+
+const vowelLetters = "AEIOU"
+
+func capitalWord(word string) bool {
+	for index := 0; index < len(word); index++ {
+		if word[index] < 'A' || word[index] > 'Z' {
+			return false
+		}
+	}
+	return word != ""
 }
 
 func letterWord(word string) bool {

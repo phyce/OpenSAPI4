@@ -259,7 +259,7 @@ Each symbol of `visuals` is a printable ASCII character, listed once, with an IP
 | Field | Values | Meaning |
 |---|---|---|
 | `spreadsheet` | Object | The words the pre-formatter writes in the spreadsheet context ([preformatter.md](preformatter.md) §2), below |
-| `address` | Object | The words the pre-formatter knows in the address and e-mail contexts ([preformatter.md](preformatter.md) §3.4, §3.5, §3.7), below |
+| `address` | Object | The words the pre-formatter knows in the address and e-mail contexts ([preformatter.md](preformatter.md) §3.4, §3.5, §3.7, §3.9), below |
 
 The **spreadsheet** words:
 
@@ -288,6 +288,7 @@ The **address** words:
 | `numberWords` | 19 words | The words whose dot gets a lone dot after it before two spaces or more (§3.5) |
 | `headers` | Array of objects | The e-mail headers ([preformatter.md](preformatter.md) §3.7), below |
 | `messageStart` | Word | What a message header line writes where a message starts (§3.8) |
+| `letters` | Object | The tables that write words in capitals of two and three letters ([preformatter.md](preformatter.md) §3.9), below |
 
 Each function word, abbreviation and number word is one lower-case letter or more, `a` to `z`, and each spaced abbreviation is one of the abbreviations. The message start is printable ASCII, one character or more.
 
@@ -317,3 +318,20 @@ Each **header**:
 | `quotedTwice` | `true` or absent | Whether in or right after a header block two `>` may quote a line of it (§3.7) |
 
 An action is one of `dropped`, `block`, `message`, `sender`, `kept`, `date`, `subject` and `author` (§3.8). Where a header has no action and isn't read as names, a line of it isn't a header line.
+
+The **letters** ([preformatter.md](preformatter.md) §3.9):
+
+| Field | Values | Meaning |
+|---|---|---|
+| `twoLetters` | Words of 2 letters | The words of two capitals that are said, not spelled |
+| `onsets` | Words of 2 letters | The consonant pairs that may start a word of three capitals |
+| `codas` | Object | The pairs that may end a word of three capitals after a vowel: each pair's vowels |
+| `firstPairs` | Words of 2 vowels | The vowel pairs that may start a word of three capitals |
+| `lastPairs` | Words of 2 vowels | The vowel pairs that may end one |
+| `spelled` | Words of 2 or 3 letters | The words that are always spelled |
+| `markedSpelled` | Words of 2 or 3 letters | The words that are spelled when marked |
+| `unkept` | Words of 3 letters | The words of three capitals that are never said |
+| `kept` | Words of 3 letters | The words of three capitals that are always said |
+| `respelled` | Object | The words written otherwise: each word's writing |
+
+Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two or three capitals and its writing printable ASCII, one character or more. No word is both kept and unkept.

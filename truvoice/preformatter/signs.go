@@ -68,12 +68,24 @@ func dashes(paragraph string) string {
 			for stop < len(word) && word[stop] == '-' {
 				stop++
 			}
-			spaced.WriteString(spacedDash(stop-character, word[:character], word[stop:], following, index > 0))
+			spaced.WriteString(broken(spacedDash(stop-character, word[:character], word[stop:], following, index > 0)))
 			character = stop
 		}
 		words[index] = spaced.String()
 	}
 	return strings.Join(words, " ")
+}
+
+// broken is a dash or slash written as a space or nothing with a runBreak: between spaces, or after a space at a
+// word's end.
+func broken(written string) string {
+	switch written {
+	case " ":
+		return " " + runBreak + " "
+	case "":
+		return " " + runBreak
+	}
+	return written
 }
 
 // spacedDash is a run of dashes in a word, with the word's characters before and after it and the two words after the
@@ -242,7 +254,7 @@ func (address *address) slashed(word, following string, path bool, upcoming, end
 	}
 	switch {
 	case !path && (!kept(left) || !rightKept):
-		return output + address.goneBefore(left) + " " + right
+		return output + address.goneBefore(left) + " " + runBreak + " " + right
 	case left != "" && strings.Trim(left, "!?") == "":
 		return output + left + " / " + right
 	}

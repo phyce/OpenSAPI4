@@ -37,6 +37,8 @@ const (
 	// slash after it went (section 3.5).
 	slashDropped = "\x07"
 	slashGone    = "\x08"
+	// runBreak is a word of its own where a dash or slash went, which ends a run of words in capitals (section 3.9).
+	runBreak = "\x0e"
 	// closingRoom is how many marks a closing run keeps.
 	closingRoom = 4
 )
@@ -60,6 +62,7 @@ type address struct {
 	numberWords                                       map[string]bool
 	headers                                           map[string]datapack.Header
 	messageStart                                      string
+	letters                                           letterTables
 	output                                            strings.Builder
 	paragraph                                         string
 	// size is the measures of the paragraph's pieces (section 3.3).
@@ -107,7 +110,8 @@ func newAddress(words *datapack.Address) *address {
 	}
 	return &address{functionWords: wordSet(words.FunctionWords), abbreviations: wordSet(words.Abbreviations),
 		spacedAbbreviations: wordSet(words.SpacedAbbreviations), words: listed,
-		numberWords: wordSet(words.NumberWords), headers: headers, messageStart: words.MessageStart, opened: true}
+		numberWords: wordSet(words.NumberWords), headers: headers, messageStart: words.MessageStart,
+		letters: newLetterTables(&words.Letters), opened: true}
 }
 
 func wordSet(words []string) map[string]bool {
@@ -426,7 +430,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	paragraph = cappedTerminals(commasAndUnderscores(paragraph))
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
-	parts := words(paragraph)
+	parts, breaks := unbroken(words(paragraph))
+	runs := capitalRuns(parts, breaks)
 	for index := range parts {
 		parts[index].slash, parts[index].token = slashMarked(parts[index].token)
 		_, parts[index].whole = slashMarked(parts[index].whole)
@@ -608,11 +613,15 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		following = unheld(following)
 		near := capitalsNear(capitals, index)
 		entry, ok := address.listed(token, followingSpaces, following)
+		opening, _, _ := parted(token)
 		switch {
 		case ok && spread && entry.Dotted:
 			ok = false
-		case ok && entry.Kind == datapack.CapitalWord && near:
+		case ok && entry.Kind == datapack.CapitalWord && (near || strings.Contains(opening, "~")):
 			entry.Expansion = strings.TrimPrefix(entry.Expansion, "~")
+		}
+		if !ok {
+			entry, ok = address.spelledEntry(token, runs[index])
 		}
 		if ok {
 			slash := 0
@@ -636,6 +645,9 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			numbering, initial, skipped = true, false, 0
 		} else if !near {
 			token = address.tilded(token, read)
+		}
+		if !ok {
+			token = cmp.Or(lowered(token), token)
 		}
 		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
 	}
@@ -1441,6 +1453,10 @@ func (address *address) listed(token string, spaces int, following string) (data
 		if entry.Dotted && (closing != "." || spaces > 1 || following != "" && terminal(following)) {
 			return datapack.Word{}, false
 		}
+		if len(word) == 2 && capitalLetters(word) && word != quotedPlain && strings.HasSuffix(opening, "[") &&
+			(closing != "." || spaces != 1 || sentenceStarting(following)) {
+			return datapack.Word{}, false
+		}
 		return entry, true
 	}
 	if (plainListed(entry.Kind) || word == quotedPlain) && listOpening(opening, true) && plainClosing(closing) {
@@ -1521,7 +1537,7 @@ func capitalsAround(parts []part) []bool {
 	capitals := make([]bool, 0, len(parts)+1)
 	capitals = append(capitals, strings.HasPrefix(parts[0].spaces, " "))
 	for _, part := range parts {
-		capitals = append(capitals, capitalsWord(part.token))
+		capitals = append(capitals, capitalsWord(cmp.Or(lowered(part.token), part.token)))
 	}
 	return capitals
 }
@@ -1554,12 +1570,17 @@ func capitalsWord(token string) bool {
 // opening brackets (a > may start them) and before closing marks (section 3.5).
 func (address *address) tilded(token, read string) string {
 	opening, word, closing := parted(read)
-	if !capitalLetters(word) || !address.functionWord(word) ||
-		strings.TrimLeft(strings.TrimPrefix(opening, ">"), "(") != "" || !listClosing(closing) {
+	if !capitalLetters(word) || !address.functionWord(word) || !tildeMarks(opening, closing) {
 		return token
 	}
 	opening, _, _ = parted(token)
 	return opening + "~" + token[len(opening):]
+}
+
+// tildeMarks is whether a function word in capitals between marks takes a ~ (section 3.5): opening brackets that a >
+// may start, and an abbreviation's closing marks.
+func tildeMarks(opening, closing string) bool {
+	return strings.TrimLeft(strings.TrimPrefix(opening, ">"), "(") == "" && listClosing(closing)
 }
 
 // capitalLetters is whether a word is capital letters, one or more.
@@ -1713,6 +1734,7 @@ func dotKept(kind datapack.WordKind, spaces int, following string, last bool) (b
 // dots, commas and dashes that a dot may start) before closing marks; any other when it has no small letter and
 // something that is no quote, ( ) or ], comma, dot, colon, semicolon, ! or ?.
 func raised(word string) bool {
+	word = cmp.Or(lowered(word), word)
 	word = strings.TrimLeft(strings.TrimPrefix(strings.TrimLeft(strings.TrimPrefix(word, ">"), "("), "["), "\"")
 	switch {
 	case word != "" && upper(word[0]):
