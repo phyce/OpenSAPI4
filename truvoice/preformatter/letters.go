@@ -7,11 +7,12 @@ import (
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
 )
 
-// letterTables is the address context's tables for words in capitals of two to four letters (section 3.9).
+// letterTables is the address context's tables for words in capitals of two to five letters (section 3.9).
 type letterTables struct {
 	twoLetters, onsets, firstPairs, lastPairs, spelled, markedSpelled, unkept, kept map[string]bool
 	heads, tails, openHeads, vowelCodas, codaPairs                                  map[string]bool
 	codas, respelled, unkeptHeads, clusters, readings                               map[string]string
+	pieces, longHeads, longTails, unsplit                                           []string
 }
 
 func newLetterTables(letters *datapack.Letters) letterTables {
@@ -21,10 +22,11 @@ func newLetterTables(letters *datapack.Letters) letterTables {
 		unkept: wordSet(letters.Unkept), kept: wordSet(letters.Kept), heads: wordSet(letters.Heads),
 		tails: wordSet(letters.Tails), openHeads: wordSet(letters.OpenHeads), vowelCodas: wordSet(letters.VowelCodas),
 		codaPairs: wordSet(letters.CodaPairs), codas: letters.Codas, respelled: letters.Respelled,
-		unkeptHeads: letters.UnkeptHeads, clusters: letters.Clusters, readings: letters.Readings}
+		unkeptHeads: letters.UnkeptHeads, clusters: letters.Clusters, readings: letters.Readings,
+		pieces: letters.Pieces, longHeads: letters.LongHeads, longTails: letters.LongTails, unsplit: letters.Unsplit}
 }
 
-// lowered is a word in capitals of two to four letters with no opening marks, before any marks, that starts with Q, X
+// lowered is a word in capitals of two to five letters with no opening marks, before any marks, that starts with Q, X
 // or Z before a consonant (not ZW, and not of Roman numerals' letters only), with that letter small and a space after
 // it (section 3.9); "" for any other word and a respelled one without closing marks, which is read or respelled and
 // counts as capitals beside other words. A word is tested by its first piece as its commas space it, the rest of it
@@ -37,7 +39,7 @@ func (tables *letterTables) lowered(token string) string {
 	}
 	word, closing := piece[:letters], piece[letters:]
 	_, respelled := tables.respelled[word]
-	if len(word) < 2 || len(word) > 4 || hasAlphanumeric(closing) ||
+	if len(word) < 2 || len(word) > 5 || hasAlphanumeric(closing) ||
 		strings.IndexByte("QXZ", word[0]) < 0 || !consonant(word[1]) || word[:2] == "ZW" ||
 		strings.Trim(word, "CDILMVX") == "" || respelled && closing == "" {
 		return ""
@@ -199,7 +201,7 @@ func (tables *letterTables) saidPattern(word string, bare bool) bool {
 	return false
 }
 
-// written is how a word in capitals of two to four letters is written (section 3.9), run being whether it stands in
+// written is how a word in capitals of two to five letters is written (section 3.9), run being whether it stands in
 // a run of words in capitals and bare and marked as spelledEntry says. In a run a respelled word is respelled only
 // when it is said in part, with small letters: CITR, respelled CIT-R, stays CITR.
 func (tables *letterTables) written(word string, run, bare, marked bool) string {
@@ -217,6 +219,8 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 		return spelled(word, true, true)
 	case len(word) == 4:
 		return tables.fourLetters(word)
+	case len(word) == 5:
+		return tables.fiveLetters(word)
 	case word[:2] == "QU" && strings.IndexByte("AEIOUSW", word[2]) < 0:
 		return "KEW" + word[2:]
 	case tables.keeps(word, bare):
@@ -230,9 +234,9 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 	return spelled(word, true, true)
 }
 
-// spelledEntry is a word whose word in capitals of two to four letters the letter rules change, or whose word in
-// capitals is abbreviated, with a plain list word's marks around it, as a plain list word whose expansion is what
-// they write, the word itself when it is longer (section 3.9). A function word with the marks that tilded reads and a
+// spelledEntry is a word whose word in capitals of two to four letters, or of five capitals alone, the letter rules
+// change, or whose word in capitals is abbreviated, with a plain list word's marks around it, as a plain list word
+// whose expansion is what they write, the word itself for any other of five letters or more (section 3.9). A function word with the marks that tilded reads and a
 // word that lowered changes are none. The [ after the first of the opening brackets belong to the word, letters of no
 // kind: [[AB is [-A-B, the first [ going as settledSquare says. So do the marks after the capitals before the longest
 // closing marks that signedClosing takes, but a dot: AB~ is A-B-~, AB)". is A-B-)".; they are written before the rest
@@ -250,7 +254,8 @@ func (address *address) spelledEntry(token string, run bool) (datapack.Word, boo
 	}
 	letters := strings.TrimLeft(word, "[")
 	abbreviated := signs == 0 && abbreviatedWord(word)
-	if len(letters) < 2 || len(word)+signs > 4 && !abbreviated || !capitalLetters(letters) ||
+	five := signs == 0 && len(word) == 5 && capitalLetters(word)
+	if len(letters) < 2 || len(word)+signs > 4 && !abbreviated && !five || !capitalLetters(letters) ||
 		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
 		!listOpening(opening, true) || strings.Contains(closing[:signs], ".") {
 		return datapack.Word{}, false
@@ -260,7 +265,7 @@ func (address *address) spelledEntry(token string, run bool) (datapack.Word, boo
 		strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
 	marked := strings.ContainsAny(opening, "'~") || strings.Count(opening, "[")+strings.Count(opening, "\"") >= 2
 	written := word
-	if len(word) <= 4 {
+	if len(word) <= 4 || five {
 		written = address.letters.written(word, run, bare, marked)
 	}
 	if written == word && !abbreviated {

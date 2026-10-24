@@ -336,22 +336,22 @@ The **names** in a value: the value's tabs become spaces, and it is split at its
 
 ### 3.9 Words in capitals
 
-The **letter rules** read a word of section 3.4, read without its pieces, whose part between its opening and closing marks (section 3.5) is two to four capitals. The vowels are `A`, `E`, `I`, `O` and `U`; `Y` is neither a vowel nor a consonant, and the other capitals are consonants. The tables are the data pack's `address` `letters` ([datapack.md](datapack.md) §15).
+The **letter rules** read a word of section 3.4, read without its pieces, whose part between its opening and closing marks (section 3.5) is two to four capitals, or five capitals with no signs and no `[`. The vowels are `A`, `E`, `I`, `O` and `U`; `Y` is neither a vowel nor a consonant, and the other capitals are consonants. The tables are the data pack's `address` `letters` ([datapack.md](datapack.md) §15).
 
 When a word's opening marks end in two `[` or more, after a `>` and the `(` that may start them, the `[` after the first belong to its capitals, as letters that are neither vowels, `Y` nor consonants and are spelled as they are; the first goes or stays as the square brackets of section 3.4 say, and the word is written after it. `my [[AZ is here` is `my [-A-Z is here`, `my [[ORG is here` `my [-OR-G is here`, `my [[NNE is here` `my [-N-N-E is here` and `[[CYA` `[-CYA`, while `my [[NY is here` is `my [NY is here`.
 
 A word's **signs** are the marks after its capitals before the longest closing marks that start with a quote, a `'` or a `*`, or that are `) ] ! ? : ; , .` and kept spaces with a quote perhaps at their end. Signs without a dot belong to the capitals, as letters that are neither vowels, `Y` nor consonants and are spelled as they are, when the capitals and the signs are four characters or fewer, and the word is written before the rest of its closing marks: `AB~` is `A-B-~`, `AB~~` `A-B-~-~`, `IBM~` `eye-B-M-~`, `BIT~` `BIT-~`, `QUB~` `KEWB~` and `AB)".` `A-B-)".`. The letter rules don't read a word with other signs: `ABCD~` stays as it is.
 
-A word is **lowered** when it has no opening marks, the first word step 9 of section 3.4 leaves of it has no letter or digit after its capitals, and its capitals start with `Q`, `X` or `Z` followed by a consonant, but not `ZW`, and not when they are `C`, `D`, `I`, `L`, `M`, `V` and `X` only, nor when they are one of `respelled` and it has no closing marks. Its first capital then becomes a small letter with a space after it: `QB` is `q B`, `QBC` `q BC`, `QBCD` `q BCD`, `QB.` `q B.` and `XB~` `x B~`, while `"QBS` is `"Q-B-S`. The `>` that quotes an e-mail line is gone by then: `>ZBH` is `z BH`. Sections 3.4 and 3.5 read a word lowered where they say so, and so do the runs below; a word that is no list word and that the letter rules don't change is written lowered after its step of section 3.4.
+A word is **lowered** when it has no opening marks, the first word step 9 of section 3.4 leaves of it has no letter or digit after its capitals, and its capitals start with `Q`, `X` or `Z` followed by a consonant, but not `ZW`, and not when they are `C`, `D`, `I`, `L`, `M`, `V` and `X` only, nor when they are one of `respelled` and it has no closing marks. Its first capital then becomes a small letter with a space after it: `QB` is `q B`, `QBC` `q BC`, `QBCD` `q BCD`, `QBCDE` `q BCDE`, `QB.` `q B.` and `XB~` `x B~`, while `"QBS` is `"Q-B-S`. The `>` that quotes an e-mail line is gone by then: `>ZBH` is `z BH`. Sections 3.4 and 3.5 read a word lowered where they say so, and so do the runs below; a word that is no list word and that the letter rules don't change is written lowered after its step of section 3.4.
 
 A word, read with its pieces and lowered, **counts** when it has two capitals or more. A **run** is three words that count or more, one after the other. A word that doesn't count ends a run, and so does a single dash that became a space or went in step 7 of section 3.4, or a single slash that became a space in step 8, before the word after it. A word that counts and holds a slash, or that ends in one of `) ] ! ? : ; , . "`, read with its pieces and its hidden marks and without the kept spaces at its end, ends a run after itself. `ABC DEF GHI` and `BCD BCD BCD` stay as they are, while `BCD BCD. BCD` is `B-C-D B-C-D. B-C-D`, `BCD - BCD BCD BCD` `B-C-D - BCD BCD BCD` and `BCD/BCD IBM COD BEG` `B-C-D BCD IBM C-O-D BEG`.
 
 A word is **bare** when its opening marks have no quote, `'` or `~`, and its closing marks are `) ] ! ? : ; , .` and kept spaces, a quote perhaps at their end. It is **marked** when its opening marks have a `'` or a `~`, or two of `[` and quotes. A word is **spelled** as its capitals with a dash between each two, an `I` that starts it written `eye` and an `A` that ends it `Aye`. The letter rules write a word's capitals:
-1. A word of `respelled` as that has it, but in a run only when that has a small letter: `ISO` is `eye-SO` and `ABCD ISO ABCD` `ABCD eye-SO ABCD`, while `ABCD CITR ABCD` stays as it is.
-2. A word of `spelled`, and a word of `markedSpelled` that is marked, spelled: `COD` is `C-O-D` and `~CYA` `~C-Y-Aye`, while `CYA` stays as it is.
+1. A word of `respelled` as that has it, but in a run only when that has a small letter: `ISO` is `eye-SO`, `LOGIN` `log-in`, `EPROM` `E-PROM` (while `APROM` is `AP-ROM`) and `ABCD ISO ABCD` `ABCD eye-SO ABCD`, while `ABCD CITR ABCD` stays as it is.
+2. A word of `spelled`, and a word of `markedSpelled` that is marked, spelled: `COD` is `C-O-D`, `CCITT` `C-C-I-T-T` and `~CYA` `~C-Y-Aye`, while `CYA` stays as it is.
 3. A word in a run as it is.
 4. Two capitals as they are when they are one of `twoLetters`, and spelled otherwise: `PC` is `P-C`.
-5. Four capitals as below.
+5. Four capitals, and five, as below.
 6. Three capitals that start with `QU`, before a letter that is no vowel, `S` or `W`, as `KEW` and that letter: `QUT` is `KEWT`.
 7. Three capitals that are said (below) as they are: `CAT` stays as it is.
 8. Three capitals that end in `PC` as the first capital spelled, then `-PC`: `DPC` is `D-PC`.
@@ -444,9 +444,25 @@ Four capitals are **spelled as below**: when they start with the same vowel thre
 - When they end in `WS`, `WW` or `WZ` after `I`, `U` or `Y` second and a capital other than a vowel first.
 - When they end in `W` and a vowel or `Y` after `XI` or `XY`, or in `X` and a vowel or `Y` after `XY`.
 
+**Five capitals**, with no signs and no `[`, are written by the first of these that applies:
+1. Those of `kept` as they are: `USING` stays as it is.
+2. Those that start with `NY` as `NY-` and the last three when one of them is a vowel or `Y`, spelled otherwise: `NYABC` is `NY-ABC`, `NYBLA` `NY-BLA` and `NYMPH` `N-Y-M-P-H`.
+3. Those that start with `LA` spelled when their last three are consonants, as they are otherwise: `LACKS` is `L-A-C-K-S`, while `LASER` stays as it is.
+4. Those that end in `LA` or `NY` as they are: `COMLA` stays as it is.
+5. Those that start with `US` before a capital other than `E`, `H` and `U` as `U-S-` and the last three: `USBUS` is `U-S-BUS`.
+6. Those that end in `US` as they are: `COMUS` and `BOGUS` stay as they are.
+7. Those that start with `IO` before a capital other than `N` as `eye-oh-` and the last three: `IOTAS` is `eye-oh-TAS`.
+8. Those that start with `EDU` as `ed-yoo-` and the last two: `EDUPC` is `ed-yoo-PC`.
+9. Those that start with `UK` as `U-K-` and the last three, and those that start with `OS` or `PC` as their first two, a dash and the last three: `UKNET` is `U-K-NET` and `OSTAR` `OS-TAR`.
+10. Those that start with one of `pieces`, or else with one of `longHeads`, that splits off (below), as it, a dash and the rest, a single capital spelled: `ARPAA` is `ARPA-Aye`, `USERS` `USER-S`, `COMXY` `COM-XY`, `ONEWS` `ONE-WS` and `DOSCI` `DOS-CI`.
+11. Those that end in one of `pieces`, or else in one of `longTails`, that splits off, as the rest, a dash and it, a single capital spelled and `IO` written `eye-oh`: `IARPA` is `eye-ARPA`, `XYNET` `XY-NET`, `IONET` `eye-oh-NET`, `ABCPC` `ABC-PC` and `BITEX` `BI-TEX`.
+12. Any other as they are: `ABCDE` stays as it is.
+
+A piece, head or tail **splits off** unless one of `unsplit` that starts with the head starts the word too, or one that ends with the tail ends it: `ALTAR`, `ALTOS`, `BITES`, `HABIT` and `ABONE` stay as they are, while `ALTEX` is `ALT-EX`.
+
 A word is **loud** when it is in capitals (section 3.5), or is `A` or `I`. A word that is no list word, whose part between its marks is one of `readings` and whose marks are an abbreviation's (section 3.5), and that isn't lowered, is an abbreviation whose expansion is that reading when a loud word is one of the two words before it or the word after it, pieces counting as words and a space at the paragraph's start as a word before its first: `BCD ACCT` is `B-C-D Account.`, `ACCT BCD` `Account B-C-D`, `BCD dog ACCT` `B-C-D dog Account.`, `A ACCT` `A Account.`, `+ ACCT` `+ Account.` and `(ACCT)` ` (Account).`, while `my ACCT` is `my ACC-T`, `5 ACCT` `5 ACC-T` and `BCD "ACCT"` `B-C-D "ACC-T"`. `XMAS ABCD` is `Christmas A-B-C-D`, while `dog XMAS, CORP` is `dog x MAS, CORP`.
 
-The letter rules read a word that is no list word and whose opening marks are a plain list word's (section 3.5), but not a lowered word, and not a function word in capitals with the marks that give it a `~` (section 3.5): `"AND` is `"AN-D`, `[WAS` `W-A-S`, `AND'` `AN-D'`, `XMAS` `X-MAS` and `my XMAS dog` `my X-MAS dog`, while `AND"` is `~AND"`, `XMAS.` `x MAS.` and `XMAS!` `x MAS!`. When they change the word, it is written and spaced as a plain list word whose expansion is what they write. So is a word whose capitals, of any number, start with `LA` or end in `LA`, `NY` or `US`, even when they keep it, as it is when it has five capitals or more: `my LAW. Is here` and `my GERMANY! Is here` stay as they are and `my LAW!  Is here` is `my LAW! Is here`, while `my SALSA. Is here` is `my SALSA.  Is here` and `my MANY. Is here` `my ~MANY. Is here`.
+The letter rules read a word that is no list word and whose opening marks are a plain list word's (section 3.5), but not a lowered word, and not a function word in capitals with the marks that give it a `~` (section 3.5): `"AND` is `"AN-D`, `[WAS` `W-A-S`, `AND'` `AN-D'`, `XMAS` `X-MAS` and `my XMAS dog` `my X-MAS dog`, while `AND"` is `~AND"`, `XMAS.` `x MAS.` and `XMAS!` `x MAS!`. When they change the word, it is written and spaced as a plain list word whose expansion is what they write. So is a word whose capitals, of any number, start with `LA` or end in `LA`, `NY` or `US`, even when they keep it, as it is when it has six capitals or more, or five with signs or a `[`: `my LAW. Is here` and `my GERMANY! Is here` stay as they are and `my LAW!  Is here` is `my LAW! Is here`, while `my SALSA. Is here` is `my SALSA.  Is here` and `my MANY. Is here` `my ~MANY. Is here`.
 
 ## 4. Where the port differs
 

@@ -50,17 +50,20 @@ type Address struct {
 	Letters             Letters
 }
 
-// Letters is how the address context writes a word in capitals of two to four letters, letters A to Z: the words of
+// Letters is how the address context writes a word in capitals of two to five letters, letters A to Z: the words of
 // two letters it says; the onsets, two consonants that start a word, and the codas, two letters that end one after
 // the vowels they map to; the first and last vowel pairs, which start and end a word; the words it spells letter by
 // letter, and those it spells only after a ' or ~ or two quotes; the words of three letters it never says and the
-// words of three and four letters it always says whatever their letters; and the words it writes otherwise, with
+// words of three to five letters it always says whatever their letters; and the words it writes otherwise, with
 // what it writes. For words of four letters: the heads and tails, three letters said apart from a fourth before or
 // after them; the heads that open a word with a soft start; the unkept heads, said only before the letters they map
 // to; the clusters, two consonants that start a word, or follow the vowel that starts one, before the letters they
 // map to; the vowel codas, two letters that end a word after a first pair, or the three letters after a first Q or X;
-// and the coda pairs, two letters that end a word after one vowel. And the readings, the words it reads as an
-// abbreviation near a word in capitals, with what it reads.
+// and the coda pairs, two letters that end a word after one vowel. For words of five letters: the pieces, four
+// letters said apart from the rest before or after them; the long heads and tails, three letters (two for a tail)
+// said apart from the rest after or before them; and the unsplit words, which keep a piece, head or tail they start
+// or end with from being said apart. And the readings, the words it reads as an abbreviation near a word in
+// capitals, with what it reads.
 type Letters struct {
 	TwoLetters    []string
 	Onsets        []string
@@ -77,6 +80,10 @@ type Letters struct {
 	Clusters      map[string]string
 	VowelCodas    []string
 	CodaPairs     []string
+	Pieces        []string
+	LongHeads     []string
+	LongTails     []string
+	Unsplit       []string
 	Readings      map[string]string
 }
 
@@ -180,6 +187,10 @@ type lettersDescription struct {
 	Clusters      map[string]string `json:"clusters"`
 	VowelCodas    []string          `json:"vowelCodas"`
 	CodaPairs     []string          `json:"codaPairs"`
+	Pieces        []string          `json:"pieces"`
+	LongHeads     []string          `json:"longHeads"`
+	LongTails     []string          `json:"longTails"`
+	Unsplit       []string          `json:"unsplit"`
 	Readings      map[string]string `json:"readings"`
 }
 
@@ -342,15 +353,19 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		{"onsets", description.Onsets, 2, 2, false},
 		{"firstPairs", description.FirstPairs, 2, 2, true},
 		{"lastPairs", description.LastPairs, 2, 2, true},
-		{"spelled", description.Spelled, 2, 4, false},
+		{"spelled", description.Spelled, 2, 5, false},
 		{"markedSpelled", description.MarkedSpelled, 2, 3, false},
 		{"unkept", description.Unkept, 3, 3, false},
-		{"kept", description.Kept, 3, 4, false},
+		{"kept", description.Kept, 3, 5, false},
 		{"heads", description.Heads, 3, 3, false},
 		{"tails", description.Tails, 3, 3, false},
 		{"openHeads", description.OpenHeads, 3, 3, false},
 		{"vowelCodas", description.VowelCodas, 2, 2, false},
 		{"codaPairs", description.CodaPairs, 2, 2, false},
+		{"pieces", description.Pieces, 4, 4, false},
+		{"longHeads", description.LongHeads, 3, 3, false},
+		{"longTails", description.LongTails, 2, 3, false},
+		{"unsplit", description.Unsplit, 4, 5, false},
 	}
 	for _, list := range lists {
 		if len(list.words) == 0 {
@@ -396,14 +411,15 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		}
 	}
 	for _, table := range []struct {
-		name  string
-		words map[string]string
-	}{{"respelled", description.Respelled}, {"readings", description.Readings}} {
+		name    string
+		words   map[string]string
+		longest int
+	}{{"respelled", description.Respelled, 5}, {"readings", description.Readings, 4}} {
 		if len(table.words) == 0 {
 			return nil, fmt.Errorf("address letters %s is empty", table.name)
 		}
 		for word, written := range table.words {
-			if len(word) < 2 || len(word) > 4 || !capitalWord(word) || !printableWord(written) {
+			if len(word) < 2 || len(word) > table.longest || !capitalWord(word) || !printableWord(written) {
 				return nil, fmt.Errorf("address letters %s %q is %q", table.name, word, written)
 			}
 		}
@@ -413,7 +429,9 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		MarkedSpelled: description.MarkedSpelled, Unkept: description.Unkept, Kept: description.Kept,
 		Respelled: description.Respelled, Heads: description.Heads, Tails: description.Tails,
 		OpenHeads: description.OpenHeads, UnkeptHeads: description.UnkeptHeads, Clusters: description.Clusters,
-		VowelCodas: description.VowelCodas, CodaPairs: description.CodaPairs, Readings: description.Readings}, nil
+		VowelCodas: description.VowelCodas, CodaPairs: description.CodaPairs, Pieces: description.Pieces,
+		LongHeads: description.LongHeads, LongTails: description.LongTails, Unsplit: description.Unsplit,
+		Readings: description.Readings}, nil
 }
 
 func distinctLetters(word string) bool {
