@@ -38,10 +38,10 @@ func TestPreFormatter(t *testing.T) {
 	letters := address.Letters
 	if len(letters.TwoLetters) != 39 || letters.TwoLetters[0] != "AD" || len(letters.Onsets) != 36 ||
 		len(letters.Codas) != 13 || letters.Codas["PH"] != "AEIOU" || len(letters.FirstPairs) != 9 ||
-		len(letters.LastPairs) != 14 || len(letters.Spelled) != 52 || letters.Spelled[0] != "ATM" ||
+		len(letters.LastPairs) != 14 || len(letters.Spelled) != 53 || letters.Spelled[0] != "ATM" ||
 		len(letters.Unkept) != 16 || len(letters.Kept) != 117 || len(letters.MarkedSpelled) != 2 ||
-		len(letters.Respelled) != 16 || letters.Respelled["ISO"] != "eye-SO" || letters.Respelled["XMAS"] != "X-MAS" ||
-		letters.Respelled["LOGIN"] != "log-in" {
+		len(letters.Respelled) != 21 || letters.Respelled["ISO"] != "eye-SO" || letters.Respelled["XMAS"] != "X-MAS" ||
+		letters.Respelled["LOGIN"] != "log-in" || letters.Respelled["README"] != "read-me" {
 		t.Errorf("address letters %+v", letters)
 	}
 	if len(letters.Heads) != 13 || letters.Heads[0] != "ALT" || len(letters.Tails) != 10 || letters.Tails[3] != "EDU" ||
@@ -50,10 +50,10 @@ func TestPreFormatter(t *testing.T) {
 		len(letters.VowelCodas) != 11 || len(letters.CodaPairs) != 69 || letters.CodaPairs[68] != "XT" {
 		t.Errorf("four-letter tables %+v", letters)
 	}
-	if len(letters.Pieces) != 13 || letters.Pieces[0] != "ARPA" || len(letters.LongHeads) != 14 ||
-		letters.LongHeads[13] != "USE" || len(letters.LongTails) != 16 || letters.LongTails[15] != "PC" ||
-		len(letters.Unsplit) != 62 || letters.Unsplit[0] != "ALTAR" {
-		t.Errorf("five-letter tables %+v", letters)
+	if len(letters.Pieces) != 14 || letters.Pieces[0] != "ARPA" || len(letters.LongHeads) != 14 ||
+		letters.LongHeads[13] != "USE" || len(letters.LongTails) != 17 || letters.LongTails[16] != "STARS" ||
+		len(letters.Unsplit) != 101 || letters.Unsplit[0] != "ABUSER" {
+		t.Errorf("long-letter tables %+v", letters)
 	}
 	if len(letters.Readings) != 105 || letters.Readings["PM"] != "P.m." || letters.Readings["XMAS"] != "Christmas" {
 		t.Errorf("readings %v", letters.Readings)

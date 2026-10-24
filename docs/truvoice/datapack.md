@@ -328,7 +328,7 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `codas` | Object | The pairs that may end a word of three capitals after a vowel: each pair's vowels |
 | `firstPairs` | Words of 2 vowels | The vowel pairs that may start a word of three capitals |
 | `lastPairs` | Words of 2 vowels | The vowel pairs that may end one |
-| `spelled` | Words of 2 to 5 letters | The words that are always spelled |
+| `spelled` | Words of 2 to 6 letters | The words that are always spelled |
 | `markedSpelled` | Words of 2 or 3 letters | The words that are spelled when marked |
 | `unkept` | Words of 3 letters | The words of three capitals that are never said |
 | `kept` | Words of 3 to 5 letters | The words of three to five capitals that are always said |
@@ -340,10 +340,10 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `clusters` | Object | The consonant pairs that start a word of four, or follow the vowel that starts one, before certain consonants: each pair's consonants |
 | `vowelCodas` | Words of 2 letters | The pairs that may end a word of four after a first pair, or its rest after a `Q`, `XO` or `XU` |
 | `codaPairs` | Words of 2 letters | The pairs that may end a word of four after a vowel |
-| `pieces` | Words of 4 letters | The first or last four capitals of a word of five that are said apart from the rest |
-| `longHeads` | Words of 3 letters | The first three capitals of a word of five that are said apart from the rest, when no piece is |
-| `longTails` | Words of 2 or 3 letters | The last three or two capitals of a word of five that are said apart from the rest, when no piece or head is |
-| `unsplit` | Words of 4 or 5 letters | The words that keep a piece, head or tail they start or end with from being said apart |
+| `pieces` | Words of 4 or 6 letters | The first or last capitals of a word of five or more that are said apart from the rest |
+| `longHeads` | Words of 3 letters | The first three capitals of a word of five or more that are said apart from the rest, when no piece is |
+| `longTails` | Words of 2, 3 or 5 letters | The last capitals of a word of five or more that are said apart from the rest, when no piece or head is |
+| `unsplit` | Words of 4 to 9 letters | The words that keep a piece, head or tail they start or end with from being said apart |
 | `readings` | Object | The words read as abbreviations near a loud word: each word's reading |
 
-Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to five capitals and a reading's word two to four, and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.
+Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to six capitals and a reading's word two to four, and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.
