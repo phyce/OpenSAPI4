@@ -49,4 +49,7 @@ func TestPreFormatter(t *testing.T) {
 		len(letters.VowelCodas) != 11 || len(letters.CodaPairs) != 69 || letters.CodaPairs[68] != "XT" {
 		t.Errorf("four-letter tables %+v", letters)
 	}
+	if len(letters.Readings) != 105 || letters.Readings["PM"] != "P.m." || letters.Readings["XMAS"] != "Christmas" {
+		t.Errorf("readings %v", letters.Readings)
+	}
 }

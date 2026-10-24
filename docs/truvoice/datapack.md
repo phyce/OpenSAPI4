@@ -340,5 +340,6 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `clusters` | Object | The consonant pairs that start a word of four, or follow the vowel that starts one, before certain consonants: each pair's consonants |
 | `vowelCodas` | Words of 2 letters | The pairs that may end a word of four after a first pair, or its rest after a `Q`, `XO` or `XU` |
 | `codaPairs` | Words of 2 letters | The pairs that may end a word of four after a vowel |
+| `readings` | Object | The words read as abbreviations near a loud word: each word's reading |
 
-Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to four capitals and its writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.
+Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word and a reading's word are two to four capitals and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.

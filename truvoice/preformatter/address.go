@@ -105,10 +105,14 @@ func newAddress(words *datapack.Address) *address {
 		headers[header.Name] = header
 	}
 	listed := make(map[string]datapack.Word, len(words.Words))
+	abbreviations := wordSet(words.Abbreviations)
 	for _, word := range words.Words {
 		listed[word.Word] = word
+		if word.Kind == datapack.TitleWord {
+			abbreviations[lower(word.Word)] = true
+		}
 	}
-	return &address{functionWords: wordSet(words.FunctionWords), abbreviations: wordSet(words.Abbreviations),
+	return &address{functionWords: wordSet(words.FunctionWords), abbreviations: abbreviations,
 		spacedAbbreviations: wordSet(words.SpacedAbbreviations), words: listed,
 		numberWords: wordSet(words.NumberWords), headers: headers, messageStart: words.MessageStart,
 		letters: newLetterTables(&words.Letters), opened: true}
@@ -431,7 +435,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
 	parts, breaks := unbroken(words(paragraph))
-	runs := capitalRuns(parts, breaks)
+	runs := address.letters.capitalRuns(parts, breaks)
 	for index := range parts {
 		parts[index].slash, parts[index].token = slashMarked(parts[index].token)
 		_, parts[index].whole = slashMarked(parts[index].whole)
@@ -457,7 +461,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	// numbering is whether the words since a list word are numbers and function words, after which ! and ? take one
 	// space.
 	numbering := false
-	capitals := capitalsAround(parts)
+	capitals, louder := address.letters.around(parts, capitalsWord), address.letters.around(parts, loudWord)
 	for index, part := range parts {
 		token := part.token
 		read := token
@@ -611,7 +615,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			joined = 1
 		}
 		following = unheld(following)
-		near := capitalsNear(capitals, index)
+		near := wordsNear(capitals, index, 2)
 		entry, ok := address.listed(token, followingSpaces, following)
 		opening, _, _ := parted(token)
 		switch {
@@ -619,6 +623,9 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			ok = false
 		case ok && entry.Kind == datapack.CapitalWord && (near || strings.Contains(opening, "~")):
 			entry.Expansion = strings.TrimPrefix(entry.Expansion, "~")
+		}
+		if !ok && wordsNear(louder, index, 1) {
+			entry, ok = address.reading(token)
 		}
 		if !ok {
 			entry, ok = address.spelledEntry(token, runs[index])
@@ -637,7 +644,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			case holds && spread:
 				held, slash = " /", 2
 			}
-			token, gap = expanded(entry, token, following, followingSpaces, later >= len(parts), gap, slash)
+			token, gap = address.letters.expanded(entry, token, following, followingSpaces, later >= len(parts), gap,
+				slash)
 			if !plainListed(entry.Kind) {
 				joined = 0
 			}
@@ -647,7 +655,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			token = address.tilded(token, read)
 		}
 		if !ok {
-			token = cmp.Or(lowered(token), token)
+			token = cmp.Or(address.letters.lowered(token), token)
 		}
 		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
 	}
@@ -1401,12 +1409,17 @@ func (address *address) plainKind(token string, initial bool) kind {
 		return numberKind
 	case len(word) == 1 && alphabetic(word[0]):
 		return letterKindOf(word[0])
-	case address.functionWord(word) && initial:
+	case address.functionWord(word) && !squareOpened(token) && initial:
 		return startKind
-	case address.functionWord(word):
+	case address.functionWord(word) && !squareOpened(token):
 		return functionKind
 	}
 	return wordKind
+}
+
+// squareOpened is whether a [ stands among the brackets that start a word, a > among them.
+func squareOpened(token string) bool {
+	return strings.Contains(token[:len(token)-len(strings.TrimLeft(token, ">(["))], "[")
 }
 
 func letterKindOf(letter byte) kind {
@@ -1454,7 +1467,7 @@ func (address *address) listed(token string, spaces int, following string) (data
 			return datapack.Word{}, false
 		}
 		if len(word) == 2 && capitalLetters(word) && word != quotedPlain && strings.HasSuffix(opening, "[") &&
-			(closing != "." || spaces != 1 || sentenceStarting(following)) {
+			(closing != "." || spaces != 1 || address.letters.sentenceStarting(following)) {
 			return datapack.Word{}, false
 		}
 		return entry, true
@@ -1528,37 +1541,40 @@ func numberClosing(marks string) bool {
 	return marks == "" || (marks[0] == '!' || marks[0] == '?') && strings.Trim(marks, ")]\":;.,!?") == ""
 }
 
-// capitalsAround is whether a space starts the paragraph and then whether each of its words is in capitals
-// (capitalsWord).
-func capitalsAround(parts []part) []bool {
+// around is whether a space starts the paragraph and then whether each of its words, lowered, is what test says.
+func (tables *letterTables) around(parts []part, test func(string) bool) []bool {
 	if len(parts) == 0 {
 		return nil
 	}
-	capitals := make([]bool, 0, len(parts)+1)
-	capitals = append(capitals, strings.HasPrefix(parts[0].spaces, " "))
+	flags := make([]bool, 0, len(parts)+1)
+	flags = append(flags, strings.HasPrefix(parts[0].spaces, " "))
 	for _, part := range parts {
-		capitals = append(capitals, capitalsWord(cmp.Or(lowered(part.token), part.token)))
+		flags = append(flags, test(cmp.Or(tables.lowered(part.token), part.token)))
 	}
-	return capitals
+	return flags
 }
 
-// capitalsNear is whether a word in capitals stands within two words of the word at index, a space that starts the
-// paragraph counting as one before the first word (section 3.5).
-func capitalsNear(capitals []bool, index int) bool {
-	for position := max(index-1, 0); position < min(index+4, len(capitals)); position++ {
-		if position != index+1 && capitals[position] {
+// wordsNear is whether flags, as around gives them, mark one of the two words before the word at index or of the
+// after words after it, a space that starts the paragraph counting as a word before the first (sections 3.5 and 3.9).
+func wordsNear(flags []bool, index, after int) bool {
+	for position := max(index-1, 0); position < min(index+2+after, len(flags)); position++ {
+		if position != index+1 && flags[position] {
 			return true
 		}
 	}
 	return false
 }
 
-// capitalsWord is whether a word keeps a word in capitals near it from its ~ (section 3.5): one without a small
-// letter, but A, I, marks that end a sentence (a > or [ only alone) and numbers, dashes among their digits, between
-// quotes and brackets and before closing marks.
+// capitalsWord is whether a word keeps a word in capitals near it from its ~ (section 3.5): a loud word but A and I.
 func capitalsWord(token string) bool {
-	if hasSmall(token) || token == "A" || token == "I" || token == ">" || token == "[" ||
-		strings.Trim(token, "!\"(),.:;?]") == "" {
+	return token != "A" && token != "I" && loudWord(token)
+}
+
+// loudWord is whether a word makes a word in capitals near it read as a reading (section 3.9): one without a small
+// letter, but marks that end a sentence (a > or [ only alone) and numbers, dashes among their digits, between quotes
+// and brackets and before closing marks.
+func loudWord(token string) bool {
+	if hasSmall(token) || token == ">" || token == "[" || strings.Trim(token, "!\"(),.:;?]") == "" {
 		return false
 	}
 	number := strings.TrimPrefix(strings.TrimLeft(token, "\"(["), ".")
@@ -1668,9 +1684,12 @@ func plainClosing(closing string) bool {
 // dot: none before more marks, two for a kept space, and slash (one, two after a kept space) when the slash after the
 // word went or was dropped; with marks on both sides of the dot, a quote after it aside, the next word doesn't keep
 // it. A ! or ? among its marks makes the gap two, and an expansion that ends in a dot takes none right after it. After
-// a slash that went or was dropped one space follows.
-func expanded(entry datapack.Word, token, following string, spaces int, last bool, gap, slash int) (string, int) {
+// a slash that went or was dropped one space follows. A word that took the [ of its opening (spelledEntry) is written
+// after the rest of them.
+func (tables *letterTables) expanded(entry datapack.Word, token, following string, spaces int, last bool, gap,
+	slash int) (string, int) {
 	opening, _, closing := parted(token)
+	opening = opening[:len(opening)-(len(entry.Word)-len(strings.TrimLeft(entry.Word, "[")))]
 	written := opening + entry.Expansion + closing
 	dot := strings.IndexByte(closing, '.')
 	switch {
@@ -1697,7 +1716,7 @@ func expanded(entry datapack.Word, token, following string, spaces int, last boo
 			following = ""
 		}
 		var keep bool
-		keep, gap = dotKept(entry.Kind, dotSpaces, following, last)
+		keep, gap = tables.dotKept(entry.Kind, dotSpaces, following, last)
 		if gap > 0 && strings.ContainsAny(closing, "!?") {
 			gap = 2
 		}
@@ -1719,11 +1738,11 @@ func expanded(entry datapack.Word, token, following string, spaces int, last boo
 // dotKept is whether a list word's dot stays, spaces being the spaces right after it, and the gap after the word, 0 at
 // the paragraph's end (last), where the dot stays. An abbreviation's stays before a word that keeps it, two spaces
 // following; otherwise a dot stays before two spaces or more, one space following.
-func dotKept(kind datapack.WordKind, spaces int, following string, last bool) (bool, int) {
+func (tables *letterTables) dotKept(kind datapack.WordKind, spaces int, following string, last bool) (bool, int) {
 	switch {
 	case last:
 		return true, 0
-	case kind != datapack.TitleWord && raised(following):
+	case kind != datapack.TitleWord && tables.raised(following):
 		return true, 2
 	}
 	return spaces >= 2, 1
@@ -1733,8 +1752,8 @@ func dotKept(kind datapack.WordKind, spaces int, following string, last bool) (b
 // quotes aside: one that starts with a capital; not one that starts with a small letter, nothing, or a number (digits,
 // dots, commas and dashes that a dot may start) before closing marks; any other when it has no small letter and
 // something that is no quote, ( ) or ], comma, dot, colon, semicolon, ! or ?.
-func raised(word string) bool {
-	word = cmp.Or(lowered(word), word)
+func (tables *letterTables) raised(word string) bool {
+	word = cmp.Or(tables.lowered(word), word)
 	word = strings.TrimLeft(strings.TrimPrefix(strings.TrimLeft(strings.TrimPrefix(word, ">"), "("), "["), "\"")
 	switch {
 	case word != "" && upper(word[0]):

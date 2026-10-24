@@ -22,7 +22,7 @@ func vocal(letter byte) bool {
 	return vowel(letter) || letter == 'Y'
 }
 
-// letterKinds is a word's letters as V for a vowel, Y for a Y and C for a consonant.
+// letterKinds is a word's letters as V for a vowel, Y for a Y, C for a consonant and X for a [.
 func letterKinds(word string) string {
 	kinds := make([]byte, len(word))
 	for index := range len(word) {
@@ -31,23 +31,27 @@ func letterKinds(word string) string {
 			kinds[index] = 'V'
 		case word[index] == 'Y':
 			kinds[index] = 'Y'
-		default:
+		case consonant(word[index]):
 			kinds[index] = 'C'
+		default:
+			kinds[index] = 'X'
 		}
 	}
 	return string(kinds)
 }
 
-// soundKinds is a word's letters as V for a vowel and C for a consonant, a Y as V when a letter one or two before it
-// is read as C, and as C otherwise (section 3.9).
+// soundKinds is a word's letters as V for a vowel, C for a consonant and X for a [, a Y as V when a letter one or two
+// before it is read as C, and as C otherwise (section 3.9).
 func soundKinds(word string) string {
 	kinds := make([]byte, len(word))
 	for index := range len(word) {
 		switch {
 		case vowel(word[index]):
 			kinds[index] = 'V'
-		case word[index] != 'Y':
+		case consonant(word[index]):
 			kinds[index] = 'C'
+		case word[index] != 'Y':
+			kinds[index] = 'X'
 		case slices.Contains(kinds[max(index-2, 0):index], 'C'):
 			kinds[index] = 'V'
 		default:
@@ -398,7 +402,7 @@ func (tables *letterTables) split(word string) string {
 		return head + "-" + spelledLetter(word, 3)
 	case start == "US":
 		return spelled(word, true, true)
-	case word[0] == 'Q' && oneOf(word[1], "AEIO") || start == "XO" || start == "XU":
+	case word[0] == 'Q' && oneOf(word[1], "AEIO") || start == "XO" || start == "XU" || word[0] == '[' && vowel(word[1]):
 		switch {
 		case tables.tails[tail]:
 			return word[:1] + "-" + tail

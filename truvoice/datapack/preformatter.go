@@ -59,7 +59,8 @@ type Address struct {
 // after them; the heads that open a word with a soft start; the unkept heads, said only before the letters they map
 // to; the clusters, two consonants that start a word, or follow the vowel that starts one, before the letters they
 // map to; the vowel codas, two letters that end a word after a first pair, or the three letters after a first Q or X;
-// and the coda pairs, two letters that end a word after one vowel.
+// and the coda pairs, two letters that end a word after one vowel. And the readings, the words it reads as an
+// abbreviation near a word in capitals, with what it reads.
 type Letters struct {
 	TwoLetters    []string
 	Onsets        []string
@@ -76,6 +77,7 @@ type Letters struct {
 	Clusters      map[string]string
 	VowelCodas    []string
 	CodaPairs     []string
+	Readings      map[string]string
 }
 
 // Word is a word the address context writes out, in one case: its expansion and how the dot after it is spaced. A
@@ -178,6 +180,7 @@ type lettersDescription struct {
 	Clusters      map[string]string `json:"clusters"`
 	VowelCodas    []string          `json:"vowelCodas"`
 	CodaPairs     []string          `json:"codaPairs"`
+	Readings      map[string]string `json:"readings"`
 }
 
 type wordDescription struct {
@@ -392,12 +395,17 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 			}
 		}
 	}
-	if len(description.Respelled) == 0 {
-		return nil, fmt.Errorf("address letters respelled is empty")
-	}
-	for word, written := range description.Respelled {
-		if len(word) < 2 || len(word) > 4 || !capitalWord(word) || !printableWord(written) {
-			return nil, fmt.Errorf("address letters respelled %q is %q", word, written)
+	for _, table := range []struct {
+		name  string
+		words map[string]string
+	}{{"respelled", description.Respelled}, {"readings", description.Readings}} {
+		if len(table.words) == 0 {
+			return nil, fmt.Errorf("address letters %s is empty", table.name)
+		}
+		for word, written := range table.words {
+			if len(word) < 2 || len(word) > 4 || !capitalWord(word) || !printableWord(written) {
+				return nil, fmt.Errorf("address letters %s %q is %q", table.name, word, written)
+			}
 		}
 	}
 	return &Letters{TwoLetters: description.TwoLetters, Onsets: description.Onsets, Codas: description.Codas,
@@ -405,7 +413,7 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		MarkedSpelled: description.MarkedSpelled, Unkept: description.Unkept, Kept: description.Kept,
 		Respelled: description.Respelled, Heads: description.Heads, Tails: description.Tails,
 		OpenHeads: description.OpenHeads, UnkeptHeads: description.UnkeptHeads, Clusters: description.Clusters,
-		VowelCodas: description.VowelCodas, CodaPairs: description.CodaPairs}, nil
+		VowelCodas: description.VowelCodas, CodaPairs: description.CodaPairs, Readings: description.Readings}, nil
 }
 
 func distinctLetters(word string) bool {
