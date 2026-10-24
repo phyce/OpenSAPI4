@@ -24,23 +24,25 @@ func newLetterTables(letters *datapack.Letters) letterTables {
 		unkeptHeads: letters.UnkeptHeads, clusters: letters.Clusters, readings: letters.Readings}
 }
 
-// lowered is a word in capitals of two to four letters with no opening marks, before closing marks (brackets,
-// ! ? : ; commas, dots, quotes, stars and kept spaces), that starts with Q, X or Z before a consonant (not ZW, and not
-// of Roman numerals' letters only), with that letter small and a space after it (section 3.9); "" for any other word
-// and a respelled one without closing marks, which is read or respelled and counts as capitals beside other words.
+// lowered is a word in capitals of two to four letters with no opening marks, before any marks, that starts with Q, X
+// or Z before a consonant (not ZW, and not of Roman numerals' letters only), with that letter small and a space after
+// it (section 3.9); "" for any other word and a respelled one without closing marks, which is read or respelled and
+// counts as capitals beside other words. A word is tested by its first piece as its commas space it, the rest of it
+// written after that piece: XB,dog is x B,dog.
 func (tables *letterTables) lowered(token string) string {
+	piece, _, _ := strings.Cut(wordCommas(token, false), " ")
 	letters := 0
-	for letters < len(token) && upper(token[letters]) {
+	for letters < len(piece) && upper(piece[letters]) {
 		letters++
 	}
-	word, closing := token[:letters], token[letters:]
+	word, closing := piece[:letters], piece[letters:]
 	_, respelled := tables.respelled[word]
-	if len(word) < 2 || len(word) > 4 || strings.Trim(closing, ")]!?:;,.\"'*"+keptSpace) != "" ||
+	if len(word) < 2 || len(word) > 4 || hasAlphanumeric(closing) ||
 		strings.IndexByte("QXZ", word[0]) < 0 || !consonant(word[1]) || word[:2] == "ZW" ||
 		strings.Trim(word, "CDILMVX") == "" || respelled && closing == "" {
 		return ""
 	}
-	return lower(word[:1]) + " " + word[1:] + closing
+	return lower(token[:1]) + " " + token[1:]
 }
 
 // counted is whether a word counts in a run of words in capitals (section 3.9): one with two capitals or more, as
@@ -159,8 +161,8 @@ func (tables *letterTables) keeps(word string, bare bool) bool {
 		return false
 	}
 	switch {
-	case word[:2] == "LA", word[1:] == "LA", word[1:] == "NY", word[1:] == "US", word[1:] == "QU" && !vowel(first),
-		word == "GNU", word == "EDU", word == "USE":
+	case word[:2] == "LA", word[1:] == "LA", word[1:] == "NY", word[1:] == "US",
+		word[1:] == "QU" && !vowel(first) && first != 'Q', word == "GNU", word == "EDU", word == "USE":
 		return true
 	}
 	return tables.saidPattern(word, bare)
@@ -232,22 +234,28 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 // capitals is abbreviated, with a plain list word's marks around it, as a plain list word whose expansion is what
 // they write, the word itself when it is longer (section 3.9). A function word with the marks that tilded reads and a
 // word that lowered changes are none. The [ after the first of the opening brackets belong to the word, letters of no
-// kind: [[AB is [-A-B, the first [ going as settledSquare says. The word is bare when no quote or ~ stands before it
-// and its closing marks are an abbreviation's, a quote perhaps at their end; marked when the marks before it have a '
-// or ~, or two of [ and quotes.
+// kind: [[AB is [-A-B, the first [ going as settledSquare says. So do the marks after the capitals before the longest
+// closing marks that signedClosing takes, but a dot: AB~ is A-B-~, AB)". is A-B-)".; they are written before the rest
+// of the closing marks (expanded). The word is bare when no quote or ~ stands before it and its closing marks are an
+// abbreviation's, a quote perhaps at their end; marked when the marks before it have a ' or ~, or two of [ and quotes.
 func (address *address) spelledEntry(token string, run bool) (datapack.Word, bool) {
 	opening, word, closing := parted(token)
 	if squares := strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("); len(squares) >= 2 &&
 		strings.Trim(squares, "[") == "" {
 		opening, word = opening[:len(opening)-len(squares)+1], squares[1:]+word
 	}
+	signs := 0
+	for !signedClosing(closing[signs:]) {
+		signs++
+	}
 	letters := strings.TrimLeft(word, "[")
-	abbreviated := abbreviatedWord(word)
-	if len(letters) < 2 || len(word) > 4 && !abbreviated || !capitalLetters(letters) ||
+	abbreviated := signs == 0 && abbreviatedWord(word)
+	if len(letters) < 2 || len(word)+signs > 4 && !abbreviated || !capitalLetters(letters) ||
 		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
-		!listOpening(opening, true) || !plainClosing(closing) {
+		!listOpening(opening, true) || strings.Contains(closing[:signs], ".") {
 		return datapack.Word{}, false
 	}
+	word, closing = word+closing[:signs], closing[signs:]
 	bare := !strings.ContainsAny(opening, "\"'~") &&
 		strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
 	marked := strings.ContainsAny(opening, "'~") || strings.Count(opening, "[")+strings.Count(opening, "\"") >= 2
@@ -259,6 +267,16 @@ func (address *address) spelledEntry(token string, run bool) (datapack.Word, boo
 		return datapack.Word{}, false
 	}
 	return datapack.Word{Word: word, Expansion: written, Kind: datapack.PlainWord}, true
+}
+
+// signedClosing is whether marks after a word in capitals and the marks spelled with it are closing marks a plain
+// list word may stand before: a quote or a star and then anything, or brackets, ! ? : ; commas, dots and kept spaces,
+// a quote at their end.
+func signedClosing(closing string) bool {
+	if closing != "" && strings.IndexByte("\"'*", closing[0]) >= 0 {
+		return true
+	}
+	return strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
 }
 
 // abbreviatedWord is whether a word in capitals is spaced as a plain list word even when the letter rules keep it

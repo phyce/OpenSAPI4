@@ -76,6 +76,11 @@ func (tables *letterTables) pieceSaid(piece string) bool {
 	return !tables.unkept[piece] && tables.saidPattern(piece, false)
 }
 
+// qStart is whether a word of capitals starts with Q before a consonant (section 3.9).
+func qStart(word string) bool {
+	return word[0] == 'Q' && consonant(word[1])
+}
+
 // finalQ is whether a word of four capitals that ends in Q or QS is said (section 3.9), and whether it ends so.
 func (tables *letterTables) finalQ(word string) (said, ends bool) {
 	var head string
@@ -93,8 +98,8 @@ func (tables *letterTables) finalQ(word string) (said, ends bool) {
 	}
 	for index := range len(head) {
 		switch {
-		case head[index] != 'Q' || word[0] == 'X':
-		case index == 0 && (len(head) == 2 || vocal(head[2]) || oneOf(head[2], "HQ")):
+		case head[index] != 'Q' || word[0] == 'X' && index > 1:
+		case index == 0 && !qStart(word) && (len(head) == 2 || vocal(head[2]) || oneOf(head[2], "HQ")):
 		case index >= 2 && head[index-1] == 'Y' && !vowel(head[index-2]):
 		default:
 			return false, true
@@ -189,8 +194,8 @@ func (tables *letterTables) said(word string) bool {
 		return false
 	case word[:2] == "LA":
 		return vocal(word[2]) || vocal(word[3])
-	case word[2:] == "QU" && !vowel(word[1]) && word[1] != 'Q',
-		(word[1:] == "QUE" || word[1:] == "QUO") && !vowel(word[0]),
+	case word[2:] == "QU" && !vowel(word[1]) && word[1] != 'Q' && !qStart(word),
+		(word[1:] == "QUE" || word[1:] == "QUO") && !vowel(word[0]) && !qStart(word),
 		word[:3] == "GNU" && (consonant(word[3]) && word[3] != 'W' || oneOf(word[3], "EOY")),
 		word[1:] == "GNU" && vowel(word[0]):
 		return true
@@ -258,7 +263,7 @@ func kew(word string) bool {
 // kewWritten is how a word of four capitals that reads its QU as KEW is written (section 3.9).
 func kewWritten(word string) string {
 	switch {
-	case word[1:3] == "QU" && vowel(word[0]):
+	case word[1:3] == "QU" && (vowel(word[0]) || word[0] == 'Q'):
 		return spelledLetter(word, 0) + "-KEW" + word[3:]
 	case word[1:3] == "QU":
 		return word[:1] + "KEW" + word[3:]
@@ -279,7 +284,7 @@ func (tables *letterTables) headSaid(word string) bool {
 			tables.firstPairs[head[:2]]
 	case vocal(head[2]) && vocal(following):
 		return false
-	case head[1:] == "QU" && !vowel(head[0]):
+	case head[1:] == "QU" && !vowel(head[0]) && head[0] != 'Q':
 		return true
 	}
 	kinds := letterKinds(head)
@@ -303,7 +308,7 @@ func (tables *letterTables) headSaid(word string) bool {
 func (tables *letterTables) tailSaid(word string) bool {
 	tail := word[1:]
 	switch {
-	case tail == "GNU":
+	case tail == "GNU", tail[1:] == "QU" && consonant(tail[0]) && tail[0] != 'Q':
 		return true
 	case vowel(tail[0]):
 		return tail[1:] == "QY" && !vowel(word[0])

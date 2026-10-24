@@ -138,19 +138,19 @@ func closes(after string, following []string) bool {
 	return last >= 0 && last <= 2 && !strings.ContainsAny(word[:last], "-/")
 }
 
-// kept is whether a part of a word beside a slash keeps it, a space following the part.
-func kept(part string) bool {
-	return keptBefore(part, " ")
+// slashKept is whether a part of a word beside a slash keeps it, a space following the part.
+func (tables *letterTables) slashKept(part string) bool {
+	return tables.slashKeptBefore(part, " ")
 }
 
-// keptBefore is whether a part of a word beside a slash keeps it, after being what follows the part: one with a small
-// letter, or of marks that don't stop it, or none, a > that starts it not counted, up to the first comma its commas
-// space. It is read as its underscores make it.
-func keptBefore(part, after string) bool {
+// slashKeptBefore is whether a part of a word beside a slash keeps it, after being what follows the part: one with a
+// small letter, or of marks that don't stop it, or none, a > that starts it not counted, up to the first comma its
+// commas space. It is read as its underscores make it, and one that lowered changes has a small letter.
+func (tables *letterTables) slashKeptBefore(part, after string) bool {
 	dotted := strings.HasPrefix(after, " ") && !strings.HasPrefix(after, "  ")
 	part, _, _ = strings.Cut(wordUnderscores(strings.TrimPrefix(part, ">"), dotted), " ")
 	return strings.ContainsFunc(part, func(character rune) bool { return character >= 'a' && character <= 'z' }) ||
-		strings.Trim(part, slashMarks) == ""
+		strings.Trim(part, slashMarks) == "" || tables.lowered(part) != ""
 }
 
 // slashes spaces each word's slashes. One that ends a word after something has no space after it, and a word they
@@ -234,7 +234,7 @@ func (address *address) slashed(word, following string, path bool, upcoming, end
 		case upcoming != "":
 			first, _, _ = strings.Cut(upcoming, "/")
 		}
-		if !kept(first) && !(rest[0] == '>' && first != "" && digit(first[0])) {
+		if !address.letters.slashKept(first) && !(rest[0] == '>' && first != "" && digit(first[0])) {
 			return output + strings.ReplaceAll(after, "/", "/ ")
 		}
 	}
@@ -248,12 +248,12 @@ func (address *address) slashed(word, following string, path bool, upcoming, end
 		return output + address.goneBefore(parts[0]) + strings.Repeat(" /", len(parts)-2) + " " + parts[len(parts)-1]
 	}
 	left, right := parts[0], parts[1]
-	rightKept := following != "" && kept(following)
+	rightKept := following != "" && address.letters.slashKept(following)
 	if right != "" {
-		rightKept = keptBefore(right, ending)
+		rightKept = address.letters.slashKeptBefore(right, ending)
 	}
 	switch {
-	case !path && (!kept(left) || !rightKept):
+	case !path && (!address.letters.slashKept(left) || !rightKept):
 		return output + address.goneBefore(left) + " " + runBreak + " " + right
 	case left != "" && strings.Trim(left, "!?") == "":
 		return output + left + " / " + right
@@ -296,8 +296,9 @@ func (address *address) goneSlash(part string) string {
 }
 
 // commasAndUnderscores spaces the commas of a paragraph's words and reads their underscores. A slash's mark that
-// ends a word stays at its end.
-func commasAndUnderscores(paragraph string) string {
+// ends a word stays at its end. When lowered changes a word's first piece, that piece is the whole word, before the
+// pieces after it: XB,. is x B,. . (section 3.9).
+func (tables *letterTables) commasAndUnderscores(paragraph string) string {
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
 		mark := ""
@@ -305,7 +306,11 @@ func commasAndUnderscores(paragraph string) string {
 			word, mark = word[:len(word)-1], word[len(word)-1:]
 		}
 		dotted := index+1 < len(words) && (words[index+1] != "" || index+2 == len(words))
-		words[index] = wordUnderscores(word, dotted) + mark
+		spaced := wordUnderscores(word, dotted)
+		if first, rest, ok := strings.Cut(spaced, " "); ok && tables.lowered(first) != "" {
+			spaced = word + " " + rest
+		}
+		words[index] = spaced + mark
 	}
 	return strings.Join(words, " ")
 }
@@ -416,7 +421,7 @@ func (address *address) loosened(paragraph string) string {
 			stem := before[:len(before)-2]
 			stem = stem[strings.LastIndexByte(stem, ',')+1:]
 			goes = address.plainKind(stem+".", false) != wordKind && !strings.Contains(after, "/") &&
-				!(kept(before) && kept(cmp.Or(after, following)))
+				!(address.letters.slashKept(before) && address.letters.slashKept(cmp.Or(after, following)))
 		}
 		if goes {
 			words[index] = before

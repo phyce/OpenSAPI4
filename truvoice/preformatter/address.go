@@ -431,7 +431,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	paragraph = address.numberDots(address.dotRuns(address.loosened(commas(paragraph, true)), long))
 	paragraph = startDots(namedMarks(paragraph))
 	paragraph = address.junked(address.slashes(dashes(pluses(paragraph))))
-	paragraph = cappedTerminals(commasAndUnderscores(paragraph))
+	paragraph = cappedTerminals(address.letters.commasAndUnderscores(paragraph))
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
 	parts, breaks := unbroken(words(paragraph))
@@ -840,7 +840,7 @@ func (address *address) dotPair(built, following, alone string, split bool) stri
 	wordy := kind == wordKind || kind == functionKind && run > closingRoom ||
 		strings.HasSuffix(before, "\"") && len(core(before+".")) > 1
 	entry, listed := address.listed(before+".", 1, "")
-	if wordy && (splits(following) || strings.HasPrefix(following, "/") && kept(before+".")) ||
+	if wordy && (splits(following) || strings.HasPrefix(following, "/") && address.letters.slashKept(before+".")) ||
 		strings.HasPrefix(following, "/") && listed && !plainListed(entry.Kind) {
 		return "." + keptSpace
 	}
@@ -1375,8 +1375,12 @@ func (address *address) dotKind(token string, initial, closed bool) kind {
 }
 
 // plainKind is what a word ending in a dot is by its characters before the dot. A quoted single character with
-// closing marks before its quote and a word that a dropped dot ends are empty.
+// closing marks before its quote and a word that a dropped dot ends are empty, and a word that lowered changes is a
+// letter, as its small first letter is.
 func (address *address) plainKind(token string, initial bool) kind {
+	if address.letters.lowered(token) != "" {
+		return letterKind
+	}
 	if strings.HasSuffix(token, "\".") {
 		quoted := strings.TrimLeft(token[:len(token)-2], "([")
 		letter := strings.TrimLeft(strings.TrimRight(token[:len(token)-2], ".!?)]:;"+droppedDot), "([")
@@ -1684,12 +1688,17 @@ func plainClosing(closing string) bool {
 // dot: none before more marks, two for a kept space, and slash (one, two after a kept space) when the slash after the
 // word went or was dropped; with marks on both sides of the dot, a quote after it aside, the next word doesn't keep
 // it. A ! or ? among its marks makes the gap two, and an expansion that ends in a dot takes none right after it. After
-// a slash that went or was dropped one space follows. A word that took the [ of its opening (spelledEntry) is written
-// after the rest of them.
+// a slash that went or was dropped one space follows. A word that took the [ of its opening or the marks before its
+// closing marks (spelledEntry) is written after the rest of the first and before the rest of the second.
 func (tables *letterTables) expanded(entry datapack.Word, token, following string, spaces int, last bool, gap,
 	slash int) (string, int) {
 	opening, _, closing := parted(token)
 	opening = opening[:len(opening)-(len(entry.Word)-len(strings.TrimLeft(entry.Word, "[")))]
+	end := len(entry.Word)
+	for end > 0 && !alphanumeric(entry.Word[end-1]) {
+		end--
+	}
+	closing = closing[len(entry.Word)-end:]
 	written := opening + entry.Expansion + closing
 	dot := strings.IndexByte(closing, '.')
 	switch {
