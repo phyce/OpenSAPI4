@@ -26,11 +26,13 @@ func newLetterTables(letters *datapack.Letters) letterTables {
 		pieces: letters.Pieces, longHeads: letters.LongHeads, longTails: letters.LongTails, unsplit: letters.Unsplit}
 }
 
-// lowered is a word in capitals of two letters or more with no opening marks, before any marks, that starts with Q, X
-// or Z before a consonant (not ZW, and not of Roman numerals' letters only), with that letter small and a space after
-// it (section 3.9); "" for any other word and a respelled one without closing marks, which is read or respelled and
-// counts as capitals beside other words. A word is tested by its first piece as its commas space it, the rest of it
-// written after that piece: XB,dog is x B,dog.
+// lowered is a word in capitals of two letters or more with no opening marks, before nothing or a character that
+// isn't a letter and then anything, that starts with Q, X or Z before a consonant (not ZW, and not of Roman numerals'
+// letters only), with that letter small and a space after it (section 3.9); "" for any other word and a respelled one
+// without closing marks, which is read or respelled and counts as capitals beside other words. A word is tested by its
+// first piece as its commas space it, the rest of it written after that piece: XB,dog is x B,dog and XB~dog x B~dog.
+// The Roman numerals' test reads the word with the digits, the characters from @ to ~ and those from 128 up of the
+// rest of the piece: XCC is X-C-C and XCC$ X-C-C-$, but XCC~ and XCC5 are x CC~ and x CC5.
 func (tables *letterTables) lowered(token string) string {
 	piece, _, _ := strings.Cut(wordCommas(token, false), " ")
 	letters := 0
@@ -39,12 +41,24 @@ func (tables *letterTables) lowered(token string) string {
 	}
 	word, closing := piece[:letters], piece[letters:]
 	_, respelled := tables.respelled[word]
-	if len(word) < 2 || hasAlphanumeric(closing) ||
+	if len(word) < 2 || closing != "" && small(closing[0]) ||
 		strings.IndexByte("QXZ", word[0]) < 0 || !consonant(word[1]) || word[:2] == "ZW" ||
-		strings.Trim(word, "CDILMVX") == "" || respelled && closing == "" {
+		strings.Trim(romanTested(word, closing), "CDILMVX") == "" || respelled && closing == "" {
 		return ""
 	}
 	return lower(token[:1]) + " " + token[1:]
+}
+
+// romanTested is a word in capitals with the characters of the rest of its piece that the Roman numerals' test reads:
+// digits, the characters from @ to ~ and those from 128 up.
+func romanTested(word, rest string) string {
+	tested := []byte(word)
+	for index := range len(rest) {
+		if character := rest[index]; digit(character) || character >= '@' && character != 0x7f {
+			tested = append(tested, character)
+		}
+	}
+	return string(tested)
 }
 
 // counted is whether a word counts in a run of words in capitals (section 3.9): one with two capitals or more, as
@@ -115,10 +129,18 @@ func vowel(letter byte) bool {
 	return strings.IndexByte("AEIOU", letter) >= 0
 }
 
-// consonant is whether a character is a capital other than a vowel or Y: a [ in a word of capitals is none (section
-// 3.9).
+// consonant is whether a character is a letter other than a vowel or Y, small or capital: a [ or a sign in a word of
+// capitals is none, and so is a letter with an accent (section 3.9).
 func consonant(letter byte) bool {
-	return upper(letter) && !vowel(letter) && letter != 'Y'
+	return alphabetic(letter) && !vocal(letter)
+}
+
+// upperCase is a small letter's capital, and any other character itself.
+func upperCase(character byte) byte {
+	if small(character) {
+		return character - 'a' + 'A'
+	}
+	return character
 }
 
 // spelled is a word in capitals letter by letter with dashes between them: an I that starts it is eye, if start is
@@ -203,15 +225,16 @@ func (tables *letterTables) saidPattern(word string, bare bool) bool {
 
 // written is how a word in capitals of two letters or more is written (section 3.9), run being whether it stands in
 // a run of words in capitals and bare and marked as spelledEntry says. In a run a respelled word is respelled only
-// when it is said in part, with small letters: CITR, respelled CIT-R, stays CITR.
+// when it is said in part, with small letters, or has five letters or more: CITR, respelled CIT-R, stays CITR, TROFF
+// is T-ROFF. Any other in a run stays as it is but one that placed says is written as outside one.
 func (tables *letterTables) written(word string, run, bare, marked bool) string {
-	if respelled, ok := tables.respelled[word]; ok && (!run || hasSmall(respelled)) {
+	if respelled, ok := tables.respelled[word]; ok && (!run || len(word) >= 5 || hasSmall(respelled)) {
 		return respelled
 	}
 	switch {
 	case tables.spelled[word] || marked && tables.markedSpelled[word]:
 		return spelled(word, true, true)
-	case run:
+	case run && !placed(word):
 		return word
 	case len(word) == 2 && tables.twoLetters[word]:
 		return word
@@ -221,58 +244,77 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 		return tables.fourLetters(word)
 	case len(word) >= 5:
 		return tables.longLetters(word)
+	case !alphabetic(word[2]) && tables.signedSaid(word[:2]) && word[:2] != "XO" && word[:2] != "XU":
+		return word
 	case word[:2] == "QU" && strings.IndexByte("AEIOUSW", word[2]) < 0:
 		return "KEW" + word[2:]
 	case tables.keeps(word, bare):
 		return word
 	case word[1:] == "PC":
 		return spelled(word[:1], true, false) + "-PC"
-	case tables.twoLetters[word[:2]] && vowel(word[0]) && !vowel(word[1]) && consonant(word[2]) &&
-		(word[2] != 'S' || !bare) && !tables.onsets[word[1:]]:
+	case tables.twoLetters[word[:2]] && vowel(word[0]) && !vowel(word[1]) &&
+		(consonant(word[2]) || !alphabetic(word[2])) && (word[2] != 'S' || !bare) && !tables.onsets[word[1:]]:
 		return word[:2] + "-" + word[2:]
 	}
 	return spelled(word, true, true)
 }
 
-// spelledEntry is a word whose word in capitals of two to four letters, or of five capitals or more alone, the letter
-// rules change, or whose word in capitals is abbreviated, with a plain list word's marks around it, as a plain list
-// word whose expansion is what they write, the word itself for one of five letters or more with signs or a [ (section
-// 3.9). A function word with the marks that tilded reads and a word that lowered changes are none. The [ after the
-// first of the opening brackets belong to the word, letters of no kind: [[AB is [-A-B, the first [ going as
-// settledSquare says. So do the marks after the capitals before the longest closing marks that signedClosing takes,
-// but a dot: AB~ is A-B-~, AB)". is A-B-)".; they are written before the rest of the closing marks (expanded). The
-// word is bare when no quote or ~ stands before it and its closing marks are an abbreviation's, a quote perhaps at
-// their end; marked when the marks before it have a ' or ~, or two of [ and quotes.
-func (address *address) spelledEntry(token string, run bool) (datapack.Word, bool) {
+// placed is whether a word in capitals in a run is written as outside one (section 3.9): one that starts with NY, LA,
+// UK, or US but before E, H or U (BCD BCD NYAB is NY-AB, USB is U-S-B).
+func placed(word string) bool {
+	switch {
+	case strings.HasPrefix(word, "NY"), strings.HasPrefix(word, "LA"), strings.HasPrefix(word, "UK"):
+		return true
+	}
+	return strings.HasPrefix(word, "US") && (len(word) == 2 || !oneOf(word[2], "EHU"))
+}
+
+// spelledEntry is a word whose word in capitals of two letters or more the letter rules change, or whose word in
+// capitals is abbreviated, with a plain list word's marks around it, as a plain list word whose expansion is what they
+// write (section 3.9), and the closing marks written after it. A function word with the marks that tilded reads and a
+// word that lowered changes are none. The [ after the first of the opening brackets belong to the word, letters of no
+// kind: [[AB is [-A-B, the first [ going as settledSquare says. So do the marks after the capitals before the longest
+// closing marks that signedClosing takes, letters of no kind too: AB~ is A-B-~, AB)". is A-B-)". and USKN~ is
+// U-S-KN~. A word that starts with five capitals or more also takes any letters after its marks (EDULC~dog is
+// ed-yoo-LC~dog) and its marks may hold a dot (LASRB.~ is L-A-S-R-B-.-~); a shorter one with a dot in them is none. A
+// digit ends the word and its marks, and it and what follows are written after it as they are, a quote, ' or * before
+// the digit going with it: BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it
+// and its closing marks are an abbreviation's, a quote perhaps at their end; marked when the marks before it have a '
+// or ~, or two of [ and quotes.
+func (address *address) spelledEntry(token string, run bool) (datapack.Word, string, bool) {
 	opening, word, closing := parted(token)
 	if squares := strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("); len(squares) >= 2 &&
 		strings.Trim(squares, "[") == "" {
 		opening, word = opening[:len(opening)-len(squares)+1], squares[1:]+word
 	}
+	if cut := strings.IndexAny(word, "0123456789"); cut >= 0 {
+		stem := word[:cut]
+		for stem != "" && !alphabetic(stem[len(stem)-1]) {
+			stem = stem[:len(stem)-1]
+		}
+		word, closing = stem, word[len(stem):]+closing
+	}
 	signs := 0
-	for !signedClosing(closing[signs:]) {
+	for !signedClosing(closing[signs:]) && !digit(closing[signs]) {
 		signs++
 	}
 	letters := strings.TrimLeft(word, "[")
-	abbreviated := signs == 0 && abbreviatedWord(word)
-	long := signs == 0 && len(word) >= 5 && capitalLetters(word)
-	if len(letters) < 2 || len(word)+signs > 4 && !abbreviated && !long || !capitalLetters(letters) ||
-		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
-		!listOpening(opening, true) || strings.Contains(closing[:signs], ".") {
-		return datapack.Word{}, false
+	abbreviated := abbreviatedWord(word + closing[:signs])
+	long := len(letters) >= 5 && capitalLetters(letters[:5])
+	if !(len(letters) >= 2 && capitalLetters(letters) || long) || address.letters.lowered(token) != "" ||
+		address.functionWord(word) && tildeMarks(opening, closing) || !listOpening(opening, true) ||
+		strings.Contains(closing[:signs], ".") && !long {
+		return datapack.Word{}, "", false
 	}
 	word, closing = word+closing[:signs], closing[signs:]
 	bare := !strings.ContainsAny(opening, "\"'~") &&
 		strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
 	marked := strings.ContainsAny(opening, "'~") || strings.Count(opening, "[")+strings.Count(opening, "\"") >= 2
-	written := word
-	if len(word) <= 4 || long {
-		written = address.letters.written(word, run, bare, marked)
-	}
+	written := address.letters.written(word, run, bare, marked)
 	if written == word && !abbreviated {
-		return datapack.Word{}, false
+		return datapack.Word{}, "", false
 	}
-	return datapack.Word{Word: word, Expansion: written, Kind: datapack.PlainWord}, true
+	return datapack.Word{Word: word, Expansion: written, Kind: datapack.PlainWord}, closing, true
 }
 
 // signedClosing is whether marks after a word in capitals and the marks spelled with it are closing marks a plain
@@ -286,7 +328,7 @@ func signedClosing(closing string) bool {
 }
 
 // abbreviatedWord is whether a word in capitals is spaced as a plain list word even when the letter rules keep it
-// (section 3.9): one that starts with LA or ends in LA, NY or US.
+// (section 3.9): one that starts with LA or ends in LA, NY or US, the [ and marks spelledEntry gives it included.
 func abbreviatedWord(word string) bool {
 	return strings.HasPrefix(word, "LA") || strings.HasSuffix(word, "LA") || strings.HasSuffix(word, "NY") ||
 		strings.HasSuffix(word, "US")

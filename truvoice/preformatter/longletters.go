@@ -29,17 +29,20 @@ func (tables *letterTables) tailed(word, tail string) bool {
 	})
 }
 
-// longLetters is how a word of five capitals or more that no list has, not in a run, is written (section 3.9).
+// longLetters is how a word of five capitals or more that no list has, not in a run, is written (section 3.9), with
+// the signs and letters after them that spelledEntry gives it: the letters after NY and LA are tested small or
+// capital (NYMVK~dog is NY-MVK~dog, LASRB$a is kept).
 func (tables *letterTables) longLetters(word string) string {
 	start, rest, end := word[:2], word[2:], word[len(word)-2:]
+	vocalRest := strings.ContainsAny(rest, "AEIOUYaeiouy")
 	switch {
 	case tables.kept[word]:
 		return word
-	case start == "NY" && strings.ContainsAny(rest, "AEIOUY"):
+	case start == "NY" && vocalRest:
 		return "NY-" + rest
 	case start == "NY":
 		return spelled(word, true, true)
-	case start == "LA" && strings.Trim(rest, "BCDFGHJKLMNPQRSTVWXZ") == "":
+	case start == "LA" && !vocalRest:
 		return spelled(word, true, true)
 	case start == "LA" || end == "LA" || end == "NY":
 		return word

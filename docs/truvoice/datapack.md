@@ -282,13 +282,13 @@ The **address** words:
 | Field | Values | Meaning |
 |---|---|---|
 | `functionWords` | 59 words | The function words, after which a dot ends no sentence and which a sentence's start skips |
-| `abbreviations` | 163 words | The abbreviations, after whose dot no sentence starts and one space follows |
+| `abbreviations` | 168 words | The abbreviations, after whose dot no sentence starts and one space follows |
 | `spacedAbbreviations` | 2 words | The abbreviations that get two spaces after their dot before a capitalized word, as other words do |
 | `words` | Array of objects | The list words, written out ([preformatter.md](preformatter.md) §3.5), below |
 | `numberWords` | 19 words | The words whose dot gets a lone dot after it before two spaces or more (§3.5) |
 | `headers` | Array of objects | The e-mail headers ([preformatter.md](preformatter.md) §3.7), below |
 | `messageStart` | Word | What a message header line writes where a message starts (§3.8) |
-| `letters` | Object | The tables that write words in capitals of two to five letters ([preformatter.md](preformatter.md) §3.9), below |
+| `letters` | Object | The tables that write words in capitals of two letters or more ([preformatter.md](preformatter.md) §3.9), below |
 
 Each function word, abbreviation and number word is one lower-case letter or more, `a` to `z`, and each spaced abbreviation is one of the abbreviations. The message start is printable ASCII, one character or more.
 
@@ -346,4 +346,4 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `unsplit` | Words of 4 to 9 letters | The words that keep a piece, head or tail they start or end with from being said apart |
 | `readings` | Object | The words read as abbreviations near a loud word: each word's reading |
 
-Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to six capitals and a reading's word two to four, and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.
+Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to six capitals and a reading's word two to nine, and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.

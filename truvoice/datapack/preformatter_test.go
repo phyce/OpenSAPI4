@@ -20,13 +20,13 @@ func TestPreFormatter(t *testing.T) {
 		t.Errorf("spreadsheet words %+v", words)
 	}
 	address := preFormatter.Address
-	if len(address.FunctionWords) != 59 || address.FunctionWords[0] != "about" || len(address.Abbreviations) != 163 ||
+	if len(address.FunctionWords) != 59 || address.FunctionWords[0] != "about" || len(address.Abbreviations) != 168 ||
 		address.Abbreviations[0] != "abil" || len(address.SpacedAbbreviations) != 2 {
 		t.Errorf("address words %d function words, %d abbreviations, %d spaced", len(address.FunctionWords),
 			len(address.Abbreviations), len(address.SpacedAbbreviations))
 	}
-	first, mister, all := address.Words[0], address.Words[218], address.Words[3]
-	if len(address.Words) != 375 || first.Word != "Acct" || first.Expansion != "Account" ||
+	first, mister, all := address.Words[0], address.Words[220], address.Words[3]
+	if len(address.Words) != 380 || first.Word != "Acct" || first.Expansion != "Account" ||
 		first.Kind != datapack.AbbreviationWord || first.Dotted || mister.Word != "Mr" || mister.Expansion != "Mister" ||
 		mister.Kind != datapack.TitleWord || !mister.Dotted || all.Word != "ALL" || all.Expansion != "~ALL" ||
 		all.Kind != datapack.CapitalWord {
@@ -55,7 +55,7 @@ func TestPreFormatter(t *testing.T) {
 		len(letters.Unsplit) != 101 || letters.Unsplit[0] != "ABUSER" {
 		t.Errorf("long-letter tables %+v", letters)
 	}
-	if len(letters.Readings) != 105 || letters.Readings["PM"] != "P.m." || letters.Readings["XMAS"] != "Christmas" {
+	if len(letters.Readings) != 125 || letters.Readings["PM"] != "P.m." || letters.Readings["SEPTEMBER"] != "September" {
 		t.Errorf("readings %v", letters.Readings)
 	}
 }

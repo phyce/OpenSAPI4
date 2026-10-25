@@ -414,7 +414,7 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		name    string
 		words   map[string]string
 		longest int
-	}{{"respelled", description.Respelled, 6}, {"readings", description.Readings, 4}} {
+	}{{"respelled", description.Respelled, 6}, {"readings", description.Readings, 9}} {
 		if len(table.words) == 0 {
 			return nil, fmt.Errorf("address letters %s is empty", table.name)
 		}

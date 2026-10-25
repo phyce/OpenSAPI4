@@ -18,8 +18,9 @@ func oneOf(letter byte, letters string) bool {
 	return strings.IndexByte(letters, letter) >= 0
 }
 
+// vocal is whether a letter is a vowel or Y, small or capital.
 func vocal(letter byte) bool {
-	return vowel(letter) || letter == 'Y'
+	return oneOf(upperCase(letter), "AEIOUY")
 }
 
 // letterKinds is a word's letters as V for a vowel, Y for a Y, C for a consonant and X for a [.
@@ -181,6 +182,35 @@ func (tables *letterTables) closed(word string) bool {
 	return tables.coda(pair, word[1])
 }
 
+// signedSaid is whether two or three capitals before a sign, the last of a word of four, are said with it, the sign
+// after them with no dash (section 3.9): BAH~ and JA~ are said, BAB~ is BAB-~.
+func (tables *letterTables) signedSaid(letters string) bool {
+	if len(letters) == 2 {
+		return oneOf(letters[0], "JX") && vowel(letters[1]) || oneOf(letters[1], "JX") && vowel(letters[0]) ||
+			letters == "QU"
+	}
+	first, second, third := letters[0], letters[1], letters[2]
+	switch {
+	case oneOf(first, "JX") && vowel(second):
+		return !(first == 'J' && third == 'Q')
+	case letters[1:] == "WH" || letters[1:] == "WR":
+		return oneOf(first, "AEO")
+	case third == 'Y':
+		return vowel(second) && consonant(first)
+	case oneOf(third, "JX"):
+		return vowel(second) && (!vowel(first) || tables.firstPairs[letters[:2]])
+	case third == 'H':
+		return vocal(second) && !vowel(first)
+	case third == 'W':
+		return oneOf(second, "AEO") && !vowel(first)
+	case third == 'Q':
+		return second == 'Y' && consonant(first) && first != 'Q'
+	case letters[1:] == "QU":
+		return !vowel(first) && first != 'Q'
+	}
+	return letters[:2] == "QU" && vowel(third)
+}
+
 // said is whether a word of four capitals is said as a word (section 3.9).
 func (tables *letterTables) said(word string) bool {
 	switch {
@@ -215,6 +245,8 @@ func (tables *letterTables) said(word string) bool {
 		word[3] == 'W' && (oneOf(word[2], "IU") || word[2] == 'Y' && (!vowel(word[1]) || word[0] == 'Y')),
 		tables.qInside(word) && word[0] != 'X', word[2:] == "YY", tables.unkept[word[1:]]:
 		return false
+	case !alphabetic(word[3]):
+		return tables.signedSaid(word[:3])
 	}
 	switch soundKinds(word) {
 	case "CVCC":
@@ -252,7 +284,8 @@ func kew(word string) bool {
 		if word[2:] == "LA" || word[2:] == "NY" || word[2:] == "PC" {
 			return false
 		}
-		return consonant(third) && third != 'W' || third == 'W' && vocal(fourth) || third == 'Y' && fourth != 'Y'
+		return consonant(third) && third != 'W' || third == 'W' && (vocal(fourth) || !alphabetic(fourth)) ||
+			third == 'Y' && fourth != 'Y'
 	case word[1:3] == "QU":
 		fourth := word[3]
 		return fourth == 'Y' || consonant(fourth) && !oneOf(fourth, "SW") || fourth == 'W' && word[0] == 'W'
@@ -314,6 +347,10 @@ func (tables *letterTables) tailSaid(word string) bool {
 		return tail[1:] == "QY" && !vowel(word[0])
 	case tail[0] == 'Q' && oneOf(tail[1], "AEIO") || tail[0] == 'Y' && !vocal(tail[1]):
 		return false
+	case !alphabetic(tail[2]) && (tail[:2] == "WH" || tail[:2] == "WR"):
+		return word[0] == 'Y'
+	case !alphabetic(tail[2]):
+		return tables.signedSaid(tail[:2])
 	case letterKinds(tail) == "CCC":
 		return word[0] == 'Y' && (tail == "SPH" || tail[:2] == "WH" || tail[:2] == "WR")
 	}
@@ -322,6 +359,9 @@ func (tables *letterTables) tailSaid(word string) bool {
 
 // restSaid is whether the three letters after a first Q, or an X before O or U, are said as a word (section 3.9).
 func (tables *letterTables) restSaid(rest string) bool {
+	if !alphabetic(rest[2]) {
+		return tables.signedSaid(rest[:2])
+	}
 	switch letterKinds(rest) {
 	case "VCV":
 		return rest[1] != 'Q' || rest[2] == 'U'
@@ -340,7 +380,7 @@ func (tables *letterTables) restSaid(rest string) bool {
 // restLetters is how the three letters after a first Q, or an X before O or U, that aren't said are written
 // (section 3.9).
 func (tables *letterTables) restLetters(rest string) string {
-	if tables.twoLetters[rest[:2]] && consonant(rest[2]) && !tables.onsets[rest[1:]] {
+	if tables.twoLetters[rest[:2]] && (consonant(rest[2]) || !alphabetic(rest[2])) && !tables.onsets[rest[1:]] {
 		return rest[:2] + "-" + rest[2:]
 	}
 	return spelled(rest, false, true)

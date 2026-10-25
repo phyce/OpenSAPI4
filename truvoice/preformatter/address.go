@@ -617,7 +617,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		following = unheld(following)
 		near := wordsNear(capitals, index, 2)
 		entry, ok := address.listed(token, followingSpaces, following)
-		opening, _, _ := parted(token)
+		opening, _, closing := parted(token)
 		switch {
 		case ok && spread && entry.Dotted:
 			ok = false
@@ -628,7 +628,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			entry, ok = address.reading(token)
 		}
 		if !ok {
-			entry, ok = address.spelledEntry(token, runs[index])
+			entry, closing, ok = address.spelledEntry(token, runs[index])
 		}
 		if ok {
 			slash := 0
@@ -644,8 +644,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			case holds && spread:
 				held, slash = " /", 2
 			}
-			token, gap = address.letters.expanded(entry, token, following, followingSpaces, later >= len(parts), gap,
-				slash)
+			token, gap = address.letters.expanded(entry, token, closing, following, followingSpaces,
+				later >= len(parts), gap, slash)
 			if !plainListed(entry.Kind) {
 				joined = 0
 			}
@@ -1688,17 +1688,13 @@ func plainClosing(closing string) bool {
 // dot: none before more marks, two for a kept space, and slash (one, two after a kept space) when the slash after the
 // word went or was dropped; with marks on both sides of the dot, a quote after it aside, the next word doesn't keep
 // it. A ! or ? among its marks makes the gap two, and an expansion that ends in a dot takes none right after it. After
-// a slash that went or was dropped one space follows. A word that took the [ of its opening or the marks before its
-// closing marks (spelledEntry) is written after the rest of the first and before the rest of the second.
-func (tables *letterTables) expanded(entry datapack.Word, token, following string, spaces int, last bool, gap,
-	slash int) (string, int) {
-	opening, _, closing := parted(token)
+// a slash that went or was dropped one space follows. Closing is the marks written after the word: a word that took
+// the [ of its opening, or the marks and digits after its capitals (spelledEntry), is written after the rest of the
+// first and before the rest of these.
+func (tables *letterTables) expanded(entry datapack.Word, token, closing, following string, spaces int, last bool,
+	gap, slash int) (string, int) {
+	opening, _, _ := parted(token)
 	opening = opening[:len(opening)-(len(entry.Word)-len(strings.TrimLeft(entry.Word, "[")))]
-	end := len(entry.Word)
-	for end > 0 && !alphanumeric(entry.Word[end-1]) {
-		end--
-	}
-	closing = closing[len(entry.Word)-end:]
 	written := opening + entry.Expansion + closing
 	dot := strings.IndexByte(closing, '.')
 	switch {
