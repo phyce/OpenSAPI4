@@ -73,18 +73,207 @@ func (tables *letterTables) counted(token string) bool {
 	return capitals >= 2
 }
 
-// unbroken is a paragraph's words without the runBreaks among them, and which words a runBreak stood before.
-func unbroken(parts []part) ([]part, map[int]bool) {
+// unbroken is a paragraph's words without the runBreaks and openingGones among them, which words a runBreak stood
+// before and which an openingGone did. A word after an openingGone has the spaces before the openingGone in place of
+// its first space.
+func unbroken(parts []part) ([]part, map[int]bool, map[int]bool) {
 	kept := parts[:0]
-	breaks := map[int]bool{}
+	breaks, opened := map[int]bool{}, map[int]bool{}
+	before, carried := "", false
 	for _, part := range parts {
-		if part.token == runBreak {
+		switch part.token {
+		case runBreak:
 			breaks[len(kept)] = true
 			continue
+		case openingGone:
+			opened[len(kept)] = true
+			before, carried = part.spaces, true
+			continue
 		}
+		if carried && strings.HasPrefix(part.spaces, " ") {
+			part.spaces = before + part.spaces[1:]
+		}
+		carried = false
 		kept = append(kept, part)
 	}
-	return kept, breaks
+	return kept, breaks, opened
+}
+
+// runLetter is a single letter of a run (section 3.10): the ( before it, if one does, the letter and the closing marks
+// after it.
+type runLetter struct {
+	opening string
+	letter  byte
+	closing string
+}
+
+// readRunLetter reads a word as a single letter of a run: a capital or small letter, a > and a ( perhaps before it and
+// closing marks after it.
+func readRunLetter(token string) (runLetter, bool) {
+	rest := strings.TrimPrefix(token, ">")
+	opening := ""
+	if strings.HasPrefix(rest, "(") {
+		opening, rest = "(", rest[1:]
+	}
+	if rest == "" || !alphabetic(rest[0]) || !closingOnly(rest[1:]) {
+		return runLetter{}, false
+	}
+	return runLetter{opening, rest[0], rest[1:]}, true
+}
+
+// closingOnly is whether marks are closing marks only: brackets, ! ? : ; commas and dots, a quote perhaps at their end.
+func closingOnly(marks string) bool {
+	return strings.Trim(strings.TrimSuffix(marks, "\""), ")]!?:;,.") == ""
+}
+
+// oneCharacter is whether a word is one character, a > not before a digit and a ( perhaps before it and closing marks
+// after it.
+func oneCharacter(token string) bool {
+	candidates := []string{token}
+	if strings.HasPrefix(token, ">") && (len(token) == 1 || !digit(token[1])) {
+		candidates = append(candidates, token[1:])
+	}
+	for _, candidate := range candidates {
+		if strings.HasPrefix(candidate, "(") && len(candidate) >= 2 && closingOnly(candidate[2:]) ||
+			candidate != "" && closingOnly(candidate[1:]) {
+			return true
+		}
+	}
+	return false
+}
+
+// letterRuns writes each run of three single letters or more as one word (section 3.10). A letter of a run is a word
+// of its own that readRunLetter reads, with no cut space before or after it, not cut by a closing run, and not before
+// a runBreak or a word of ! and ? only, nor, with closing marks, before a word that is oneCharacter. Closing marks end
+// a run, and so does an openingGone before the next letter, which may start one. The letters before the last are
+// written as their (, and the last as its (, a ~, the run's letters and its closing marks, and is lettered. A word
+// after letters that went is dropped: two spaces stand before it and it starts a new run of words in capitals; after
+// a single letter that went at the paragraph's start it has one space and isn't dropped, but still starts a new run.
+// Each word keeps its index before the letters were joined as its slot. It gives the words, the runBreaks and the
+// openingGones as they then stand, and the indexes the letters of runs had.
+func letterRuns(parts []part, breaks, opened map[int]bool) ([]part, map[int]bool, map[int]bool, map[int]bool) {
+	letterAt := func(index int) (runLetter, bool) {
+		part := parts[index]
+		next := index+1 < len(parts)
+		if part.spaces == cutSpace || part.whole != "" || breaks[index+1] ||
+			next && (parts[index+1].spaces == cutSpace || terminal(parts[index+1].token)) {
+			return runLetter{}, false
+		}
+		letter, ok := readRunLetter(part.token)
+		if ok && letter.closing != "" && next && oneCharacter(parts[index+1].token) {
+			return runLetter{}, false
+		}
+		return letter, ok
+	}
+	written := map[int]string{}
+	for index := 0; index < len(parts); {
+		start := index
+		var run []runLetter
+		for index < len(parts) {
+			letter, ok := letterAt(index)
+			if !ok {
+				break
+			}
+			run = append(run, letter)
+			index++
+			if letter.closing != "" || opened[index] {
+				break
+			}
+		}
+		if len(run) == 0 {
+			index++
+			continue
+		}
+		if len(run) < 3 {
+			continue
+		}
+		letters := make([]byte, len(run))
+		for position, letter := range run {
+			written[start+position] = letter.opening
+			letters[position] = letter.letter
+		}
+		last := run[len(run)-1]
+		written[start+len(run)-1] = last.opening + "~" + string(letters) + last.closing
+	}
+	kept := parts[:0]
+	keptBreaks, keptOpened := map[int]bool{}, map[int]bool{}
+	dropped := 0
+	for index, part := range parts {
+		if breaks[index] {
+			keptBreaks[len(kept)] = true
+		}
+		if opened[index] {
+			keptOpened[len(kept)] = true
+		}
+		if text, ok := written[index]; ok {
+			part.token, part.lettered = text, strings.Contains(text, "~")
+		}
+		if part.token == "" {
+			dropped++
+			continue
+		}
+		if dropped > 0 {
+			keptBreaks[len(kept)] = true
+			part.spaces, part.dropped = " ", dropped > 1 || len(kept) > 0
+		}
+		part.slot = index
+		kept = append(kept, part)
+		dropped = 0
+	}
+	if breaks[len(parts)] {
+		keptBreaks[len(kept)] = true
+	}
+	inRuns := map[int]bool{}
+	for index := range written {
+		inRuns[index] = true
+	}
+	return kept, keptBreaks, keptOpened, inRuns
+}
+
+// ayeAfter is whether a word makes a capital A after it read as aye (section 3.10): one without a small letter, read
+// lowered, with something between its ayeOpening and its closing marks, but not a number between quotes and brackets
+// and before closing marks, nor a + or - before ! and ? only; or one that starts with a capital after its ayeOpening
+// and has no other capital.
+func (tables *letterTables) ayeAfter(token string) bool {
+	loud := cmp.Or(tables.lowered(token), token)
+	if !hasSmall(loud) && !closingOnly(loud[ayeOpening(loud):]) && !markedNumber(loud) &&
+		!(len(loud) >= 2 && (loud[0] == '+' || loud[0] == '-') && strings.Trim(loud[1:], "!?") == "") {
+		return true
+	}
+	word := token[ayeOpening(token):]
+	return word != "" && upper(word[0]) && !strings.ContainsFunc(word[1:], func(character rune) bool {
+		return character >= 'A' && character <= 'Z'
+	})
+}
+
+// ayeOpening is how long a word's opening marks are for ayeAfter: a > and ( perhaps, then a [ and the ( after it, or a
+// quote.
+func ayeOpening(token string) int {
+	index := 0
+	if strings.HasPrefix(token, ">") {
+		index++
+	}
+	for index < len(token) && token[index] == '(' {
+		index++
+	}
+	switch {
+	case index < len(token) && token[index] == '[':
+		index++
+		for index < len(token) && token[index] == '(' {
+			index++
+		}
+	case index < len(token) && token[index] == '"':
+		index++
+	}
+	return index
+}
+
+// markedNumber is whether a word is a number, dashes among its digits, between quotes and brackets and before closing
+// marks.
+func markedNumber(token string) bool {
+	number := strings.TrimPrefix(strings.TrimLeft(token, "\"(["), ".")
+	return number != "" && digit(number[0]) &&
+		strings.Trim(strings.TrimLeft(number, "0123456789.,-"), ")]!?:;,.\"") == ""
 }
 
 // capitalRuns is whether each word stands in a run of three counted words or more (section 3.9), each read with the
@@ -280,8 +469,9 @@ func placed(word string) bool {
 // digit ends the word and its marks, and it and what follows are written after it as they are, a quote, ' or * before
 // the digit going with it: BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it
 // and its closing marks are an abbreviation's, a quote perhaps at their end; marked when the marks before it have a '
-// or ~, or two of [ and quotes.
-func (address *address) spelledEntry(token string, run bool) (datapack.Word, string, bool) {
+// or ~, or two of [ and quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS,
+// ~SOS is ~S-O-S).
+func (address *address) spelledEntry(token string, run, lettered bool) (datapack.Word, string, bool) {
 	opening, word, closing := parted(token)
 	if squares := strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("); len(squares) >= 2 &&
 		strings.Trim(squares, "[") == "" {
@@ -309,7 +499,8 @@ func (address *address) spelledEntry(token string, run bool) (datapack.Word, str
 	word, closing = word+closing[:signs], closing[signs:]
 	bare := !strings.ContainsAny(opening, "\"'~") &&
 		strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
-	marked := strings.ContainsAny(opening, "'~") || strings.Count(opening, "[")+strings.Count(opening, "\"") >= 2
+	marked := !lettered &&
+		(strings.ContainsAny(opening, "'~") || strings.Count(opening, "[")+strings.Count(opening, "\"") >= 2)
 	written := address.letters.written(word, run, bare, marked)
 	if written == word && !abbreviated {
 		return datapack.Word{}, "", false

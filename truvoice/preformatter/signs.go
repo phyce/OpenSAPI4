@@ -196,6 +196,9 @@ func (address *address) slashes(paragraph string) string {
 			}
 			words[index] = word
 		}
+		if strings.HasPrefix(word, openingGone) {
+			word = word[min(len(openingGone)+1, len(word)):]
+		}
 		if first, _, _ := strings.Cut(word, " "); first != "" {
 			following = first
 		}
@@ -212,7 +215,8 @@ func (address *address) slashes(paragraph string) string {
 // slash that stays drops it (slashDropped after the slash), and one before a slash that went is marked (slashGone). A (
 // or > that starts the word goes with the slash after it when the part after that slash doesn't keep it (for a >, one
 // not starting with a digit), or when another slash follows; for one that ends the word, a ( reads the upcoming word's
-// part before its first slash, and goes with its slash, and nothing stays, when that word starts with a slash.
+// part before its first slash, and goes with its slash, and nothing stays, when that word starts with a slash. When the
+// part after the slash keeps neither, an openingGone stands before it (section 3.10).
 func (address *address) slashed(word, following string, path bool, upcoming, ending string) string {
 	rest := strings.TrimLeft(word, "/")
 	output := strings.Repeat("/ ", len(word)-len(rest))
@@ -235,7 +239,7 @@ func (address *address) slashed(word, following string, path bool, upcoming, end
 			first, _, _ = strings.Cut(upcoming, "/")
 		}
 		if !address.letters.slashKept(first) && !(rest[0] == '>' && first != "" && digit(first[0])) {
-			return output + strings.ReplaceAll(after, "/", "/ ")
+			return output + openingGone + " " + strings.ReplaceAll(after, "/", "/ ")
 		}
 	}
 	parts := strings.Split(rest, "/")

@@ -2,6 +2,8 @@ package preformatter
 
 import (
 	"cmp"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -37,8 +39,10 @@ const (
 	// slash after it went (section 3.5).
 	slashDropped = "\x07"
 	slashGone    = "\x08"
-	// runBreak is a word of its own where a dash or slash went, which ends a run of words in capitals (section 3.9).
-	runBreak = "\x0e"
+	// runBreak is a word of its own where a dash or slash went, which ends a run of words in capitals (section 3.9),
+	// and openingGone one where a ( or > went with the slash after it (section 3.10).
+	runBreak    = "\x0e"
+	openingGone = runBreak + "("
 	// closingRoom is how many marks a closing run keeps.
 	closingRoom = 4
 )
@@ -434,8 +438,15 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	paragraph = cappedTerminals(address.letters.commasAndUnderscores(paragraph))
 	paragraph = keptGaps(closingRuns(starred(paragraph)))
 	trailing := len(paragraph) - len(strings.TrimRight(paragraph, " "))
-	parts, breaks := unbroken(words(paragraph))
-	runs := address.letters.capitalRuns(parts, breaks)
+	parts, breaks, opened := unbroken(words(paragraph))
+	unjoined := slices.Clone(parts)
+	for index := range unjoined {
+		_, unjoined[index].token = slashMarked(unjoined[index].token)
+	}
+	parts, breaks, opened, inRuns := letterRuns(parts, breaks, opened)
+	runBreaks := maps.Clone(breaks)
+	maps.Copy(runBreaks, opened)
+	runs := address.letters.capitalRuns(parts, runBreaks)
 	for index := range parts {
 		parts[index].slash, parts[index].token = slashMarked(parts[index].token)
 		_, parts[index].whole = slashMarked(parts[index].whole)
@@ -445,7 +456,10 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		initial = restarts(parts[index].token)
 	}
 	var output []string
-	if len(parts) > 0 {
+	switch {
+	case len(parts) > 0 && parts[0].dropped:
+		output = append(output, "  ")
+	case len(parts) > 0:
 		output = append(output, parts[0].spaces)
 	}
 	skipped, gap, joined := 0, 0, 0
@@ -461,7 +475,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 	// numbering is whether the words since a list word are numbers and function words, after which ! and ? take one
 	// space.
 	numbering := false
-	capitals, louder := address.letters.around(parts, capitalsWord), address.letters.around(parts, loudWord)
+	capitals := address.letters.around(unjoined, inRuns, capitalsWord)
+	louder := address.letters.around(unjoined, inRuns, func(token string, _ bool) bool { return loudWord(token) })
 	for index, part := range parts {
 		token := part.token
 		read := token
@@ -482,11 +497,13 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			} else if terminal(token) && carried {
 				width = 1
 			}
-			switch part.spaces {
-			case cutSpace:
+			switch {
+			case part.spaces == cutSpace:
 				width = 1
-			case keptGap:
+			case part.spaces == keptGap:
 				width, initial, skipped = 2, false, 0
+			case part.dropped:
+				width = 2
 			}
 			if held != "" && (!terminal(token) || index > heldIndex+1) {
 				if index > heldIndex+1 {
@@ -532,8 +549,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		}
 		written, whole := token+cutMarks, cmp.Or(part.whole, token)+cutMarks
 		following, followingSpaces := "", trailing
-		if later < len(parts) {
-			following, followingSpaces = parts[later].token, spaceWidth(parts[later].spaces)
+		if after := part.slot + later - index; after < len(unjoined) {
+			following, followingSpaces = unjoined[after].token, spaceWidth(unjoined[after].spaces)
 		}
 		nextSpaces, nextKept := trailing, false
 		if index+1 < len(parts) {
@@ -615,7 +632,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			joined = 1
 		}
 		following = unheld(following)
-		near := wordsNear(capitals, index, 2)
+		near := wordsNear(capitals, part.slot, 2)
 		entry, ok := address.listed(token, followingSpaces, following)
 		opening, _, closing := parted(token)
 		switch {
@@ -624,11 +641,11 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		case ok && entry.Kind == datapack.CapitalWord && (near || strings.Contains(opening, "~")):
 			entry.Expansion = strings.TrimPrefix(entry.Expansion, "~")
 		}
-		if !ok && wordsNear(louder, index, 1) {
+		if !ok && wordsNear(louder, part.slot, 1) {
 			entry, ok = address.reading(token)
 		}
 		if !ok {
-			entry, closing, ok = address.spelledEntry(token, runs[index])
+			entry, closing, ok = address.spelledEntry(token, runs[index], part.lettered)
 		}
 		if ok {
 			slash := 0
@@ -656,6 +673,11 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		}
 		if !ok {
 			token = cmp.Or(address.letters.lowered(token), token)
+		}
+		if (read == "A" || read == "(A" || read == ">A") && !opened[index] &&
+			(index > 0 && address.letters.ayeAfter(unheld(parts[index-1].token)) || index == 0 && capitals[0]) &&
+			!(index+1 < len(parts) && terminal(parts[index+1].token)) {
+			token = token[:len(token)-1] + "aye"
 		}
 		output = append(output, settledSquare(token, part.whole != "", nextSpaces))
 	}
@@ -1150,10 +1172,13 @@ func terminal(token string) bool {
 }
 
 // part is a word of a paragraph being spaced, or a piece of one after a cut space: the spaces before it (or the cut
-// space), its characters as written, its characters with the marks a closing run hid of it if it did, and the mark of
-// the slash after a list word (slashDropped or slashGone).
+// space), its characters as written, its characters with the marks a closing run hid of it if it did, the mark of the
+// slash after a list word (slashDropped or slashGone), whether it follows single letters that went, whether it is a
+// run of single letters and its index before those were joined (section 3.10).
 type part struct {
 	spaces, token, whole, slash string
+	dropped, lettered           bool
+	slot                        int
 }
 
 // slashMarked is the mark of a word's slash, if it has one, and the word without it.
@@ -1375,8 +1400,8 @@ func (address *address) dotKind(token string, initial, closed bool) kind {
 }
 
 // plainKind is what a word ending in a dot is by its characters before the dot. A quoted single character with
-// closing marks before its quote and a word that a dropped dot ends are empty, and a word that lowered changes is a
-// letter, as its small first letter is.
+// closing marks before its quote and a word that a dropped dot ends are empty, a quoted single letter is a letter,
+// capital or small, and a word that lowered changes is a letter, as its small first letter is.
 func (address *address) plainKind(token string, initial bool) kind {
 	if address.letters.lowered(token) != "" {
 		return letterKind
@@ -1390,7 +1415,7 @@ func (address *address) plainKind(token string, initial bool) kind {
 		case letter != quoted:
 			return emptyKind
 		case letter != "" && alphabetic(letter[0]):
-			return letterKindOf(letter[0])
+			return letterKind
 		case letter != "" && digit(letter[0]):
 			return numberKind
 		}
@@ -1545,21 +1570,26 @@ func numberClosing(marks string) bool {
 	return marks == "" || (marks[0] == '!' || marks[0] == '?') && strings.Trim(marks, ")]\":;.,!?") == ""
 }
 
-// around is whether a space starts the paragraph and then whether each of its words, lowered, is what test says.
-func (tables *letterTables) around(parts []part, test func(string) bool) []bool {
+// around is whether a space starts the paragraph and then whether each of its words, lowered, is what test says, told
+// whether the word is counted: a word of ! and ? only follows it, or it is a letter of a run (inRuns). The words are
+// as they stood before single letters were joined (section 3.10).
+func (tables *letterTables) around(parts []part, inRuns map[int]bool,
+	test func(token string, counted bool) bool) []bool {
 	if len(parts) == 0 {
 		return nil
 	}
 	flags := make([]bool, 0, len(parts)+1)
 	flags = append(flags, strings.HasPrefix(parts[0].spaces, " "))
-	for _, part := range parts {
-		flags = append(flags, test(cmp.Or(tables.lowered(part.token), part.token)))
+	for index, part := range parts {
+		counted := inRuns[index] || index+1 < len(parts) && terminal(parts[index+1].token)
+		flags = append(flags, test(cmp.Or(tables.lowered(part.token), part.token), counted))
 	}
 	return flags
 }
 
-// wordsNear is whether flags, as around gives them, mark one of the two words before the word at index or of the
-// after words after it, a space that starts the paragraph counting as a word before the first (sections 3.5 and 3.9).
+// wordsNear is whether flags, as around gives them, mark one of the two words before the word at index (its slot) or
+// of the after words after it, a space that starts the paragraph counting as a word before the first (sections 3.5 and
+// 3.9).
 func wordsNear(flags []bool, index, after int) bool {
 	for position := max(index-1, 0); position < min(index+2+after, len(flags)); position++ {
 		if position != index+1 && flags[position] {
@@ -1569,9 +1599,11 @@ func wordsNear(flags []bool, index, after int) bool {
 	return false
 }
 
-// capitalsWord is whether a word keeps a word in capitals near it from its ~ (section 3.5): a loud word but A and I.
-func capitalsWord(token string) bool {
-	return token != "A" && token != "I" && loudWord(token)
+// capitalsWord is whether a word keeps a word in capitals near it from its ~ (section 3.5): a loud word but A and I,
+// a > and ( perhaps before them, unless they are counted as around says (section 3.10).
+func capitalsWord(token string, counted bool) bool {
+	letter := strings.TrimLeft(strings.TrimPrefix(token, ">"), "(")
+	return (counted || letter != "A" && letter != "I") && loudWord(token)
 }
 
 // loudWord is whether a word makes a word in capitals near it read as a reading (section 3.9): one without a small
@@ -1581,9 +1613,7 @@ func loudWord(token string) bool {
 	if hasSmall(token) || token == ">" || token == "[" || strings.Trim(token, "!\"(),.:;?]") == "" {
 		return false
 	}
-	number := strings.TrimPrefix(strings.TrimLeft(token, "\"(["), ".")
-	return number == "" || !digit(number[0]) ||
-		strings.Trim(strings.TrimLeft(number, "0123456789.,-"), ")]!?:;,.\"") != ""
+	return !markedNumber(token)
 }
 
 // tilded is a word with a ~ before its word when the paragraph has it (read) as a function word in capitals after
