@@ -1488,7 +1488,7 @@ const quotedPlain = "NY"
 // word. A word that is none may be one with an ending.
 func (address *address) listed(token string, spaces int, following string) (datapack.Word, bool) {
 	opening, word, closing := parted(token)
-	entry, ok := address.words[word]
+	entry, ok := address.listEntry(word)
 	if !ok {
 		return address.ended(opening, word, closing)
 	}
@@ -1518,7 +1518,7 @@ func (address *address) ended(opening, word, closing string) (datapack.Word, boo
 	if apostrophe {
 		ending = "'" + rest
 	}
-	entry, ok := address.words[base]
+	entry, ok := address.listEntry(base)
 	if stem := strings.TrimSuffix(base, "s"); !ok && stem != base && capitalLetters(stem) {
 		entry, ok = address.words[stem]
 		ending = "'s" + ending
@@ -1530,6 +1530,20 @@ func (address *address) ended(opening, word, closing string) (datapack.Word, boo
 	entry = plainEntry(entry)
 	entry.Expansion += ending
 	return entry, true
+}
+
+// listEntry is the list word a word is (section 3.5): its own, or for a word with a small letter and a capital after
+// its first letter the list word of its first letter and its other letters small, when that one is written out in any
+// case (section 3.12: acCT is account and ACct Account, but aUG stays aUG).
+func (address *address) listEntry(word string) (datapack.Word, bool) {
+	if entry, ok := address.words[word]; ok {
+		return entry, true
+	}
+	if !hasSmall(word) || !hasCapital(word[1:]) {
+		return datapack.Word{}, false
+	}
+	entry, ok := address.words[word[:1]+lower(word[1:])]
+	return entry, ok && entry.AnyCase
 }
 
 // plainEntry is a list word written as a plain word: a capital word keeps its kind.
@@ -1642,6 +1656,11 @@ func capitalLetters(word string) bool {
 
 func hasSmall(word string) bool {
 	return strings.ContainsFunc(word, func(character rune) bool { return character >= 'a' && character <= 'z' })
+}
+
+// hasCapital is whether a word has a capital letter.
+func hasCapital(word string) bool {
+	return strings.ContainsFunc(word, func(character rune) bool { return character >= 'A' && character <= 'Z' })
 }
 
 // junked spaces the dot after a list word, an abbreviation or a title that isn't dotted, that starts a word of a

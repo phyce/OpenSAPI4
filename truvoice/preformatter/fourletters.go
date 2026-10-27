@@ -7,11 +7,11 @@ import (
 
 var (
 	softStarts     = []string{"CE", "CI", "GE", "GI"}
-	spellingStarts = []string{"CE", "CI", "GE", "GI", "IO", "NY", "OS", "PC", "QA", "QE", "QI", "QO", "UC", "UK", "US",
-		"XO", "XU"}
-	strictStarts = []string{"JY", "QY", "XY", "YY"}
-	unsaidCodas  = []string{"JX", "QJ", "QQ", "QX", "QY", "QZ", "ZS"}
-	hardCodas    = []string{"GH", "GM", "GN", "MB", "PC", "ZS"}
+	spellingStarts = []string{"CE", "CI", "GE", "GI", "IO", "OS", "PC", "QA", "QE", "QI", "QO", "XO", "XU"}
+	capitalStarts  = []string{"NY", "UC", "UK", "US"}
+	strictStarts   = []string{"JY", "QY", "XY", "YY"}
+	unsaidCodas    = []string{"JX", "QJ", "QQ", "QX", "QY", "QZ", "ZS"}
+	hardCodas      = []string{"GH", "GM", "GN", "MB", "PC", "ZS"}
 )
 
 func oneOf(letter byte, letters string) bool {
@@ -211,18 +211,20 @@ func (tables *letterTables) signedSaid(letters string) bool {
 	return letters[:2] == "QU" && vowel(third)
 }
 
-// said is whether a word of four capitals is said as a word (section 3.9).
-func (tables *letterTables) said(word string) bool {
+// said is whether a word of four capitals is said as a word (section 3.9), exact as capitalsWritten says: the starts
+// NY, UC, UK, US and LA count only in capitals (section 3.12: nYRE is said as a word).
+func (tables *letterTables) said(word, exact string) bool {
 	switch {
-	case tables.kept[word]:
+	case tables.listed(tables.kept, word, exact):
 		return true
 	case tables.tails[word[1:]] || tables.heads[word[:3]]:
 		return false
 	case word[2:] == "LA" || word[2:] == "NY" || word[2:] == "US":
-		return word[:2] != "NY"
-	case slices.Contains(spellingStarts, word[:2]) && !tables.openHeads[word[:3]]:
+		return exact[:2] != "NY"
+	case (slices.Contains(spellingStarts, word[:2]) || slices.Contains(capitalStarts, exact[:2])) &&
+		!tables.openHeads[word[:3]]:
 		return false
-	case word[:2] == "LA":
+	case exact[:2] == "LA":
 		return vocal(word[2]) || vocal(word[3])
 	case word[2:] == "QU" && !vowel(word[1]) && word[1] != 'Q' && !qStart(word),
 		(word[1:] == "QUE" || word[1:] == "QUO") && !vowel(word[0]) && !qStart(word),
@@ -420,15 +422,19 @@ func (tables *letterTables) spelledFour(word string) string {
 	return spelled(word, true, true)
 }
 
-// split is how a word of four capitals that isn't said as a word is written (section 3.9).
-func (tables *letterTables) split(word string) string {
-	start, head, tail := word[:2], word[:3], word[1:]
+// split is how a word of four capitals that isn't said as a word is written (section 3.9), exact as capitalsWritten
+// says: the starts NY, UC, UK, US, but before U and a tail, ED or ES, and LA count only in capitals, and EDU and IO are
+// written as ed-yoo and eye only in capitals (section 3.12: eDUI is eDU-I, iOGF i-O-GF, uSED u-SED).
+func (tables *letterTables) split(word, exact string) string {
+	start, writtenStart, head, tail := word[:2], exact[:2], word[:3], word[1:]
 	switch {
 	case slices.Contains(softStarts, start) && vocal(word[2]) && vocal(word[3]) && !tables.endPair(word[2:]) &&
 		!(word[1] == word[2] && word[2] == word[3]):
 		return word[:1] + "-" + word[1:2]
-	case head == "EDU":
+	case head == "EDU" && exact[:3] == "EDU":
 		return "ed-yoo-" + spelledLetter(word, 3)
+	case head == "EDU":
+		return "EDU-" + spelledLetter(word, 3)
 	case start == "IO" && word[2:] == "NE":
 		return "eye-ONE"
 	case start == "IO" && word[2] == 'N':
@@ -437,15 +443,15 @@ func (tables *letterTables) split(word string) string {
 		return "eye-O-" + word[2:]
 	case start == "OS" || start == "PC":
 		return word[:1] + "-" + word[1:2] + "-" + word[2:]
-	case start == "NY" && (vocal(word[2]) || vocal(word[3])):
+	case writtenStart == "NY" && (vocal(word[2]) || vocal(word[3])):
 		return "NY-" + word[2:]
-	case start == "NY" || start == "UC" || start == "UK":
+	case writtenStart == "NY" || writtenStart == "UC" || writtenStart == "UK":
 		return spelled(word, true, true)
 	case start == "US" && (word[2] == 'U' && tables.tailSaid(word) || word[2:] == "ED" || word[2:] == "ES"):
 		return "U-" + tail
-	case start == "US" && (head == "USE" || head == "USH" && tables.headSaid(word)):
+	case head == "USE" || writtenStart == "US" && head == "USH" && tables.headSaid(word):
 		return head + "-" + spelledLetter(word, 3)
-	case start == "US":
+	case writtenStart == "US":
 		return spelled(word, true, true)
 	case word[0] == 'Q' && oneOf(word[1], "AEIO") || start == "XO" || start == "XU" || word[0] == '[' && vowel(word[1]):
 		switch {
@@ -461,7 +467,7 @@ func (tables *letterTables) split(word string) string {
 		return word[:1] + "-" + tables.restLetters(tail)
 	case vowel(word[1]) && word[1] == word[2] && (word[0] == word[1] || word[2] == word[3]):
 		return tables.spelledFour(word)
-	case start == "LA":
+	case writtenStart == "LA":
 		return spelled(word, true, true)
 	case tables.heads[head]:
 		return head + "-" + spelledLetter(word, 3)
@@ -483,13 +489,14 @@ func (tables *letterTables) split(word string) string {
 	return tables.spelledFour(word)
 }
 
-// fourLetters is how a word of four capitals that no list has, not in a run, is written (section 3.9).
-func (tables *letterTables) fourLetters(word string) string {
+// fourLetters is how a word of four capitals that no list has, not in a run, is written (section 3.9), exact as
+// capitalsWritten says.
+func (tables *letterTables) fourLetters(word, exact string) string {
 	switch {
 	case kew(word):
 		return kewWritten(word)
-	case tables.said(word):
+	case tables.said(word, exact):
 		return word
 	}
-	return tables.split(word)
+	return tables.split(word, exact)
 }

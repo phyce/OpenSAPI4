@@ -31,30 +31,36 @@ func (tables *letterTables) tailed(word, tail string) bool {
 
 // longLetters is how a word of five capitals or more that no list has, not in a run, is written (section 3.9), with
 // the signs and letters after them that spelledEntry gives it: the letters after NY and LA are tested small or
-// capital (NYMVK~dog is NY-MVK~dog, LASRB$a is kept).
-func (tables *letterTables) longLetters(word string) string {
-	start, rest, end := word[:2], word[2:], word[len(word)-2:]
+// capital (NYMVK~dog is NY-MVK~dog, LASRB$a is kept). Exact is as capitalsWritten says: the starts NY, LA, US and UK
+// count only in capitals, and IO and EDU, at the start or IO as the front, are eye-oh and ed-yoo only in capitals
+// (section 3.12: nYBAPL is kept, eDUAH is eDU-AH, iODBR iO-DBR, iONET iO-NET).
+func (tables *letterTables) longLetters(word, exact string) string {
+	start, writtenStart, rest, end := word[:2], exact[:2], word[2:], word[len(word)-2:]
 	vocalRest := strings.ContainsAny(rest, "AEIOUYaeiouy")
 	switch {
-	case tables.kept[word]:
+	case tables.listed(tables.kept, word, exact):
 		return word
-	case start == "NY" && vocalRest:
+	case writtenStart == "NY" && vocalRest:
 		return "NY-" + rest
-	case start == "NY":
+	case writtenStart == "NY":
 		return spelled(word, true, true)
-	case start == "LA" && !vocalRest:
+	case writtenStart == "LA" && !vocalRest:
 		return spelled(word, true, true)
-	case start == "LA" || end == "LA" || end == "NY":
+	case writtenStart == "LA" || end == "LA" || end == "NY":
 		return word
-	case start == "US" && !oneOf(word[2], "EHU"):
+	case writtenStart == "US" && !oneOf(word[2], "EHU"):
 		return "U-S-" + rest
 	case end == "US":
 		return word
-	case start == "IO" && word[2] != 'N':
+	case start == "IO" && word[2] != 'N' && writtenStart == "IO":
 		return "eye-oh-" + rest
-	case word[:3] == "EDU":
+	case start == "IO" && word[2] != 'N':
+		return "IO-" + rest
+	case word[:3] == "EDU" && exact[:3] == "EDU":
 		return "ed-yoo-" + word[3:]
-	case start == "UK":
+	case word[:3] == "EDU":
+		return "EDU-" + word[3:]
+	case writtenStart == "UK":
 		return "U-K-" + rest
 	case start == "OS" || start == "PC":
 		return start + "-" + rest
@@ -76,7 +82,7 @@ func (tables *letterTables) longLetters(word string) string {
 		switch {
 		case len(front) == 1:
 			front = spelledLetter(word, 0)
-		case front == "IO":
+		case front == "IO" && writtenStart == "IO":
 			front = "eye-oh"
 		}
 		return front + "-" + tail

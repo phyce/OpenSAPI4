@@ -27,19 +27,29 @@ func TestPreFormatter(t *testing.T) {
 	}
 	first, mister, all := address.Words[0], address.Words[220], address.Words[3]
 	if len(address.Words) != 380 || first.Word != "Acct" || first.Expansion != "Account" ||
-		first.Kind != datapack.AbbreviationWord || first.Dotted || mister.Word != "Mr" || mister.Expansion != "Mister" ||
-		mister.Kind != datapack.TitleWord || !mister.Dotted || all.Word != "ALL" || all.Expansion != "~ALL" ||
-		all.Kind != datapack.CapitalWord {
+		first.Kind != datapack.AbbreviationWord || first.Dotted || !first.AnyCase || mister.Word != "Mr" ||
+		mister.Expansion != "Mister" || mister.Kind != datapack.TitleWord || !mister.Dotted || mister.AnyCase ||
+		all.Word != "ALL" || all.Expansion != "~ALL" || all.Kind != datapack.CapitalWord || all.AnyCase {
 		t.Errorf("%d list words, the first %+v", len(address.Words), first)
+	}
+	anyCase := 0
+	for _, word := range address.Words {
+		if word.AnyCase {
+			anyCase++
+		}
+	}
+	if anyCase != 221 {
+		t.Errorf("%d any-case list words", anyCase)
 	}
 	if len(address.NumberWords) != 19 || address.NumberWords[0] != "apr" {
 		t.Errorf("number words %v", address.NumberWords)
 	}
 	letters := address.Letters
 	if len(letters.TwoLetters) != 39 || letters.TwoLetters[0] != "AD" || len(letters.Onsets) != 36 ||
-		len(letters.Codas) != 13 || letters.Codas["PH"] != "AEIOU" || len(letters.FirstPairs) != 9 ||
-		len(letters.LastPairs) != 14 || len(letters.Spelled) != 53 || letters.Spelled[0] != "ATM" ||
-		len(letters.Unkept) != 16 || len(letters.Kept) != 117 || len(letters.MarkedSpelled) != 2 ||
+		len(letters.Codas) != 13 || letters.Codas["PH"] != "AEIOU" || letters.Codas["ST"] != "AEIU" ||
+		len(letters.FirstPairs) != 9 || len(letters.LastPairs) != 14 || len(letters.Spelled) != 54 ||
+		letters.Spelled[0] != "ATM" || len(letters.Unkept) != 16 || len(letters.Kept) != 117 ||
+		len(letters.CapitalsOnly) != 24 || letters.CapitalsOnly[0] != "COD" || len(letters.MarkedSpelled) != 2 ||
 		len(letters.Respelled) != 21 || letters.Respelled["ISO"] != "eye-SO" || letters.Respelled["XMAS"] != "X-MAS" ||
 		letters.Respelled["LOGIN"] != "log-in" || letters.Respelled["README"] != "read-me" {
 		t.Errorf("address letters %+v", letters)

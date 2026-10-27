@@ -50,20 +50,20 @@ type Address struct {
 	Letters             Letters
 }
 
-// Letters is how the address context writes a word in capitals of two letters or more, letters A to Z: the words of
-// two letters it says; the onsets, two consonants that start a word, and the codas, two letters that end one after
-// the vowels they map to; the first and last vowel pairs, which start and end a word; the words it spells letter by
-// letter, and those it spells only after a ' or ~ or two quotes; the words of three letters it never says and the
-// words of three to five letters it always says whatever their letters; and the words it writes otherwise, with
-// what it writes. For words of four letters: the heads and tails, three letters said apart from a fourth before or
-// after them; the heads that open a word with a soft start; the unkept heads, said only before the letters they map
-// to; the clusters, two consonants that start a word, or follow the vowel that starts one, before the letters they
-// map to; the vowel codas, two letters that end a word after a first pair, or the three letters after a first Q or X;
-// and the coda pairs, two letters that end a word after one vowel. For words of five letters or more: the pieces,
-// four letters or more said apart from the rest before or after them; the long heads and tails, three letters (two
-// or five for a tail) said apart from the rest after or before them; and the unsplit words, which keep a piece, head
-// or tail they start or end with from being said apart. And the readings, the words it reads as an abbreviation
-// near a word in capitals, with what it reads.
+// Letters is how the address context writes a word in capitals of two letters or more, letters A to Z: the words of two
+// letters it says; the onsets, two consonants that start a word, and the codas, two letters that end one after the
+// vowels they map to; the first and last vowel pairs, which start and end a word; the words it spells letter by letter,
+// and those it spells only after a ' or ~ or two quotes; the words of three letters it never says and the words of
+// three to five letters it always says whatever their letters; the spelled and said words that are so only in capitals,
+// not in a word with small letters; and the words it writes otherwise, with what it writes. For words of four letters:
+// the heads and tails, three letters said apart from a fourth before or after them; the heads that open a word with a
+// soft start; the unkept heads, said only before the letters they map to; the clusters, two consonants that start a
+// word, or follow the vowel that starts one, before the letters they map to; the vowel codas, two letters that end a
+// word after a first pair, or the three letters after a first Q or X; and the coda pairs, two letters that end a word
+// after one vowel. For words of five letters or more: the pieces, four letters or more said apart from the rest before
+// or after them; the long heads and tails, three letters (two or five for a tail) said apart from the rest after or
+// before them; and the unsplit words, which keep a piece, head or tail they start or end with from being said apart.
+// And the readings, the words it reads as an abbreviation near a word in capitals, with what it reads.
 type Letters struct {
 	TwoLetters    []string
 	Onsets        []string
@@ -73,6 +73,7 @@ type Letters struct {
 	Spelled       []string
 	MarkedSpelled []string
 	Unkept, Kept  []string
+	CapitalsOnly  []string
 	Respelled     map[string]string
 	Heads, Tails  []string
 	OpenHeads     []string
@@ -88,11 +89,13 @@ type Letters struct {
 }
 
 // Word is a word the address context writes out, in one case: its expansion and how the dot after it is spaced. A
-// dotted word is written out only before a dot.
+// dotted word is written out only before a dot; an any-case word also with capitals after its first letter, the
+// others small or not.
 type Word struct {
 	Word, Expansion string
 	Kind            WordKind
 	Dotted          bool
+	AnyCase         bool
 }
 
 // WordKind is how the dot after a word written out is spaced.
@@ -177,6 +180,7 @@ type lettersDescription struct {
 	LastPairs     []string          `json:"lastPairs"`
 	Spelled       []string          `json:"spelled"`
 	MarkedSpelled []string          `json:"markedSpelled"`
+	CapitalsOnly  []string          `json:"capitalsOnly"`
 	Unkept        []string          `json:"unkept"`
 	Kept          []string          `json:"kept"`
 	Respelled     map[string]string `json:"respelled"`
@@ -199,6 +203,7 @@ type wordDescription struct {
 	Expansion string `json:"expansion"`
 	Kind      string `json:"kind"`
 	Dotted    bool   `json:"dotted"`
+	AnyCase   bool   `json:"anyCase"`
 }
 
 type headerDescription struct {
@@ -355,6 +360,7 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		{"lastPairs", description.LastPairs, 2, 2, true},
 		{"spelled", description.Spelled, 2, 6, false},
 		{"markedSpelled", description.MarkedSpelled, 2, 3, false},
+		{"capitalsOnly", description.CapitalsOnly, 3, 6, false},
 		{"unkept", description.Unkept, 3, 3, false},
 		{"kept", description.Kept, 3, 5, false},
 		{"heads", description.Heads, 3, 3, false},
@@ -386,6 +392,11 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 	for _, word := range description.Kept {
 		if slices.Contains(description.Unkept, word) {
 			return nil, fmt.Errorf("address letters %q is kept and unkept", word)
+		}
+	}
+	for _, word := range description.CapitalsOnly {
+		if !slices.Contains(description.Spelled, word) && !slices.Contains(description.Kept, word) {
+			return nil, fmt.Errorf("address letters capitals-only %q is neither spelled nor kept", word)
 		}
 	}
 	if len(description.Codas) == 0 {
@@ -427,11 +438,11 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 	return &Letters{TwoLetters: description.TwoLetters, Onsets: description.Onsets, Codas: description.Codas,
 		FirstPairs: description.FirstPairs, LastPairs: description.LastPairs, Spelled: description.Spelled,
 		MarkedSpelled: description.MarkedSpelled, Unkept: description.Unkept, Kept: description.Kept,
-		Respelled: description.Respelled, Heads: description.Heads, Tails: description.Tails,
-		OpenHeads: description.OpenHeads, UnkeptHeads: description.UnkeptHeads, Clusters: description.Clusters,
-		VowelCodas: description.VowelCodas, CodaPairs: description.CodaPairs, Pieces: description.Pieces,
-		LongHeads: description.LongHeads, LongTails: description.LongTails, Unsplit: description.Unsplit,
-		Readings: description.Readings}, nil
+		CapitalsOnly: description.CapitalsOnly, Respelled: description.Respelled, Heads: description.Heads,
+		Tails: description.Tails, OpenHeads: description.OpenHeads, UnkeptHeads: description.UnkeptHeads,
+		Clusters: description.Clusters, VowelCodas: description.VowelCodas, CodaPairs: description.CodaPairs,
+		Pieces: description.Pieces, LongHeads: description.LongHeads, LongTails: description.LongTails,
+		Unsplit: description.Unsplit, Readings: description.Readings}, nil
 }
 
 func distinctLetters(word string) bool {
@@ -471,7 +482,7 @@ func parseWords(descriptions []wordDescription) ([]Word, error) {
 				description.Word, description.Expansion)
 		}
 		words = append(words, Word{Word: description.Word, Expansion: description.Expansion, Kind: kind,
-			Dotted: description.Dotted})
+			Dotted: description.Dotted, AnyCase: description.AnyCase})
 	}
 	return words, nil
 }

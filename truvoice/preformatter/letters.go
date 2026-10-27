@@ -10,7 +10,7 @@ import (
 // letterTables is the address context's tables for words in capitals of two letters or more (section 3.9).
 type letterTables struct {
 	twoLetters, onsets, firstPairs, lastPairs, spelled, markedSpelled, unkept, kept map[string]bool
-	heads, tails, openHeads, vowelCodas, codaPairs                                  map[string]bool
+	capitalsOnly, heads, tails, openHeads, vowelCodas, codaPairs                    map[string]bool
 	codas, respelled, unkeptHeads, clusters, readings                               map[string]string
 	pieces, longHeads, longTails, unsplit                                           []string
 }
@@ -19,7 +19,8 @@ func newLetterTables(letters *datapack.Letters) letterTables {
 	return letterTables{twoLetters: wordSet(letters.TwoLetters), onsets: wordSet(letters.Onsets),
 		firstPairs: wordSet(letters.FirstPairs), lastPairs: wordSet(letters.LastPairs),
 		spelled: wordSet(letters.Spelled), markedSpelled: wordSet(letters.MarkedSpelled),
-		unkept: wordSet(letters.Unkept), kept: wordSet(letters.Kept), heads: wordSet(letters.Heads),
+		unkept: wordSet(letters.Unkept), kept: wordSet(letters.Kept), capitalsOnly: wordSet(letters.CapitalsOnly),
+		heads: wordSet(letters.Heads),
 		tails: wordSet(letters.Tails), openHeads: wordSet(letters.OpenHeads), vowelCodas: wordSet(letters.VowelCodas),
 		codaPairs: wordSet(letters.CodaPairs), codas: letters.Codas, respelled: letters.Respelled,
 		unkeptHeads: letters.UnkeptHeads, clusters: letters.Clusters, readings: letters.Readings,
@@ -349,22 +350,28 @@ func spelled(word string, start, end bool) string {
 	return strings.Join(letters, "-")
 }
 
-// keeps is whether a word in capitals of three letters is said as a word (section 3.9), bare as spelledEntry says.
-func (tables *letterTables) keeps(word string, bare bool) bool {
+// keeps is whether a word in capitals of three letters is said as a word (section 3.9), bare and exact as
+// capitalsWritten says. The starts NY, UC, UK, US and LA count only in capitals (section 3.12: nYV, uCH and uSP are
+// said as words).
+func (tables *letterTables) keeps(word string, bare bool, exact string) bool {
 	first, middle := word[0], word[1]
 	switch {
 	case tables.unkept[word]:
 		return false
-	case tables.kept[word]:
+	case tables.listed(tables.kept, word, exact):
 		return true
 	}
 	switch word[:2] {
-	case "CE", "CI", "GE", "GI", "NY", "OS", "UC", "UK":
+	case "CE", "CI", "GE", "GI", "OS":
 		return false
 	case "XO", "XU":
 		if word != "XUS" {
 			return false
 		}
+	}
+	switch exact[:2] {
+	case "NY", "UC", "UK":
+		return false
 	case "US":
 		if word != "USH" && word != "USE" {
 			return false
@@ -374,7 +381,7 @@ func (tables *letterTables) keeps(word string, bare bool) bool {
 		return false
 	}
 	switch {
-	case word[:2] == "LA", word[1:] == "LA", word[1:] == "NY", word[1:] == "US",
+	case exact[:2] == "LA", word[1:] == "LA", word[1:] == "NY", word[1:] == "US",
 		word[1:] == "QU" && !vowel(first) && first != 'Q', word == "GNU", word == "EDU", word == "USE":
 		return true
 	}
@@ -412,16 +419,94 @@ func (tables *letterTables) saidPattern(word string, bare bool) bool {
 	return false
 }
 
-// written is how a word in capitals of two letters or more is written (section 3.9), run being whether it stands in
-// a run of words in capitals and bare and marked as spelledEntry says. In a run a respelled word is respelled only
-// when it is said in part, with small letters, or has five letters or more: CITR, respelled CIT-R, stays CITR, TROFF
-// is T-ROFF. Any other in a run stays as it is but one that placed says is written as outside one.
+// written is how a word in capitals of two letters or more, or one with a small head, is written, run being whether
+// it stands in a run of words in capitals and bare and marked as spelledEntry says: one in capitals as
+// capitalsWritten says, one with a small head as its capitals are written outside a run, in the word's own case as
+// recased says (section 3.12): bCD is b-C-D, iBC i-B-C, and in a run too, BCD bCD BCD being BCD b-C-D BCD.
 func (tables *letterTables) written(word string, run, bare, marked bool) string {
+	if !smallHead(word) {
+		return tables.capitalsWritten(word, run, bare, marked, word)
+	}
+	capitals := []byte(word)
+	for index, character := range capitals {
+		capitals[index] = upperCase(character)
+	}
+	return recased(word, tables.capitalsWritten(string(capitals), false, bare, marked, word))
+}
+
+// smallHead is whether a word starts with small letters and then two capitals (section 3.12).
+func smallHead(word string) bool {
+	head := 0
+	for head < len(word) && small(word[head]) {
+		head++
+	}
+	return head > 0 && head+2 <= len(word) && upper(word[head]) && upper(word[head+1])
+}
+
+// letterWord is whether a word is letters, small or capital, one or more.
+func letterWord(word string) bool {
+	return word != "" && strings.Trim(word, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") == ""
+}
+
+// recased is how the capitals of a word with a small head were written (section 3.12), in the word's own case: each
+// capital is the word's next letter as the word has it, eye is i for a small i, KEW for the word's next two letters Q
+// and U stays KEW (bqUC is bKEWC), triple and the letter after it stand for the word's next three letters, the last
+// as the word has it, and the rest stays as it is. Writing without capitals stays whole: aSAP is aye-sap and iSA
+// eye-sa.
+func recased(word, written string) string {
+	if !hasCapital(written) {
+		return written
+	}
+	var letters []byte
+	for index := 0; index < len(word); index++ {
+		if alphabetic(word[index]) {
+			letters = append(letters, word[index])
+		}
+	}
+	var output strings.Builder
+	for position := 0; position < len(written); {
+		switch {
+		case strings.HasPrefix(written[position:], "eye"):
+			if letters[0] == 'I' {
+				output.WriteString("eye")
+			} else {
+				output.WriteByte('i')
+			}
+			letters = letters[1:]
+			position += 3
+		case strings.HasPrefix(written[position:], "KEW") && len(letters) >= 2 && upperCase(letters[0]) == 'Q' &&
+			upperCase(letters[1]) == 'U':
+			output.WriteString("KEW")
+			letters = letters[2:]
+			position += 3
+		case strings.HasPrefix(written[position:], "triple-"):
+			output.WriteString("triple-")
+			letters = letters[2:]
+			position += 7
+		case upper(written[position]):
+			output.WriteByte(letters[0])
+			letters = letters[1:]
+			position++
+		default:
+			output.WriteByte(written[position])
+			position++
+		}
+	}
+	return output.String()
+}
+
+// capitalsWritten is how a word in capitals of two letters or more is written (section 3.9), run, bare and marked as
+// written says and exact being the word as written: a word with a small head is written by its capitals, but listed
+// reads the spelled and kept words and the starts that count only in capitals are read from exact (section 3.12). In
+// a run a respelled word is respelled only when it is said in part, with small letters, or has five letters or more:
+// CITR, respelled CIT-R, stays CITR, TROFF is T-ROFF. Any other in a run stays as it is but one that placed says is
+// written as outside one.
+func (tables *letterTables) capitalsWritten(word string, run, bare, marked bool, exact string) string {
 	if respelled, ok := tables.respelled[word]; ok && (!run || len(word) >= 5 || hasSmall(respelled)) {
 		return respelled
 	}
 	switch {
-	case tables.spelled[word] || marked && tables.markedSpelled[word]:
+	case tables.listed(tables.spelled, word, exact) || marked && tables.markedSpelled[word]:
 		return spelled(word, true, true)
 	case run && !placed(word):
 		return word
@@ -430,14 +515,14 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 	case len(word) == 2:
 		return spelled(word, true, true)
 	case len(word) == 4:
-		return tables.fourLetters(word)
+		return tables.fourLetters(word, exact)
 	case len(word) >= 5:
-		return tables.longLetters(word)
+		return tables.longLetters(word, exact)
 	case !alphabetic(word[2]) && tables.signedSaid(word[:2]) && word[:2] != "XO" && word[:2] != "XU":
 		return word
 	case word[:2] == "QU" && strings.IndexByte("AEIOUSW", word[2]) < 0:
 		return "KEW" + word[2:]
-	case tables.keeps(word, bare):
+	case tables.keeps(word, bare, exact):
 		return word
 	case word[1:] == "PC":
 		return spelled(word[:1], true, false) + "-PC"
@@ -446,6 +531,12 @@ func (tables *letterTables) written(word string, run, bare, marked bool) string 
 		return word[:2] + "-" + word[2:]
 	}
 	return spelled(word, true, true)
+}
+
+// listed is whether a word in capitals, written as exact, is one of a table's: a capitals-only one only when it is
+// written in capitals (section 3.12: mIT stays as it is, as if MIT weren't spelled).
+func (tables *letterTables) listed(table map[string]bool, word, exact string) bool {
+	return table[word] && (exact == word || !tables.capitalsOnly[word])
 }
 
 // placed is whether a word in capitals in a run is written as outside one (section 3.9): one that starts with NY, LA,
@@ -491,8 +582,9 @@ func (address *address) spelledEntry(token string, run, lettered bool) (datapack
 	letters := strings.TrimLeft(word, "[")
 	abbreviated := abbreviatedWord(word + closing[:signs])
 	long := len(letters) >= 5 && capitalLetters(letters[:5])
-	if !(len(letters) >= 2 && capitalLetters(letters) || long) || address.letters.lowered(token) != "" ||
-		address.functionWord(word) && tildeMarks(opening, closing) || !listOpening(opening, true) ||
+	if !(len(letters) >= 2 && capitalLetters(letters) || long || smallHead(word) && letterWord(word)) ||
+		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
+		!listOpening(opening, true) ||
 		strings.Contains(closing[:signs], ".") && !long {
 		return datapack.Word{}, "", false
 	}

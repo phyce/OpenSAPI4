@@ -300,6 +300,7 @@ Each **list word**:
 | `expansion` | Word | What it is written as, printable ASCII, one character or more |
 | `kind` | `abbreviation`, `title`, `plain` or `capital` | How its dot and the spaces after it are written; a capital word is written as a plain one, and only when no word in capitals stands near it |
 | `dotted` | `true` or absent | Whether it is a list word only before a dot |
+| `anyCase` | `true` or absent | Whether a word with a small letter and a capital after its first letter is this one when its first letter as it is and its other letters lowered are this word ([preformatter.md](preformatter.md) §3.5) |
 
 A capital word's expansion is the word after a `~`.
 
@@ -332,6 +333,7 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `markedSpelled` | Words of 2 or 3 letters | The words that are spelled when marked |
 | `unkept` | Words of 3 letters | The words of three capitals that are never said |
 | `kept` | Words of 3 to 5 letters | The words of three to five capitals that are always said |
+| `capitalsOnly` | Words of 3 to 6 letters | The spelled and kept words that are spelled or said so only in capitals, not in a word with a small head ([preformatter.md](preformatter.md) §3.12) |
 | `respelled` | Object | The words written otherwise: each word's writing |
 | `heads` | Words of 3 letters | The first three capitals of a word of four that are said apart from the last |
 | `tails` | Words of 3 letters | The last three capitals of a word of four that are said apart from the first |
@@ -346,4 +348,4 @@ The **letters** ([preformatter.md](preformatter.md) §3.9):
 | `unsplit` | Words of 4 to 9 letters | The words that keep a piece, head or tail they start or end with from being said apart |
 | `readings` | Object | The words read as abbreviations near a loud word: each word's reading |
 
-Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to six capitals and a reading's word two to nine, and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept.
+Each word is capitals `A` to `Z`, listed once, and a vowel is `A`, `E`, `I`, `O` or `U`. A coda's pair is two capitals and its vowels one vowel or more; a respelled word is two to six capitals and a reading's word two to nine, and their writing printable ASCII, one character or more. An unkept head is three capitals and a cluster two, each mapped to one capital or more, none twice. No word is both kept and unkept, and each capitals-only word is spelled or kept.
