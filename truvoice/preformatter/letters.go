@@ -450,9 +450,9 @@ func letterWord(word string) bool {
 
 // recased is how the capitals of a word with a small head were written (section 3.12), in the word's own case: each
 // capital is the word's next letter as the word has it, eye is i for a small i, KEW for the word's next two letters Q
-// and U stays KEW (bqUC is bKEWC), triple and the letter after it stand for the word's next three letters, the last
-// as the word has it, and the rest stays as it is. Writing without capitals stays whole: aSAP is aye-sap and iSA
-// eye-sa.
+// and U stays KEW (bqUC is bKEWC), triple and the letter after it stand for the word's next three letters, the first
+// as the word has it when they start the word and the last otherwise (aAAH is triple-a-H, baAA b-triple-Aye), and the
+// rest stays as it is. Writing without capitals stays whole: aSAP is aye-sap and iSA eye-sa.
 func recased(word, written string) string {
 	if !hasCapital(written) {
 		return written
@@ -479,10 +479,16 @@ func recased(word, written string) string {
 			output.WriteString("KEW")
 			letters = letters[2:]
 			position += 3
+		case strings.HasPrefix(written[position:], "triple-") && position == 0:
+			output.WriteString("triple-")
+			output.WriteByte(letters[0])
+			letters = letters[3:]
+			position += 8
 		case strings.HasPrefix(written[position:], "triple-"):
 			output.WriteString("triple-")
-			letters = letters[2:]
-			position += 7
+			output.WriteByte(letters[2])
+			letters = letters[3:]
+			position += 8
 		case upper(written[position]):
 			output.WriteByte(letters[0])
 			letters = letters[1:]
@@ -497,16 +503,16 @@ func recased(word, written string) string {
 
 // capitalsWritten is how a word in capitals of two letters or more is written (section 3.9), run, bare and marked as
 // written says and exact being the word as written: a word with a small head is written by its capitals, but listed
-// reads the spelled and kept words and the starts that count only in capitals are read from exact (section 3.12). In
-// a run a respelled word is respelled only when it is said in part, with small letters, or has five letters or more:
-// CITR, respelled CIT-R, stays CITR, TROFF is T-ROFF. Any other in a run stays as it is but one that placed says is
-// written as outside one.
+// reads the spelled and kept words and the starts that count only in capitals are read from exact (section 3.12). A
+// marked-spelled word is spelled when marked or with a small head (cYA is c-Y-Aye). In a run a respelled word is
+// respelled only when it is said in part, with small letters, or has five letters or more: CITR, respelled CIT-R,
+// stays CITR, TROFF is T-ROFF. Any other in a run stays as it is but one that placed says is written as outside one.
 func (tables *letterTables) capitalsWritten(word string, run, bare, marked bool, exact string) string {
 	if respelled, ok := tables.respelled[word]; ok && (!run || len(word) >= 5 || hasSmall(respelled)) {
 		return respelled
 	}
 	switch {
-	case tables.listed(tables.spelled, word, exact) || marked && tables.markedSpelled[word]:
+	case tables.listed(tables.spelled, word, exact) || (marked || exact != word) && tables.markedSpelled[word]:
 		return spelled(word, true, true)
 	case run && !placed(word):
 		return word

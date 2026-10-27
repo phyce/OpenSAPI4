@@ -212,14 +212,15 @@ func (tables *letterTables) signedSaid(letters string) bool {
 }
 
 // said is whether a word of four capitals is said as a word (section 3.9), exact as capitalsWritten says: the starts
-// NY, UC, UK, US and LA count only in capitals (section 3.12: nYRE is said as a word).
+// NY, UC, UK, US and LA and the ends LA, NY and US count only in capitals (section 3.12: nYRE is said as a word, bDLa
+// isn't).
 func (tables *letterTables) said(word, exact string) bool {
 	switch {
 	case tables.listed(tables.kept, word, exact):
 		return true
 	case tables.tails[word[1:]] || tables.heads[word[:3]]:
 		return false
-	case word[2:] == "LA" || word[2:] == "NY" || word[2:] == "US":
+	case exact[2:] == "LA" || exact[2:] == "NY" || exact[2:] == "US":
 		return exact[:2] != "NY"
 	case (slices.Contains(spellingStarts, word[:2]) || slices.Contains(capitalStarts, exact[:2])) &&
 		!tables.openHeads[word[:3]]:
@@ -308,14 +309,16 @@ func kewWritten(word string) string {
 	return "KEW" + word[2:]
 }
 
-// headSaid is whether the first three letters of a word of four capitals are said as a word (section 3.9).
-func (tables *letterTables) headSaid(word string) bool {
+// headSaid is whether the first three letters of a word of four capitals are said as a word (section 3.9), exact as
+// capitalsWritten says: a second letter that is Q or the same as the third counts only in the same case (section
+// 3.12: acCC is a-c-C-C, iqQL i-q-Q-L).
+func (tables *letterTables) headSaid(word, exact string) bool {
 	head, following := word[:3], word[3]
 	switch {
 	case head[2] == 'P' && following == 'C':
 		return false
 	case head[2] == 'Q':
-		return word[0] == 'X' && vowel(head[1]) || head[1] == 'Y' || vowel(head[0]) && head[1] == 'Q' ||
+		return word[0] == 'X' && vowel(head[1]) || head[1] == 'Y' || vowel(head[0]) && exact[1] == 'Q' ||
 			tables.firstPairs[head[:2]]
 	case vocal(head[2]) && vocal(following):
 		return false
@@ -330,7 +333,7 @@ func (tables *letterTables) headSaid(word string) bool {
 		return false
 	case kinds == "VCC":
 		letters, cluster := tables.clusters[head[1:]]
-		return head[1] == head[2] || cluster && oneOf(following, letters) && head[1] != 'W'
+		return exact[1] == exact[2] || cluster && oneOf(following, letters) && head[1] != 'W'
 	case kinds == "VYC" || kinds == "CVV" || kinds == "YVV" || kinds == "CYY" || kinds == "YYY":
 		return true
 	case kinds == "VVC" || kinds == "VVV":
@@ -449,7 +452,7 @@ func (tables *letterTables) split(word, exact string) string {
 		return spelled(word, true, true)
 	case start == "US" && (word[2] == 'U' && tables.tailSaid(word) || word[2:] == "ED" || word[2:] == "ES"):
 		return "U-" + tail
-	case head == "USE" || writtenStart == "US" && head == "USH" && tables.headSaid(word):
+	case head == "USE" || writtenStart == "US" && head == "USH" && tables.headSaid(word, exact):
 		return head + "-" + spelledLetter(word, 3)
 	case writtenStart == "US":
 		return spelled(word, true, true)
@@ -479,7 +482,7 @@ func (tables *letterTables) split(word, exact string) string {
 		return spelledLetter(word, 0) + "-" + spelledLetter(word, 1) + "-PC"
 	case slices.Contains(softStarts, start):
 		return spelled(word, true, true)
-	case tables.headSaid(word):
+	case tables.headSaid(word, exact):
 		return head + "-" + spelledLetter(word, 3)
 	case tables.tailSaid(word):
 		return spelledLetter(word, 0) + "-" + tail
