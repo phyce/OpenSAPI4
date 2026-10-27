@@ -29,17 +29,17 @@ func (tables *letterTables) tailed(word, tail string) bool {
 	})
 }
 
-// longLetters is how a word of five capitals or more that no list has, not in a run, is written (section 3.9), with
-// the signs and letters after them that spelledEntry gives it: the letters after NY and LA are tested small or
-// capital (NYMVK~dog is NY-MVK~dog, LASRB$a is kept). Exact is as capitalsWritten says: the starts NY, LA, US and UK
-// and the ends LA, NY and US count only in capitals, and IO and EDU, at the start or IO as the front, are eye-oh and
-// ed-yoo only in capitals (section 3.12: nYBAPL is kept, eDUAH is eDU-AH, iODBR iO-DBR, iONET iO-NET, oSBLa
-// oS-BLa).
+// longLetters is how a word of five capitals or more that no list has, not in a run, is written (section 3.9), with the
+// signs and letters after them that spelledEntry gives it, a kept word staying as it is only in capitals (section 3.11:
+// USINg is U-S-INg): the letters after NY and LA are tested small or capital (NYMVK~dog is NY-MVK~dog, LASRB$a is
+// kept). Exact is as capitalsWritten says: the starts NY, LA, US and UK and the ends LA, NY and US count only in
+// capitals, and IO and EDU, at the start or IO as the front, are eye-oh and ed-yoo only in capitals (section 3.12:
+// nYBAPL is kept, eDUAH is eDU-AH, iODBR iO-DBR, iONET iO-NET, oSBLa oS-BLa).
 func (tables *letterTables) longLetters(word, exact string) string {
 	start, writtenStart, rest, end := word[:2], exact[:2], word[2:], exact[len(exact)-2:]
 	vocalRest := strings.ContainsAny(rest, "AEIOUYaeiouy")
 	switch {
-	case tables.listed(tables.kept, word, exact):
+	case exact == word && tables.kept[word]:
 		return word
 	case writtenStart == "NY" && vocalRest:
 		return "NY-" + rest

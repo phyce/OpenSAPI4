@@ -2,6 +2,7 @@ package preformatter
 
 import (
 	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/phyce/OpenSAPI4/truvoice/datapack"
@@ -352,8 +353,9 @@ func spelled(word string, start, end bool) string {
 
 // keeps is whether a word in capitals of three letters is said as a word (section 3.9), bare and exact as
 // capitalsWritten says. The starts NY, UC, UK, US and LA count only in capitals (section 3.12: nYV, uCH and uSP are
-// said as words).
-func (tables *letterTables) keeps(word string, bare bool, exact string) bool {
+// said as words). Ended is whether the capitals end the word: before small letters the ends LA, NY and US don't
+// count, XUS included (section 3.11: ONYx is O-N-Y-x, XUSx X-U-S-x).
+func (tables *letterTables) keeps(word string, bare bool, exact string, ended bool) bool {
 	first, middle := word[0], word[1]
 	switch {
 	case tables.unkept[word]:
@@ -365,7 +367,7 @@ func (tables *letterTables) keeps(word string, bare bool, exact string) bool {
 	case "CE", "CI", "GE", "GI", "OS":
 		return false
 	case "XO", "XU":
-		if word != "XUS" {
+		if word != "XUS" || !ended {
 			return false
 		}
 	}
@@ -381,7 +383,7 @@ func (tables *letterTables) keeps(word string, bare bool, exact string) bool {
 		return false
 	}
 	switch {
-	case exact[:2] == "LA", word[1:] == "LA", word[1:] == "NY", word[1:] == "US",
+	case exact[:2] == "LA", ended && (word[1:] == "LA" || word[1:] == "NY" || word[1:] == "US"),
 		word[1:] == "QU" && !vowel(first) && first != 'Q', word == "GNU", word == "EDU", word == "USE":
 		return true
 	}
@@ -419,11 +421,15 @@ func (tables *letterTables) saidPattern(word string, bare bool) bool {
 	return false
 }
 
-// written is how a word in capitals of two letters or more, or one with a small head, is written, run being whether
-// it stands in a run of words in capitals and bare and marked as spelledEntry says: one in capitals as
-// capitalsWritten says, one with a small head as its capitals are written outside a run, in the word's own case as
-// recased says (section 3.12): bCD is b-C-D, iBC i-B-C, and in a run too, BCD bCD BCD being BCD b-C-D BCD.
+// written is how a word in capitals of two letters or more, a case piece or one with a small head, is written, run
+// being whether it stands in a run of words in capitals and bare and marked as spelledEntry says: one in capitals as
+// capitalsWritten says, a case piece as caseWritten says (section 3.11), one with a small head as its capitals are
+// written outside a run, in the word's own case as recased says (section 3.12): bCD is b-C-D, iBC i-B-C, and in a run
+// too, BCD bCD BCD being BCD b-C-D BCD.
 func (tables *letterTables) written(word string, run, bare, marked bool) string {
+	if front, ok := casePiece(word); ok {
+		return tables.caseWritten(word, front)
+	}
 	if !smallHead(word) {
 		return tables.capitalsWritten(word, run, bare, marked, word)
 	}
@@ -448,9 +454,10 @@ func letterWord(word string) bool {
 	return word != "" && strings.Trim(word, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") == ""
 }
 
-// recased is how the capitals of a word with a small head were written (section 3.12), in the word's own case: each
-// capital is the word's next letter as the word has it, eye is i for a small i, KEW for the word's next two letters Q
-// and U stays KEW (bqUC is bKEWC), triple and the letter after it stand for the word's next three letters, the first
+// recased is how the capitals of a word with a small head or a case piece were written (sections 3.11 and 3.12), in
+// the word's own case: each capital is the word's next letter as the word has it, eye is i for a small i, KEW for the
+// word's next two letters Q and U stays KEW (bqUC is bKEWC), ed-yoo and eye-oh stand for the word's next three and two
+// letters (EDUcation is ed-yoo-cation), triple and the letter after it for the word's next three letters, the first
 // as the word has it when they start the word and the last otherwise (aAAH is triple-a-H, baAA b-triple-Aye), and the
 // rest stays as it is. Writing without capitals stays whole: aSAP is aye-sap and iSA eye-sa.
 func recased(word, written string) string {
@@ -466,6 +473,14 @@ func recased(word, written string) string {
 	var output strings.Builder
 	for position := 0; position < len(written); {
 		switch {
+		case strings.HasPrefix(written[position:], "ed-yoo"):
+			output.WriteString("ed-yoo")
+			letters = letters[3:]
+			position += 6
+		case strings.HasPrefix(written[position:], "eye-oh"):
+			output.WriteString("eye-oh")
+			letters = letters[2:]
+			position += 6
 		case strings.HasPrefix(written[position:], "eye"):
 			if letters[0] == 'I' {
 				output.WriteString("eye")
@@ -528,15 +543,23 @@ func (tables *letterTables) capitalsWritten(word string, run, bare, marked bool,
 		return word
 	case word[:2] == "QU" && strings.IndexByte("AEIOUSW", word[2]) < 0:
 		return "KEW" + word[2:]
-	case tables.keeps(word, bare, exact):
+	case tables.keeps(word, bare, exact, true):
 		return word
 	case word[1:] == "PC":
 		return spelled(word[:1], true, false) + "-PC"
-	case tables.twoLetters[word[:2]] && vowel(word[0]) && !vowel(word[1]) &&
-		(consonant(word[2]) || !alphabetic(word[2])) && (word[2] != 'S' || !bare) && !tables.onsets[word[1:]]:
+	case tables.twoLetterFirst(word, bare):
 		return word[:2] + "-" + word[2:]
 	}
 	return spelled(word, true, true)
+}
+
+// twoLetterFirst is whether a word in capitals of three letters is its first two letters and the third (section
+// 3.9), bare as spelledEntry says: the first two are a two-letter word that starts with a vowel and ends in a
+// consonant, before a consonant other than S (any consonant when not bare) or a sign (AD-~), and the last two aren't
+// an onset.
+func (tables *letterTables) twoLetterFirst(word string, bare bool) bool {
+	return tables.twoLetters[word[:2]] && vowel(word[0]) && !vowel(word[1]) &&
+		(consonant(word[2]) || !alphabetic(word[2])) && (word[2] != 'S' || !bare) && !tables.onsets[word[1:]]
 }
 
 // listed is whether a word in capitals, written as exact, is one of a table's: a capitals-only one only when it is
@@ -557,17 +580,17 @@ func placed(word string) bool {
 
 // spelledEntry is a word whose word in capitals of two letters or more the letter rules change, or whose word in
 // capitals is abbreviated, with a plain list word's marks around it, as a plain list word whose expansion is what they
-// write (section 3.9), and the closing marks written after it. A function word with the marks that tilded reads and a
-// word that lowered changes are none. The [ after the first of the opening brackets belong to the word, letters of no
-// kind: [[AB is [-A-B, the first [ going as settledSquare says. So do the marks after the capitals before the longest
-// closing marks that signedClosing takes, letters of no kind too: AB~ is A-B-~, AB)". is A-B-)". and USKN~ is
-// U-S-KN~. A word that starts with five capitals or more also takes any letters after its marks (EDULC~dog is
-// ed-yoo-LC~dog) and its marks may hold a dot (LASRB.~ is L-A-S-R-B-.-~); a shorter one with a dot in them is none. A
-// digit ends the word and its marks, and it and what follows are written after it as they are, a quote, ' or * before
-// the digit going with it: BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it
-// and its closing marks are an abbreviation's, a quote perhaps at their end; marked when the marks before it have a '
-// or ~, or two of [ and quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS,
-// ~SOS is ~S-O-S).
+// write (section 3.9), and the closing marks written after it. A case piece with no marks after its letters is one too
+// (section 3.11: DOg is DO-g, but DOg~ is none). A function word with the marks that tilded reads and a word that
+// lowered changes are none. The [ after the first of the opening brackets belong to the word, letters of no kind: [[AB
+// is [-A-B, the first [ going as settledSquare says. So do the marks after the capitals before the longest closing
+// marks that signedClosing takes, letters of no kind too: AB~ is A-B-~, AB)". is A-B-)". and USKN~ is U-S-KN~. A word
+// that starts with five capitals or more also takes any letters after its marks (EDULC~dog is ed-yoo-LC~dog) and its
+// marks may hold a dot (LASRB.~ is L-A-S-R-B-.-~); a shorter one with a dot in them is none. A digit ends the word and
+// its marks, and it and what follows are written after it as they are, a quote, ' or * before the digit going with it:
+// BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it and its closing marks are
+// an abbreviation's, a quote perhaps at their end; marked when the marks before it have a ' or ~, or two of [ and
+// quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS, ~SOS is ~S-O-S).
 func (address *address) spelledEntry(token string, run, lettered bool) (datapack.Word, string, bool) {
 	opening, word, closing := parted(token)
 	if squares := strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("); len(squares) >= 2 &&
@@ -588,7 +611,9 @@ func (address *address) spelledEntry(token string, run, lettered bool) (datapack
 	letters := strings.TrimLeft(word, "[")
 	abbreviated := abbreviatedWord(word + closing[:signs])
 	long := len(letters) >= 5 && capitalLetters(letters[:5])
-	if !(len(letters) >= 2 && capitalLetters(letters) || long || smallHead(word) && letterWord(word)) ||
+	_, piece := casePiece(word)
+	if !(len(letters) >= 2 && capitalLetters(letters) || long || smallHead(word) && letterWord(word) ||
+		piece && signs == 0) ||
 		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
 		!listOpening(opening, true) ||
 		strings.Contains(closing[:signs], ".") && !long {
@@ -709,4 +734,129 @@ func caseSplit(paragraph string) string {
 		parts[index] = strings.Join(pieces, " ")
 	}
 	return strings.Join(parts, "")
+}
+
+// casePiece is whether a word is a case piece (section 3.11), and its front: two capitals or more and then small
+// letters (the capitals), a capital and small letters before two capitals or more and any letters (the capital and
+// small letters), or Mc, a capital, small letters perhaps, a capital and any letters (Mc).
+func casePiece(word string) (string, bool) {
+	if !letterWord(word) || !upper(word[0]) {
+		return "", false
+	}
+	capitals := 1
+	for capitals < len(word) && upper(word[capitals]) {
+		capitals++
+	}
+	if capitals >= 2 {
+		if capitals == len(word) || hasCapital(word[capitals:]) {
+			return "", false
+		}
+		return word[:capitals], true
+	}
+	smalls := capitals
+	for smalls < len(word) && small(word[smalls]) {
+		smalls++
+	}
+	if smalls+2 <= len(word) && upper(word[smalls]) && upper(word[smalls+1]) {
+		return word[:smalls], true
+	}
+	if !strings.HasPrefix(word, "Mc") || len(word) < 4 || !upper(word[2]) {
+		return "", false
+	}
+	next := 3
+	for next < len(word) && small(word[next]) {
+		next++
+	}
+	return "Mc", next < len(word)
+}
+
+// frontWritten is how the front of a case piece of four letters or fewer is written, in capitals (section 3.11), read
+// as the start of a longer word: two letters said when they are a two-letter word and spelled otherwise; three
+// letters QU before a consonant other than S and W as KEW and that letter, said when keeps says so for capitals that
+// don't end the word (ONYx is O-N-Y-x), the first two and the third when twoLetterFirst says so, spelled otherwise.
+// Spelling ends in A, not Aye: BCAt is B-C-A-t, GEt G-E-t, GETx GET-x and ADBc AD-B-c.
+func (tables *letterTables) frontWritten(front string) string {
+	switch {
+	case len(front) == 2 && tables.twoLetters[front]:
+		return front
+	case len(front) == 2:
+		return spelled(front, true, false)
+	case front[:2] == "QU" && strings.IndexByte("AEIOUSW", front[2]) < 0:
+		return "KEW" + front[2:]
+	case tables.keeps(front, false, front, false):
+		return front
+	case tables.twoLetterFirst(front, false):
+		return front[:2] + "-" + front[2:]
+	}
+	return spelled(front, true, false)
+}
+
+// caseWhole is whether a case piece in capitals (word), written as exact, is written whole (section 3.11): its capitals
+// read as a word in capitals and recased, not its front, a dash and the rest. One of three letters when it starts with
+// LA or is EDU (LAn, EDu; USe is U-S-e). One of four letters when it is a piece (UsER); said as said says, when it
+// starts with LA or ends in LA, NY or US (LAte, McLA; SCAm is SCA-m, BONe BON-e); otherwise not IO before N but IONE
+// (IoNA is eye-o-NA, IoNE eye-oNE), US before H, before U and a tail tailSaid says, or before ED or ES (USHx is USH-x,
+// USEd USE-d, UsED U-s-ED), but any that starts with EDU, USE, IO, OS or PC, with NY, UC, UK, US or LA in capitals,
+// with a long head or ends in a long tail (BCAm is B-CAm, BCAt B-C-A-t). One of five letters or more when it is a
+// piece, starts with NY, LA or UK in capitals, US in capitals but before E, H or U, IO but before N, EDU, OS or PC,
+// ends in LA, NY or US in capitals, or when headed says it starts with a piece or long head or tailed says it ends in a
+// piece or long tail (PkieVNY stays, USINg is U-S-INg).
+func (tables *letterTables) caseWhole(word, exact string) bool {
+	if len(word) == 3 {
+		return exact[:2] == "LA" || word == "EDU"
+	}
+	if slices.Contains(tables.pieces, word) {
+		return true
+	}
+	start, writtenStart, writtenEnd := word[:2], exact[:2], exact[len(exact)-2:]
+	if len(word) == 4 {
+		if tables.said(word, exact) {
+			return writtenStart == "LA" || writtenEnd == "LA" || writtenEnd == "NY" || writtenEnd == "US"
+		}
+		if start == "IO" && word[2] == 'N' && word[3] != 'E' || start == "US" &&
+			(word[2] == 'H' || word[2] == 'U' && tables.tailSaid(word) || word[2:] == "ED" || word[2:] == "ES") {
+			return false
+		}
+		switch {
+		case word[:3] == "EDU", word[:3] == "USE", start == "IO", start == "OS", start == "PC":
+			return true
+		}
+		switch writtenStart {
+		case "NY", "UC", "UK", "US", "LA":
+			return true
+		}
+		return slices.Contains(tables.longHeads, word[:3]) || slices.Contains(tables.longTails, word[1:])
+	}
+	switch {
+	case writtenStart == "NY", writtenStart == "LA", writtenStart == "UK",
+		writtenStart == "US" && !oneOf(word[2], "EHU"),
+		writtenEnd == "LA", writtenEnd == "NY", writtenEnd == "US",
+		start == "IO" && word[2] != 'N', word[:3] == "EDU", start == "OS", start == "PC":
+		return true
+	}
+	return slices.ContainsFunc(slices.Concat(tables.pieces, tables.longHeads), func(head string) bool {
+		return tables.headed(word, head)
+	}) || slices.ContainsFunc(slices.Concat(tables.pieces, tables.longTails), func(tail string) bool {
+		return tables.tailed(word, tail)
+	})
+}
+
+// caseWritten is how a case piece is written, front being its front as casePiece says (section 3.11): whole when
+// caseWhole says so, its capitals as capitalsWritten says outside a run, recased (EDUcation is ed-yoo-cation, UsET
+// UsE-T); otherwise its front, a dash and the rest, the front as frontWritten says, recased, when the piece has four
+// letters or fewer and as it is otherwise (DOg is DO-g, MCDog MCD-og, McDOg Mc-DOg), and a rest of one a aye (CAa is
+// C-A-aye).
+func (tables *letterTables) caseWritten(word, front string) string {
+	capitals := strings.ToUpper(word)
+	if tables.caseWhole(capitals, word) {
+		return recased(word, tables.capitalsWritten(capitals, false, false, false, word))
+	}
+	rest := word[len(front):]
+	if len(word) <= 4 {
+		front = recased(front, tables.frontWritten(strings.ToUpper(front)))
+	}
+	if rest == "a" {
+		rest = "aye"
+	}
+	return front + "-" + rest
 }
