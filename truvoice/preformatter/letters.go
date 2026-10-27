@@ -542,3 +542,73 @@ func (tables *letterTables) sentenceStarting(following string) bool {
 	word := strings.TrimLeft(cmp.Or(tables.lowered(following), following), "([\"")
 	return word != "" && upper(word[0]) || raisingNumber(word) || strings.Trim(word, ")]!?:;,.>") == ""
 }
+
+// casePieces is a word's pieces at its changes of case (section 3.11): a capital after a small letter and before
+// anything but a capital starts a piece, but not in a piece that starts with Mc and a capital; a small letter before
+// two capitals ends the splitting. A word that starts with a digit, or with a small letter and Hz, isn't split.
+func casePieces(word string) []string {
+	if word != "" && digit(word[0]) || len(word) >= 3 && small(word[0]) && word[1:3] == "Hz" {
+		return []string{word}
+	}
+	var pieces []string
+	start := 0
+	for index := 1; index < len(word); index++ {
+		if !small(word[index-1]) || !upper(word[index]) {
+			continue
+		}
+		mc := strings.HasPrefix(word[start:], "Mc") && start+2 < len(word) && upper(word[start+2])
+		if index+1 < len(word) && upper(word[index+1]) || mc {
+			break
+		}
+		pieces = append(pieces, word[start:index])
+		start = index
+	}
+	return append(pieces, word[start:])
+}
+
+// caseSplit is a paragraph with its words split at their changes of case (section 3.11), a word ending at a space,
+// comma, +, /, # or dash. After a word so split, a comma drops what follows it up to one of those but a comma; before
+// a + (that comma and what it drops perhaps between), each piece but the last of two characters or more is followed by
+// a space and its last character again.
+func caseSplit(paragraph string) string {
+	var parts []string
+	start := 0
+	for index := 0; index < len(paragraph); index++ {
+		if strings.IndexByte(" ,+/#-", paragraph[index]) >= 0 {
+			parts = append(parts, paragraph[start:index], paragraph[index:index+1])
+			start = index + 1
+		}
+	}
+	parts = append(parts, paragraph[start:])
+	for index := 0; index < len(parts); index += 2 {
+		pieces := casePieces(parts[index])
+		if len(pieces) == 1 {
+			continue
+		}
+		following := ""
+		if index+1 < len(parts) {
+			following = parts[index+1]
+		}
+		if following == "," {
+			later := index + 2
+			parts[later] = ""
+			for later+1 < len(parts) && parts[later+1] == "," {
+				parts[later+1], parts[later+2] = "", ""
+				later += 2
+			}
+			following = ""
+			if later+1 < len(parts) {
+				following = parts[later+1]
+			}
+		}
+		if following == "+" {
+			for position, piece := range pieces[:len(pieces)-1] {
+				if len(piece) > 1 {
+					pieces[position] = piece + " " + piece[len(piece)-1:]
+				}
+			}
+		}
+		parts[index] = strings.Join(pieces, " ")
+	}
+	return strings.Join(parts, "")
+}

@@ -426,9 +426,11 @@ func dashRunsSpaced(paragraph string) string {
 
 // spacing spaces a paragraph's words (section 3.4), as a sentence's start if start is set or, with restart, if
 // it has a closed number, and as a long paragraph if long is set (section 3.3), where a run of dashes after something
-// else starts with a space instead. It reports whether the paragraph ends where a sentence starts. A gap that keeps
-// more spaces near the limit is marked widenedOnce or widenedTwice after its first space.
+// else starts with a space instead. Words are split at their changes of case first (section 3.11). It reports whether
+// the paragraph ends where a sentence starts. A gap that keeps more spaces near the limit is marked widenedOnce or
+// widenedTwice after its first space.
 func (address *address) spacing(paragraph string, start, restart, long bool) (string, bool) {
+	paragraph = caseSplit(paragraph)
 	if long {
 		paragraph = dashRunsSpaced(paragraph)
 	}
