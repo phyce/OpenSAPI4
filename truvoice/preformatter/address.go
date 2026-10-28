@@ -650,7 +650,14 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 			entry, ok = address.reading(token)
 		}
 		if !ok {
-			entry, closing, ok = address.spelledEntry(token, runs[index], part.lettered)
+			var spelled spelling
+			entry, closing, spelled = address.spelledEntry(token, runs[index], part.lettered)
+			switch spelled {
+			case spelledWord:
+				ok = true
+			case keptPlural:
+				token = wordOpening(token, entry) + entry.Expansion + closing
+			}
 		}
 		if ok {
 			slash := 0
@@ -1751,8 +1758,7 @@ func plainClosing(closing string) bool {
 // first and before the rest of these.
 func (tables *letterTables) expanded(entry datapack.Word, token, closing, following string, spaces int, last bool,
 	gap, slash int) (string, int) {
-	opening, _, _ := parted(token)
-	opening = opening[:len(opening)-(len(entry.Word)-len(strings.TrimLeft(entry.Word, "[")))]
+	opening := wordOpening(token, entry)
 	written := opening + entry.Expansion + closing
 	dot := strings.IndexByte(closing, '.')
 	switch {
@@ -1796,6 +1802,12 @@ func (tables *letterTables) expanded(entry datapack.Word, token, closing, follow
 		return written, 1
 	}
 	return written, gap
+}
+
+// wordOpening is a token's opening marks before a list word, without the [ that spelledEntry took into the word.
+func wordOpening(token string, entry datapack.Word) string {
+	opening, _, _ := parted(token)
+	return opening[:len(opening)-(len(entry.Word)-len(strings.TrimLeft(entry.Word, "[")))]
 }
 
 // dotKept is whether a list word's dot stays, spaces being the spaces right after it, and the gap after the word, 0 at

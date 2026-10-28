@@ -212,13 +212,13 @@ func (address *address) slashes(paragraph string) string {
 // together is a space, and a single one stays in a path or if the parts beside it (or the next word, for one that ends
 // the word, but none at the paragraph's end) keep it, a kept space before it going with it otherwise, as one before a
 // run does (goneBefore). A slash that stays has a space after it, one that goes is a space. A list word, or a word
-// spelledEntry writes, before a single slash that stays drops it outside a path (slashDropped after the slash; section
-// 3.11: DOg/x is DO-g x, bCD/x b-C-D x, but cat acct/(/A dog is cat account / A dog), and a list word before a slash
-// that went is marked (slashGone). A ( or > that starts the word goes with the slash after it when the part after that
-// slash doesn't keep it (for a >, one not starting with a digit), or when another slash follows; for one that ends the
-// word, a ( reads the upcoming word's part before its first slash, and goes with its slash, and nothing stays, when
-// that word starts with a slash. When the part after the slash keeps neither, an openingGone stands before it (section
-// 3.10).
+// spelledEntry spells, before a single slash that stays drops it outside a path (slashDropped after the slash; section
+// 3.11: DOg/x is DO-g x, bCD/x b-C-D x, but CATs/dog CAT's / dog and cat acct/(/A dog is cat account / A dog), and a
+// list word before a slash that went is marked (slashGone). A ( or > that starts the word goes with the slash after it
+// when the part after that slash doesn't keep it (for a >, one not starting with a digit), or when another slash
+// follows; for one that ends the word, a ( reads the upcoming word's part before its first slash, and goes with its
+// slash, and nothing stays, when that word starts with a slash. When the part after the slash keeps neither, an
+// openingGone stands before it (section 3.10).
 func (address *address) slashed(word, following string, path bool, upcoming, ending string) string {
 	rest := strings.TrimLeft(word, "/")
 	output := strings.Repeat("/ ", len(word)-len(rest))
@@ -268,7 +268,7 @@ func (address *address) slashed(word, following string, path bool, upcoming, end
 		return output + left + "/ " + right
 	}
 	_, listed := address.listed(left, 1, "")
-	if _, _, spelled := address.spelledEntry(left, false, false); listed || spelled {
+	if _, _, spelled := address.spelledEntry(left, false, false); listed || spelled == spelledWord {
 		return output + left + "/" + slashDropped + " " + right
 	}
 	return output + left + "/ " + right

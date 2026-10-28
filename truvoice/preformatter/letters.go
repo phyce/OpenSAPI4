@@ -616,8 +616,12 @@ func placed(word string) bool {
 // word and its marks, and it and what follows are written after it as they are, a quote, ' or * before the digit going
 // with it: BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it and its closing
 // marks are an abbreviation's, a quote perhaps at their end; marked when the marks before it have a ' or ~, or two of [
-// and quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS, ~SOS is ~S-O-S).
-func (address *address) spelledEntry(token string, run, lettered bool) (datapack.Word, string, bool) {
+// and quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS, ~SOS is ~S-O-S). A
+// word in capitals with an ending (possessed) is its capitals, never bare, and the ending after what the letter rules
+// write, with no marks: ABs is A-B's, SOSs SOS's, AB's~ A-B's~; one that is a function word with its ending is none
+// (HAs), and one whose capitals are a function word takes no ~ (THEs is THE's). A plural whose capitals the letter
+// rules keep is kept: CATs is CAT's, written so and spaced as a word that isn't listed.
+func (address *address) spelledEntry(token string, run, lettered bool) (datapack.Word, string, spelling) {
 	opening, word, closing := parted(token)
 	if squares := strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("); len(squares) >= 2 &&
 		strings.Trim(squares, "[") == "" {
@@ -634,6 +638,11 @@ func (address *address) spelledEntry(token string, run, lettered bool) (datapack
 	for !signedClosing(closing[signs:]) && !digit(closing[signs]) {
 		signs++
 	}
+	whole := word
+	word, ending, plural := possessed(word, closing[:signs])
+	if ending != "" {
+		signs = 0
+	}
 	letters := strings.TrimLeft(word, "[")
 	abbreviated := abbreviatedWord(word + closing[:signs])
 	long := len(letters) >= 5 && capitalLetters(letters[:5])
@@ -641,21 +650,56 @@ func (address *address) spelledEntry(token string, run, lettered bool) (datapack
 	_, signedPiece := signedMixed(word)
 	if !(len(letters) >= 2 && capitalLetters(letters) || long || smallHead(word) && letterWord(word) || piece ||
 		signedPiece) ||
-		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
+		address.letters.lowered(token) != "" || address.functionWord(whole) && tildeMarks(opening, closing) ||
 		!listOpening(opening, true) ||
 		strings.Contains(closing[:signs], ".") && !long && !hasSmall(word) {
-		return datapack.Word{}, "", false
+		return datapack.Word{}, "", unspelled
 	}
 	word, closing = word+closing[:signs], closing[signs:]
-	bare := !strings.ContainsAny(opening, "\"'~") &&
+	bare := ending == "" && !strings.ContainsAny(opening, "\"'~") &&
 		strings.Trim(strings.TrimSuffix(closing, "\""), ")]!?:;,."+keptSpace) == ""
 	marked := !lettered &&
 		(strings.ContainsAny(opening, "'~") || strings.Count(opening, "[")+strings.Count(opening, "\"") >= 2)
 	written := address.letters.written(word, run, bare, marked)
-	if written == word && !abbreviated {
-		return datapack.Word{}, "", false
+	entry := datapack.Word{Word: word, Expansion: written + ending, Kind: datapack.PlainWord}
+	switch {
+	case written != word || abbreviated:
+		return entry, closing, spelledWord
+	case plural:
+		return entry, closing, keptPlural
 	}
-	return datapack.Word{Word: word, Expansion: written, Kind: datapack.PlainWord}, closing, true
+	return datapack.Word{}, "", unspelled
+}
+
+// spelling is what spelledEntry makes of a word.
+type spelling int
+
+const (
+	unspelled spelling = iota
+	spelledWord
+	keptPlural
+)
+
+// possessed is a word in capitals with an ending (section 3.9): its capitals, the ending and whether it is a plural.
+// The ending is a ' and what follows it in the word, or an s right after the capitals, before a ' or the word's end
+// with no marks after it (signs, the marks spelledEntry takes), which is written 's, and what follows that: ABs is
+// A-B's, AB's A-B's, ABs's A-B's's; ABss and ABs~ have none. Any other word is itself and no ending.
+func possessed(word, signs string) (string, string, bool) {
+	base, rest, found := strings.Cut(word, "'")
+	ending := ""
+	if found {
+		ending = "'" + rest
+	}
+	letters := strings.TrimLeft(base, "[")
+	plural := len(letters) >= 3 && strings.HasSuffix(letters, "s") && capitalLetters(letters[:len(letters)-1]) &&
+		(ending != "" || signs == "")
+	if plural {
+		base, ending = base[:len(base)-1], "'s"+ending
+	}
+	if letters := strings.TrimLeft(base, "["); ending != "" && len(letters) >= 2 && capitalLetters(letters) {
+		return base, ending, plural
+	}
+	return word, "", false
 }
 
 // signedClosing is whether marks after a word in capitals and the marks spelled with it are closing marks a plain
