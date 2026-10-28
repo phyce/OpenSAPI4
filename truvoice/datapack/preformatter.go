@@ -90,12 +90,13 @@ type Letters struct {
 
 // Word is a word the address context writes out, in one case: its expansion and how the dot after it is spaced. A
 // dotted word is written out only before a dot; an any-case word also with capitals after its first letter, the
-// others small or not.
+// others small or not; an any-first-case word, in small letters, also so with a capital first letter.
 type Word struct {
 	Word, Expansion string
 	Kind            WordKind
 	Dotted          bool
 	AnyCase         bool
+	AnyFirstCase    bool
 }
 
 // WordKind is how the dot after a word written out is spaced.
@@ -199,11 +200,12 @@ type lettersDescription struct {
 }
 
 type wordDescription struct {
-	Word      string `json:"word"`
-	Expansion string `json:"expansion"`
-	Kind      string `json:"kind"`
-	Dotted    bool   `json:"dotted"`
-	AnyCase   bool   `json:"anyCase"`
+	Word         string `json:"word"`
+	Expansion    string `json:"expansion"`
+	Kind         string `json:"kind"`
+	Dotted       bool   `json:"dotted"`
+	AnyCase      bool   `json:"anyCase"`
+	AnyFirstCase bool   `json:"anyFirstCase"`
 }
 
 type headerDescription struct {
@@ -482,7 +484,7 @@ func parseWords(descriptions []wordDescription) ([]Word, error) {
 				description.Word, description.Expansion)
 		}
 		words = append(words, Word{Word: description.Word, Expansion: description.Expansion, Kind: kind,
-			Dotted: description.Dotted, AnyCase: description.AnyCase})
+			Dotted: description.Dotted, AnyCase: description.AnyCase, AnyFirstCase: description.AnyFirstCase})
 	}
 	return words, nil
 }

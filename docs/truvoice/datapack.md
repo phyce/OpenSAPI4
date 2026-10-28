@@ -300,7 +300,8 @@ Each **list word**:
 | `expansion` | Word | What it is written as, printable ASCII, one character or more |
 | `kind` | `abbreviation`, `title`, `plain` or `capital` | How its dot and the spaces after it are written; a capital word is written as a plain one, and only when no word in capitals stands near it |
 | `dotted` | `true` or absent | Whether it is a list word only before a dot |
-| `anyCase` | `true` or absent | Whether a word with a small letter and a capital after its first letter is this one when its first letter as it is and its other letters lowered are this word ([preformatter.md](preformatter.md) §3.5) |
+| `anyCase` | `true` or absent | Whether a word with a small letter and a capital after its first letter is this one when its first letter as it is and its other letters lowered are this word ([preformatter.md](preformatter.md) §3.12) |
+| `anyFirstCase` | `true` or absent, only on a word in small letters | Whether such a word is this one when its letters lowered are this word, and the word of its first letter as it is and its other letters lowered isn't `anyCase` ([preformatter.md](preformatter.md) §3.12) |
 
 A capital word's expansion is the word after a `~`.
 

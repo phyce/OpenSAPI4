@@ -1534,7 +1534,8 @@ func (address *address) ended(opening, word, closing string) (datapack.Word, boo
 
 // listEntry is the list word a word is (section 3.5): its own, or for a word with a small letter and a capital after
 // its first letter the list word of its first letter and its other letters small, when that one is written out in any
-// case (section 3.12: acCT is account and ACct Account, but aUG stays aUG).
+// case (section 3.12: acCT is account and ACct Account, but aUG stays aUG), or else the list word of all its letters
+// small, when that one is written out whatever the case of the first letter (BLVd is boulevard).
 func (address *address) listEntry(word string) (datapack.Word, bool) {
 	if entry, ok := address.words[word]; ok {
 		return entry, true
@@ -1542,8 +1543,11 @@ func (address *address) listEntry(word string) (datapack.Word, bool) {
 	if !hasSmall(word) || !hasCapital(word[1:]) {
 		return datapack.Word{}, false
 	}
-	entry, ok := address.words[word[:1]+lower(word[1:])]
-	return entry, ok && entry.AnyCase
+	if entry, ok := address.words[word[:1]+lower(word[1:])]; ok && entry.AnyCase {
+		return entry, true
+	}
+	entry, ok := address.words[lower(word)]
+	return entry, ok && entry.AnyFirstCase
 }
 
 // plainEntry is a list word written as a plain word: a capital word keeps its kind.

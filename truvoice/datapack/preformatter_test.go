@@ -32,14 +32,17 @@ func TestPreFormatter(t *testing.T) {
 		all.Word != "ALL" || all.Expansion != "~ALL" || all.Kind != datapack.CapitalWord || all.AnyCase {
 		t.Errorf("%d list words, the first %+v", len(address.Words), first)
 	}
-	anyCase := 0
+	anyCase, anyFirstCase := 0, 0
 	for _, word := range address.Words {
 		if word.AnyCase {
 			anyCase++
 		}
+		if word.AnyFirstCase {
+			anyFirstCase++
+		}
 	}
-	if anyCase != 221 {
-		t.Errorf("%d any-case list words", anyCase)
+	if anyCase != 212 || anyFirstCase != 9 {
+		t.Errorf("%d any-case and %d any-first-case list words", anyCase, anyFirstCase)
 	}
 	if len(address.NumberWords) != 19 || address.NumberWords[0] != "apr" {
 		t.Errorf("number words %v", address.NumberWords)
