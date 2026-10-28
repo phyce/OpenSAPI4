@@ -425,19 +425,44 @@ func (tables *letterTables) saidPattern(word string, bare bool) bool {
 // being whether it stands in a run of words in capitals and bare and marked as spelledEntry says: one in capitals as
 // capitalsWritten says, a case piece as caseWritten says (section 3.11), one with a small head as its capitals are
 // written outside a run, in the word's own case as recased says (section 3.12): bCD is b-C-D, iBC i-B-C, and in a run
-// too, BCD bCD BCD being BCD b-C-D BCD.
+// too, BCD bCD BCD being BCD b-C-D BCD. A case piece with signs after it, and the letters after them, is written so
+// too when its capitals come first or caseWhole says so of its capitals with the signs (section 3.11: DOg~ is DOg-~,
+// ABc~ A-B-c-~, USe~~ U-S-e~~, EDu~dog EDu-~dog, UsER~ UsER-~), and is its front, a dash and the rest as it is
+// otherwise (BcDF~ is Bc-DF~, McDO~ Mc-DO~, IoNE~ Io-NE~).
 func (tables *letterTables) written(word string, run, bare, marked bool) string {
 	if front, ok := casePiece(word); ok {
 		return tables.caseWritten(word, front)
 	}
-	if !smallHead(word) {
+	capitalBytes := []byte(word)
+	for index, character := range capitalBytes {
+		capitalBytes[index] = upperCase(character)
+	}
+	capitals := string(capitalBytes)
+	if piece, ok := signedMixed(word); ok {
+		if front, ok := casePiece(piece); ok && !upper(front[1]) && !tables.caseWhole(capitals, word) {
+			return front + "-" + word[len(front):]
+		}
+	} else if !smallHead(word) {
 		return tables.capitalsWritten(word, run, bare, marked, word)
 	}
-	capitals := []byte(word)
-	for index, character := range capitals {
-		capitals[index] = upperCase(character)
+	return recased(word, tables.capitalsWritten(capitals, false, bare, marked, word))
+}
+
+// signedMixed is whether a word is a case piece or one with a small head and then signs, perhaps letters after them,
+// with no quote, ' or * (section 3.11), and that case piece or word.
+func signedMixed(word string) (string, bool) {
+	end := 0
+	for end < len(word) && alphabetic(word[end]) {
+		end++
 	}
-	return recased(word, tables.capitalsWritten(string(capitals), false, bare, marked, word))
+	piece := word[:end]
+	if end == len(word) || strings.ContainsAny(word[end:], "\"'*") {
+		return "", false
+	}
+	if _, ok := casePiece(piece); ok || smallHead(piece) && letterWord(piece) {
+		return piece, true
+	}
+	return "", false
 }
 
 // smallHead is whether a word starts with small letters and then two capitals (section 3.12).
@@ -580,17 +605,18 @@ func placed(word string) bool {
 
 // spelledEntry is a word whose word in capitals of two letters or more the letter rules change, or whose word in
 // capitals is abbreviated, with a plain list word's marks around it, as a plain list word whose expansion is what they
-// write (section 3.9), and the closing marks written after it. A case piece with no marks after its letters is one too
-// (section 3.11: DOg is DO-g, but DOg~ is none). A function word with the marks that tilded reads and a word that
-// lowered changes are none. The [ after the first of the opening brackets belong to the word, letters of no kind: [[AB
-// is [-A-B, the first [ going as settledSquare says. So do the marks after the capitals before the longest closing
-// marks that signedClosing takes, letters of no kind too: AB~ is A-B-~, AB)". is A-B-)". and USKN~ is U-S-KN~. A word
-// that starts with five capitals or more also takes any letters after its marks (EDULC~dog is ed-yoo-LC~dog) and its
-// marks may hold a dot (LASRB.~ is L-A-S-R-B-.-~); a shorter one with a dot in them is none. A digit ends the word and
-// its marks, and it and what follows are written after it as they are, a quote, ' or * before the digit going with it:
-// BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it and its closing marks are
-// an abbreviation's, a quote perhaps at their end; marked when the marks before it have a ' or ~, or two of [ and
-// quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS, ~SOS is ~S-O-S).
+// write (section 3.9), and the closing marks written after it. A case piece is one too (section 3.11: DOg is DO-g, DOg~
+// DOg-~). A function word with the marks that tilded reads and a word that lowered changes are none. The [ after the
+// first of the opening brackets belong to the word, letters of no kind: [[AB is [-A-B, the first [ going as
+// settledSquare says. So do the marks after the capitals before the longest closing marks that signedClosing takes,
+// letters of no kind too: AB~ is A-B-~, AB)". is A-B-)". and USKN~ is U-S-KN~. A word that starts with five capitals or
+// more also takes any letters after its marks (EDULC~dog is ed-yoo-LC~dog) and its marks may hold a dot (LASRB.~ is
+// L-A-S-R-B-.-~); a shorter one with a dot in them is none. So does a case piece or a word with a small head, of any
+// length, but not after a quote, ' or * (USe~dog is U-S-e~dog, LAn~.~ L-A-n-~-.-~, iOS~dog iO-S~dog). A digit ends the
+// word and its marks, and it and what follows are written after it as they are, a quote, ' or * before the digit going
+// with it: BCD!5 is B-C-D-!5, BCD"5 is B-C-D"5. The word is bare when no quote or ~ stands before it and its closing
+// marks are an abbreviation's, a quote perhaps at their end; marked when the marks before it have a ' or ~, or two of [
+// and quotes, but not when it is a run of single letters (lettered, section 3.10: S O S is ~SOS, ~SOS is ~S-O-S).
 func (address *address) spelledEntry(token string, run, lettered bool) (datapack.Word, string, bool) {
 	opening, word, closing := parted(token)
 	if squares := strings.TrimLeft(strings.TrimPrefix(opening, ">"), "("); len(squares) >= 2 &&
@@ -612,11 +638,12 @@ func (address *address) spelledEntry(token string, run, lettered bool) (datapack
 	abbreviated := abbreviatedWord(word + closing[:signs])
 	long := len(letters) >= 5 && capitalLetters(letters[:5])
 	_, piece := casePiece(word)
-	if !(len(letters) >= 2 && capitalLetters(letters) || long || smallHead(word) && letterWord(word) ||
-		piece && signs == 0) ||
+	_, signedPiece := signedMixed(word)
+	if !(len(letters) >= 2 && capitalLetters(letters) || long || smallHead(word) && letterWord(word) || piece ||
+		signedPiece) ||
 		address.letters.lowered(token) != "" || address.functionWord(word) && tildeMarks(opening, closing) ||
 		!listOpening(opening, true) ||
-		strings.Contains(closing[:signs], ".") && !long {
+		strings.Contains(closing[:signs], ".") && !long && !hasSmall(word) {
 		return datapack.Word{}, "", false
 	}
 	word, closing = word+closing[:signs], closing[signs:]
