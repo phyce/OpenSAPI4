@@ -213,7 +213,8 @@ func (tables *letterTables) signedSaid(letters string) bool {
 
 // said is whether a word of four capitals is said as a word (section 3.9), exact as capitalsWritten says: the starts
 // NY, UC, UK, US and LA and the ends LA, NY and US count only in capitals (section 3.12: nYRE is said as a word, bDLa
-// isn't).
+// isn't), and USH is an open head only in capitals (section 3.11: USha is U-S-h-aye). One with a sign third before a
+// letter is said as signedSaid says of its first two, but XO and XU (JA~x and QU~x are said, AB~x isn't).
 func (tables *letterTables) said(word, exact string) bool {
 	switch {
 	case tables.listed(tables.kept, word, exact):
@@ -223,7 +224,7 @@ func (tables *letterTables) said(word, exact string) bool {
 	case exact[2:] == "LA" || exact[2:] == "NY" || exact[2:] == "US":
 		return exact[:2] != "NY"
 	case (slices.Contains(spellingStarts, word[:2]) || slices.Contains(capitalStarts, exact[:2])) &&
-		!tables.openHeads[word[:3]]:
+		(!tables.openHeads[word[:3]] || slices.Contains(capitalStarts, exact[:2]) && exact[2] != word[2]):
 		return false
 	case exact[:2] == "LA":
 		return vocal(word[2]) || vocal(word[3])
@@ -250,6 +251,8 @@ func (tables *letterTables) said(word, exact string) bool {
 		return false
 	case !alphabetic(word[3]):
 		return tables.signedSaid(word[:3])
+	case !alphabetic(word[2]):
+		return tables.signedSaid(word[:2]) && word[:2] != "XO" && word[:2] != "XU"
 	}
 	switch soundKinds(word) {
 	case "CVCC":
@@ -426,9 +429,11 @@ func (tables *letterTables) spelledFour(word string) string {
 }
 
 // split is how a word of four capitals that isn't said as a word is written (section 3.9), exact as capitalsWritten
-// says: the starts NY, UC, UK, US, but before U and a tail, ED or ES, and LA count only in capitals, and EDU and IO are
-// written as ed-yoo and eye only in capitals (section 3.12: eDUI is eDU-I, iOGF i-O-GF, uSED u-SED), and USE is USE
-// before the last only when its E is a capital (section 3.11: USex is U-S-e-x).
+// says: the starts NY, UC, UK, US, but before U and a tail, ED or ES (the U or E a capital, section 3.11: USue is
+// U-S-u-e, USes. U-S-e-s., uSEd u-SEd), and LA count only in capitals, USH is said only in capitals (UShx is U-S-h-x),
+// and EDU and IO are written as ed-yoo and eye only in capitals (section 3.12: eDUI is eDU-I, iOGF i-O-GF, uSED u-SED),
+// and USE is USE before the last only when its E is a capital (section 3.11: USex is U-S-e-x). A two-letter word before
+// a sign and a letter is written before them (AD~x is AD-~-x).
 func (tables *letterTables) split(word, exact string) string {
 	start, writtenStart, head, tail := word[:2], exact[:2], word[:3], word[1:]
 	switch {
@@ -451,9 +456,9 @@ func (tables *letterTables) split(word, exact string) string {
 		return "NY-" + word[2:]
 	case writtenStart == "NY" || writtenStart == "UC" || writtenStart == "UK":
 		return spelled(word, true, true)
-	case start == "US" && (word[2] == 'U' && tables.tailSaid(word) || word[2:] == "ED" || word[2:] == "ES"):
+	case start == "US" && (exact[2] == 'U' && tables.tailSaid(word) || exact[2] == 'E' && oneOf(word[3], "DS")):
 		return "U-" + tail
-	case head == "USE" && exact[2] == 'E' || writtenStart == "US" && head == "USH" && tables.headSaid(word, exact):
+	case head == "USE" && exact[2] == 'E' || writtenStart == "US" && exact[:3] == "USH" && tables.headSaid(word, exact):
 		return head + "-" + spelledLetter(word, 3)
 	case writtenStart == "US":
 		return spelled(word, true, true)
@@ -487,7 +492,8 @@ func (tables *letterTables) split(word, exact string) string {
 		return head + "-" + spelledLetter(word, 3)
 	case tables.tailSaid(word):
 		return spelledLetter(word, 0) + "-" + tail
-	case word[2:] != "PC" && tables.twoLetters[start] && vowel(word[0]) && consonant(word[2]):
+	case word[2:] != "PC" && tables.twoLetters[start] && vowel(word[0]) &&
+		(consonant(word[2]) || !alphabetic(word[2]) && alphabetic(word[3])):
 		return start + "-" + spelledLetter(word, 2) + "-" + spelledLetter(word, 3)
 	}
 	return tables.spelledFour(word)

@@ -34,8 +34,8 @@ func (tables *letterTables) tailed(word, tail string) bool {
 // USINg is U-S-INg): the letters after NY and LA are tested small or capital (NYMVK~dog is NY-MVK~dog, LASRB$a is
 // kept). Exact is as capitalsWritten says: the starts NY, LA, US and UK and the ends LA, NY and US count only in
 // capitals, and IO and EDU, at the start or IO as the front, are eye-oh and ed-yoo only in capitals (section 3.12:
-// nYBAPL is kept, eDUAH is eDU-AH, iODBR iO-DBR, iONET iO-NET, oSBLa oS-BLa). US before a small e is U-S and the rest
-// (section 3.11: USe~~ is U-S-e~~).
+// nYBAPL is kept, eDUAH is eDU-AH, iODBR iO-DBR, iONET iO-NET, oSBLa oS-BLa). US before a small e, h or u is U-S and
+// the rest (section 3.11: USe~~ is U-S-e~~, UShxy U-S-hxy).
 func (tables *letterTables) longLetters(word, exact string) string {
 	start, writtenStart, rest, end := word[:2], exact[:2], word[2:], exact[len(exact)-2:]
 	vocalRest := strings.ContainsAny(rest, "AEIOUYaeiouy")
@@ -50,7 +50,7 @@ func (tables *letterTables) longLetters(word, exact string) string {
 		return spelled(word, true, true)
 	case writtenStart == "LA" || end == "LA" || end == "NY":
 		return word
-	case writtenStart == "US" && (!oneOf(word[2], "EHU") || exact[2] == 'e'):
+	case writtenStart == "US" && !oneOf(exact[2], "EHU"):
 		return "U-S-" + rest
 	case end == "US":
 		return word
