@@ -43,6 +43,9 @@ const (
 	// and openingGone one where a ( or > went with the slash after it (section 3.10).
 	runBreak    = "\x0e"
 	openingGone = runBreak + "("
+	// loweredSpace is the space after the small first letter of a lowered piece of a word split at its changes of
+	// case, which keeps the piece and the rest of the word after it one word (section 3.11).
+	loweredSpace = "\x0f"
 	// closingRoom is how many marks a closing run keeps.
 	closingRoom = 4
 )
@@ -430,7 +433,7 @@ func dashRunsSpaced(paragraph string) string {
 // the paragraph ends where a sentence starts. A gap that keeps more spaces near the limit is marked widenedOnce or
 // widenedTwice after its first space.
 func (address *address) spacing(paragraph string, start, restart, long bool) (string, bool) {
-	paragraph = caseSplit(paragraph)
+	paragraph = address.letters.caseSplit(paragraph)
 	if long {
 		paragraph = dashRunsSpaced(paragraph)
 	}
@@ -483,7 +486,7 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		token := part.token
 		read := token
 		if index > 0 {
-			if initial && skipped > 0 && capitalized(token) {
+			if initial && skipped > 0 && capitalized(cmp.Or(address.letters.lowered(token), token)) {
 				gap = 2
 				if exclaiming {
 					excess = max(excess, 1)
@@ -687,8 +690,8 @@ func (address *address) spacing(paragraph string, start, restart, long bool) (st
 		held = " /"
 	}
 	output = append(output, held, strings.Repeat(" ", trailing))
-	paragraph = strings.ReplaceAll(strings.Join(output, ""), keptSpace, " ")
-	return strings.ReplaceAll(paragraph, droppedDot, ""), initial
+	paragraph = strings.NewReplacer(keptSpace, " ", loweredSpace, " ", droppedDot, "").Replace(strings.Join(output, ""))
+	return paragraph, initial
 }
 
 // settledSquare settles a [ that starts a word, after its opening brackets: it goes when a closing run cut the word
@@ -1845,7 +1848,8 @@ func (address *address) skippable(token string) bool {
 
 // dotGap is how many spaces follow a word ending in a dot, which spaces follow in the paragraph, whole being the word
 // with the marks after its dot: two after ! or ? and fewer closing marks than a closing run keeps (one fewer before
-// two spaces, but after a word). A shouted word is spaced as an empty one.
+// two spaces, but after a word). A shouted word is spaced as an empty one. The following word is read as lowered
+// leaves it: dog. Xbox is dog. x box.
 func (address *address) dotGap(token string, kind kind, spaces int, following, whole string) int {
 	if shouted(token) {
 		kind = emptyKind
@@ -1858,7 +1862,7 @@ func (address *address) dotGap(token string, kind kind, spaces int, following, w
 		return 2
 	}
 	capital := 1
-	if capitalized(following) {
+	if capitalized(cmp.Or(address.letters.lowered(following), following)) {
 		capital = 2
 	}
 	if spaces >= 2 {

@@ -307,10 +307,14 @@ func (address *address) goneSlash(part string) string {
 
 // commasAndUnderscores spaces the commas of a paragraph's words and reads their underscores. A slash's mark that
 // ends a word stays at its end. When lowered changes a word's first piece, that piece is the whole word, before the
-// pieces after it: XB,. is x B,. . (section 3.9).
+// pieces after it: XB,. is x B,. . (section 3.9). A lowered piece of a word split at its changes of case stays as it
+// is (section 3.11).
 func (tables *letterTables) commasAndUnderscores(paragraph string) string {
 	words := strings.Split(paragraph, " ")
 	for index, word := range words {
+		if strings.Contains(word, loweredSpace) {
+			continue
+		}
 		mark := ""
 		if strings.HasSuffix(word, slashDropped) || strings.HasSuffix(word, slashGone) {
 			word, mark = word[:len(word)-1], word[len(word)-1:]

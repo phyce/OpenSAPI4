@@ -28,23 +28,23 @@ func newLetterTables(letters *datapack.Letters) letterTables {
 		pieces: letters.Pieces, longHeads: letters.LongHeads, longTails: letters.LongTails, unsplit: letters.Unsplit}
 }
 
-// lowered is a word in capitals of two letters or more with no opening marks, before nothing or a character that
-// isn't a letter and then anything, that starts with Q, X or Z before a consonant (not ZW, and not of Roman numerals'
-// letters only), with that letter small and a space after it (section 3.9); "" for any other word and a respelled one
-// without closing marks, which is read or respelled and counts as capitals beside other words. A word is tested by its
-// first piece as its commas space it, the rest of it written after that piece: XB,dog is x B,dog and XB~dog x B~dog.
-// The Roman numerals' test reads the word with the digits, the characters from @ to ~ and those from 128 up of the
-// rest of the piece: XCC is X-C-C and XCC$ X-C-C-$, but XCC~ and XCC5 are x CC~ and x CC5.
+// lowered is a word of two letters or more, in capitals or not, with no opening marks, before nothing or a character
+// that isn't a letter and then anything, that starts with Q, X or Z before a consonant (not ZW, and not of Roman
+// numerals' letters only, in either case), with that letter small and a space after it (section 3.9): Xbox, xbox, xBOX
+// and QsmBS are x box, x box, x BOX and q smBS. It is "" for any other word and a respelled one in any case without
+// closing marks, which is read or respelled and counts as capitals beside other words. A word is tested by its first
+// piece as its commas space it, the rest of it written after that piece: XB,dog is x B,dog and XB~dog x B~dog. The
+// Roman numerals' test reads the word in capitals with the digits, the characters from @ to ~ and those from 128 up of
+// the rest of the piece: XCC is X-C-C and XCC$ X-C-C-$, but XCC~ and XCC5 are x CC~ and x CC5.
 func (tables *letterTables) lowered(token string) string {
 	piece, _, _ := strings.Cut(wordCommas(token, false), " ")
 	letters := 0
-	for letters < len(piece) && upper(piece[letters]) {
+	for letters < len(piece) && alphabetic(piece[letters]) {
 		letters++
 	}
-	word, closing := piece[:letters], piece[letters:]
+	word, closing := strings.ToUpper(piece[:letters]), piece[letters:]
 	_, respelled := tables.respelled[word]
-	if len(word) < 2 || closing != "" && small(closing[0]) ||
-		strings.IndexByte("QXZ", word[0]) < 0 || !consonant(word[1]) || word[:2] == "ZW" ||
+	if len(word) < 2 || strings.IndexByte("QXZ", word[0]) < 0 || !consonant(word[1]) || word[:2] == "ZW" ||
 		strings.Trim(romanTested(word, closing), "CDILMVX") == "" || respelled && closing == "" {
 		return ""
 	}
@@ -719,8 +719,10 @@ func casePieces(word string) []string {
 // caseSplit is a paragraph with its words split at their changes of case (section 3.11), a word ending at a space,
 // comma, +, /, # or dash. After a word so split, a comma drops what follows it up to one of those but a comma; before
 // a + (that comma and what it drops perhaps between), each piece but the last of two characters or more is followed by
-// a space and its last character again.
-func caseSplit(paragraph string) string {
+// a space and its last character again. A piece but the last that lowered changes is its first letter small, a
+// loweredSpace and the rest of the word from its second letter on, through commas and #, up to a space, +, / or dash:
+// qxZ is q xZ Z, qxZbXc q xZbXc z bXc Xc and xbAb,dog x bAb,dog Ab,.
+func (tables *letterTables) caseSplit(paragraph string) string {
 	var parts []string
 	start := 0
 	for index := 0; index < len(paragraph); index++ {
@@ -734,6 +736,10 @@ func caseSplit(paragraph string) string {
 		pieces := casePieces(parts[index])
 		if len(pieces) == 1 {
 			continue
+		}
+		rest := parts[index]
+		for later := index + 1; later+1 < len(parts) && (parts[later] == "," || parts[later] == "#"); later += 2 {
+			rest += parts[later] + parts[later+1]
 		}
 		following := ""
 		if index+1 < len(parts) {
@@ -751,14 +757,19 @@ func caseSplit(paragraph string) string {
 				following = parts[later+1]
 			}
 		}
-		if following == "+" {
-			for position, piece := range pieces[:len(pieces)-1] {
-				if len(piece) > 1 {
-					pieces[position] = piece + " " + piece[len(piece)-1:]
-				}
+		written := make([]string, len(pieces))
+		start := 0
+		for position, piece := range pieces {
+			written[position] = piece
+			if position < len(pieces)-1 && tables.lowered(piece) != "" {
+				written[position] = lower(piece[:1]) + loweredSpace + rest[start+1:]
 			}
+			if following == "+" && position < len(pieces)-1 && len(piece) > 1 {
+				written[position] += " " + piece[len(piece)-1:]
+			}
+			start += len(piece)
 		}
-		parts[index] = strings.Join(pieces, " ")
+		parts[index] = strings.Join(written, " ")
 	}
 	return strings.Join(parts, "")
 }
