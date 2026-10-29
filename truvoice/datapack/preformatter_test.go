@@ -41,7 +41,7 @@ func TestPreFormatter(t *testing.T) {
 			anyFirstCase++
 		}
 	}
-	if anyCase != 212 || anyFirstCase != 9 {
+	if anyCase != 226 || anyFirstCase != 9 {
 		t.Errorf("%d any-case and %d any-first-case list words", anyCase, anyFirstCase)
 	}
 	if len(address.NumberWords) != 19 || address.NumberWords[0] != "apr" {
@@ -68,7 +68,7 @@ func TestPreFormatter(t *testing.T) {
 		len(letters.Unsplit) != 101 || letters.Unsplit[0] != "ABUSER" {
 		t.Errorf("long-letter tables %+v", letters)
 	}
-	if len(letters.Readings) != 125 || letters.Readings["PM"] != "P.m." || letters.Readings["SEPTEMBER"] != "September" {
+	if len(letters.Readings) != 132 || letters.Readings["PM"] != "P.m." || letters.Readings["SEPTEMBER"] != "September" {
 		t.Errorf("readings %v", letters.Readings)
 	}
 }

@@ -1544,8 +1544,9 @@ func (address *address) ended(opening, word, closing string) (datapack.Word, boo
 
 // listEntry is the list word a word is (section 3.5): its own, or for a word with a small letter and a capital after
 // its first letter the list word of its first letter and its other letters small, when that one is written out in any
-// case (section 3.12: acCT is account and ACct Account, but aUG stays aUG), or else the list word of all its letters
-// small, when that one is written out whatever the case of the first letter (BLVd is boulevard).
+// case (section 3.12: acCT is account and ACct Account, but aUG stays aUG; an apostrophe changes nothing: DEp'T is
+// Department), or else the list word of all its letters small, when that one is written out whatever the case of the
+// first letter (BLVd is boulevard).
 func (address *address) listEntry(word string) (datapack.Word, bool) {
 	if entry, ok := address.words[word]; ok {
 		return entry, true

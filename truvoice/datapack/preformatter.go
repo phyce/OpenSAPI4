@@ -424,15 +424,17 @@ func parseLetters(description *lettersDescription) (*Letters, error) {
 		}
 	}
 	for _, table := range []struct {
-		name    string
-		words   map[string]string
-		longest int
-	}{{"respelled", description.Respelled, 6}, {"readings", description.Readings, 9}} {
+		name       string
+		words      map[string]string
+		longest    int
+		apostrophe bool
+	}{{"respelled", description.Respelled, 6, false}, {"readings", description.Readings, 9, true}} {
 		if len(table.words) == 0 {
 			return nil, fmt.Errorf("address letters %s is empty", table.name)
 		}
 		for word, written := range table.words {
-			if len(word) < 2 || len(word) > table.longest || !capitalWord(word) || !printableWord(written) {
+			capitals := capitalWord(word) || table.apostrophe && apostrophedCapitals(word)
+			if len(word) < 2 || len(word) > table.longest || !capitals || !printableWord(written) {
 				return nil, fmt.Errorf("address letters %s %q is %q", table.name, word, written)
 			}
 		}
@@ -560,6 +562,11 @@ func capitalWord(word string) bool {
 		}
 	}
 	return word != ""
+}
+
+func apostrophedCapitals(word string) bool {
+	before, after, found := strings.Cut(word, "'")
+	return found && capitalWord(before) && capitalWord(after)
 }
 
 func letterWord(word string) bool {
