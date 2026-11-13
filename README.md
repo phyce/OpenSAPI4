@@ -178,3 +178,6 @@ The license covers the code only. The voice data packs in the release downloads 
 ## Trademarks
 
 OpenSAPI4 is an independent project. It is not affiliated with, endorsed by or sponsored by Microsoft. Microsoft and Windows are trademarks of Microsoft Corporation, and TruVoice, AT&T and FlexTalk are trademarks of their owners. The names are used only to say which voices this project is compatible with.
+
+## Projects using OpenSAPI4:
+- [Narration Studio](https://github.com/phyce/Narration-Studio)
