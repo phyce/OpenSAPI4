@@ -169,6 +169,12 @@ OPENSAPI4_CONFORMANCE=<conformance data folder> go test -count=1 ./...
 
 The conformance tests compare every stage with the original engine's output. Their data and the data pack aren't in this repository; without `OPENSAPI4_CONFORMANCE` only the tests on synthetic data run.
 
+## License
+
+The code in this repository is under the [MIT License](LICENSE).
+
+The license covers the code only. The voice data packs in the release downloads are converted from the original Microsoft and L&H voice files; they aren't covered by it, and it gives no rights to them.
+
 ## Trademarks
 
 OpenSAPI4 is an independent project. It is not affiliated with, endorsed by or sponsored by Microsoft. Microsoft and Windows are trademarks of Microsoft Corporation, and TruVoice, AT&T and FlexTalk are trademarks of their owners. The names are used only to say which voices this project is compatible with.

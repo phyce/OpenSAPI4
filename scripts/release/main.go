@@ -113,7 +113,7 @@ func release(version, voices, output string, allowChanges bool) error {
 	}
 	defer os.RemoveAll(builds)
 
-	documents := []entry{{name: "README.md", source: "README.md"}, {name: "command-line.md", source: filepath.Join("docs", "command-line.md")}}
+	documents := []entry{{name: "README.md", source: "README.md"}, {name: "LICENSE", source: "LICENSE"}, {name: "command-line.md", source: filepath.Join("docs", "command-line.md")}}
 	var archives []string
 	for _, target := range platforms {
 		folder := "opensapi4-" + version + "-" + target.name
